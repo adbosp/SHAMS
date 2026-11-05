@@ -131,8 +131,9 @@ class StudioService:
                 dag = instantiate(self.template, st.db.project_id, text, engine=profile.name)
                 st.load_plan(dag, approved_by="ui-user")
                 how = "nhận diện từ yêu cầu" if detected else "mặc định, ghi tên engine trong yêu cầu để đổi"
-                reply = (f"Đã phân tích yêu cầu và tạo {len(dag['tasks'])} nhiệm vụ từ template "
-                         f"{self.template} cho engine {profile.display} ({how}). Đang triển khai.")
+                reply = (f"Đã tạo {len(dag['tasks'])} nhiệm vụ từ khung chung {self.template} cho engine "
+                         f"{profile.display} ({how}). Đang triển khai. Khung này chưa đọc nội dung yêu cầu; "
+                         f"Planner LLM (Phase 1b) sẽ tách nhiệm vụ riêng theo từng dự án.")
                 if st.mock_mode:
                     reply += " (Chế độ mock: chưa gắn model AI.)"
                 self.chat.append({"role": "director", "text": reply, "ts": contracts.now_iso(), "live": True})

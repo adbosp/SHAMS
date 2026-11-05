@@ -36,13 +36,13 @@ pip install -e ".[dev]"
 pytest -q
 
 shams engines                                     # unity | unreal (ue5) | godot | web (three.js/WebGPU)
-shams init projects/shark --project-id shark_mvp --goal "Game cá mập 3D" --engine godot --mock
-shams plan projects/shark --approve <tên-bạn>
-shams run projects/shark --defect task.prey_spawner:ac.spawner_tests:9   # tiêm lỗi để xem repair loop
-shams review projects/shark
-shams decide projects/shark task.prey_spawner retry
-shams run projects/shark
-shams events projects/shark --task task.prey_spawner
+shams init projects/demo --project-id demo_game --goal "Game đua xe 3D" --engine godot --mock
+shams plan projects/demo --approve <tên-bạn>
+shams run projects/demo --defect task.spawner:ac.spawner_tests:9   # tiêm lỗi để xem repair loop
+shams review projects/demo
+shams decide projects/demo task.spawner retry
+shams run projects/demo
+shams events projects/demo --task task.spawner
 ```
 
 ## Giao diện chính
@@ -70,7 +70,7 @@ studio/
   planning/       Plan Validator, DAG templates
   engines/        Engine Profile + Engine Adapter (Unity, Unreal, Godot, Web)
   mock/           Mock Worker + mock checkers
-  templates/      vertical_slice_3d.json (MVP cá mập, trung lập engine)
+  templates/      vertical_slice_3d.json (khung vertical slice 3D chung, trung lập engine)
 apps/cli/         `shams` CLI
 apps/api/         FastAPI: /api/state, /api/chat, /api/decide
 apps/ui/          Giao diện chính (một file HTML, không cần build)

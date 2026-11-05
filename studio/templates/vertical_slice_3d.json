@@ -4,7 +4,7 @@
   "plan_id": "plan.template",
   "plan_version": 1,
   "template": "vertical_slice_3d",
-  "goal": "Game 3D: nhân vật bơi/di chuyển, ăn mồi, lớn lên, HUD, bản build chơi được",
+  "goal": "Vertical slice 3D chơi được: nhân vật chính, đối tượng sinh ra trong màn chơi, một cơ chế gameplay cốt lõi, HUD, tài nguyên 3D/âm thanh, bản build",
   "vertical_slice_first": true,
   "milestones": [
     {
@@ -12,14 +12,14 @@
       "title": "Vertical slice chơi được",
       "task_ids": [
         "task.project_scaffold",
-        "task.shark_movement",
-        "task.prey_spawner",
-        "task.eat_growth",
+        "task.player_controller",
+        "task.spawner",
+        "task.core_mechanic",
         "task.hud",
-        "task.shark_model",
-        "task.prey_model",
-        "task.ocean_texture",
-        "task.sfx_eat",
+        "task.player_model",
+        "task.npc_model",
+        "task.environment_texture",
+        "task.sfx_core",
         "task.integration_slice1",
         "task.build_game"
       ]
@@ -59,9 +59,9 @@
       ]
     },
     {
-      "task_id": "task.shark_movement",
-      "title": "Điều khiển cá mập bơi 3D",
-      "description": "Điều khiển cá mập bơi 3D",
+      "task_id": "task.player_controller",
+      "title": "Điều khiển nhân vật chính 3D",
+      "description": "Điều khiển nhân vật chính 3D",
       "capability": "${code}",
       "depends_on": [
         "task.project_scaffold"
@@ -75,14 +75,14 @@
       ],
       "outputs": [
         {
-          "name": "SharkController",
-          "logical_id": "code.shark_controller",
+          "name": "PlayerController",
+          "logical_id": "code.player_controller",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
         },
         {
-          "name": "SharkMovementTests",
-          "logical_id": "test.shark_movement",
+          "name": "PlayerControllerTests",
+          "logical_id": "test.player_controller",
           "media_type": "${script_mt}",
           "contract": "${test_contract}"
         }
@@ -98,12 +98,12 @@
           "description": "PlayMode test di chuyển pass",
           "kind": "unit_test",
           "check": {
-            "test_filter": "SharkMovementTests"
+            "test_filter": "PlayerControllerTests"
           }
         },
         {
-          "id": "ac.swim_screenshot",
-          "description": "Screenshot cá mập ở 2 vị trí",
+          "id": "ac.movement_screenshot",
+          "description": "Screenshot nhân vật ở 2 vị trí",
           "kind": "screenshot",
           "required": false
         }
@@ -115,13 +115,13 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${scripts}/Shark/**"
+        "${scripts}/Player/**"
       ]
     },
     {
-      "task_id": "task.prey_spawner",
-      "title": "Spawner cá mồi trong vùng nước",
-      "description": "Spawner cá mồi trong vùng nước",
+      "task_id": "task.spawner",
+      "title": "Hệ thống sinh đối tượng trong màn chơi",
+      "description": "Hệ thống sinh đối tượng trong màn chơi",
       "capability": "${code}",
       "depends_on": [
         "task.project_scaffold"
@@ -135,8 +135,8 @@
       ],
       "outputs": [
         {
-          "name": "PreySpawner",
-          "logical_id": "code.prey_spawner",
+          "name": "Spawner",
+          "logical_id": "code.spawner",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
         }
@@ -152,7 +152,7 @@
           "description": "Test số lượng + bounds",
           "kind": "unit_test",
           "check": {
-            "test_filter": "PreySpawnerTests"
+            "test_filter": "SpawnerTests"
           }
         }
       ],
@@ -163,50 +163,50 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${scripts}/Prey/**"
+        "${scripts}/Spawning/**"
       ]
     },
     {
-      "task_id": "task.eat_growth",
-      "title": "Cơ chế ăn và lớn lên",
-      "description": "Cơ chế ăn và lớn lên",
+      "task_id": "task.core_mechanic",
+      "title": "Cơ chế gameplay cốt lõi",
+      "description": "Cơ chế gameplay cốt lõi",
       "capability": "${code}",
       "depends_on": [
-        "task.shark_movement",
-        "task.prey_spawner"
+        "task.player_controller",
+        "task.spawner"
       ],
       "inputs": [
         {
-          "name": "shark",
-          "from_task": "task.shark_movement",
-          "logical_id": "code.shark_controller"
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
         },
         {
           "name": "spawner",
-          "from_task": "task.prey_spawner",
-          "logical_id": "code.prey_spawner"
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
         }
       ],
       "outputs": [
         {
-          "name": "EatAndGrow",
-          "logical_id": "code.eat_growth",
+          "name": "CoreMechanic",
+          "logical_id": "code.core_mechanic",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
         }
       ],
       "acceptance_criteria": [
         {
-          "id": "ac.eat_compiles",
+          "id": "ac.mechanic_compiles",
           "description": "Compile không lỗi",
           "kind": "compile"
         },
         {
-          "id": "ac.eat_tests",
-          "description": "Test va chạm miệng–mồi, size tăng",
+          "id": "ac.mechanic_tests",
+          "description": "Test tương tác giữa nhân vật và đối tượng, trạng thái thay đổi đúng",
           "kind": "unit_test",
           "check": {
-            "test_filter": "EatGrowTests"
+            "test_filter": "CoreMechanicTests"
           }
         }
       ],
@@ -222,17 +222,17 @@
     },
     {
       "task_id": "task.hud",
-      "title": "HUD điểm và kích thước",
-      "description": "HUD điểm và kích thước",
+      "title": "HUD trạng thái người chơi",
+      "description": "HUD trạng thái người chơi",
       "capability": "${code}",
       "depends_on": [
-        "task.eat_growth"
+        "task.core_mechanic"
       ],
       "inputs": [
         {
-          "name": "eat",
-          "from_task": "task.eat_growth",
-          "logical_id": "code.eat_growth"
+          "name": "mechanic",
+          "from_task": "task.core_mechanic",
+          "logical_id": "code.core_mechanic"
         }
       ],
       "outputs": [
@@ -251,7 +251,7 @@
         },
         {
           "id": "ac.hud_tests",
-          "description": "Text cập nhật khi ăn",
+          "description": "HUD cập nhật khi trạng thái thay đổi",
           "kind": "unit_test",
           "check": {
             "test_filter": "HudTests"
@@ -275,23 +275,23 @@
       ]
     },
     {
-      "task_id": "task.shark_model",
-      "title": "Mesh cá mập game-ready",
-      "description": "Mesh cá mập game-ready",
+      "task_id": "task.player_model",
+      "title": "Mesh nhân vật chính game-ready",
+      "description": "Mesh nhân vật chính game-ready",
       "capability": "mesh.text_to_3d",
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
-          "name": "shark",
-          "logical_id": "asset.shark.mesh",
+          "name": "player",
+          "logical_id": "asset.player.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
         }
       ],
       "acceptance_criteria": [
         {
-          "id": "ac.shark_mesh_valid",
+          "id": "ac.player_mesh_valid",
           "description": "Poly ≤ 20k, có UV, scale đúng",
           "kind": "schema",
           "check": {
@@ -299,8 +299,8 @@
           }
         },
         {
-          "id": "ac.shark_look",
-          "description": "Nhìn ra cá mập",
+          "id": "ac.player_look",
+          "description": "Hình dáng khớp mô tả nhân vật trong yêu cầu",
           "kind": "visual",
           "required": false
         }
@@ -312,27 +312,27 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${models}/Shark/**"
+        "${models}/Player/**"
       ]
     },
     {
-      "task_id": "task.prey_model",
-      "title": "Mesh cá mồi",
-      "description": "Mesh cá mồi",
+      "task_id": "task.npc_model",
+      "title": "Mesh đối tượng phụ / NPC",
+      "description": "Mesh đối tượng phụ / NPC",
       "capability": "mesh.text_to_3d",
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
-          "name": "prey",
-          "logical_id": "asset.prey.mesh",
+          "name": "npc",
+          "logical_id": "asset.npc.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
         }
       ],
       "acceptance_criteria": [
         {
-          "id": "ac.prey_mesh_valid",
+          "id": "ac.npc_mesh_valid",
           "description": "Poly ≤ 3k, có UV",
           "kind": "schema",
           "check": {
@@ -347,20 +347,20 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${models}/Prey/**"
+        "${models}/Npc/**"
       ]
     },
     {
-      "task_id": "task.ocean_texture",
-      "title": "Texture nền đại dương",
-      "description": "Texture nền đại dương",
+      "task_id": "task.environment_texture",
+      "title": "Texture môi trường",
+      "description": "Texture môi trường",
       "capability": "image.texture",
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
-          "name": "ocean",
-          "logical_id": "asset.ocean.texture",
+          "name": "environment",
+          "logical_id": "asset.environment.texture",
           "media_type": "image/png",
           "contract": "image.texture"
         }
@@ -383,16 +383,16 @@
       ]
     },
     {
-      "task_id": "task.sfx_eat",
-      "title": "Âm thanh ăn mồi",
-      "description": "Âm thanh ăn mồi",
+      "task_id": "task.sfx_core",
+      "title": "Âm thanh cho hành động chính",
+      "description": "Âm thanh cho hành động chính",
       "capability": "audio.sfx",
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
-          "name": "eat",
-          "logical_id": "asset.sfx.eat",
+          "name": "mechanic",
+          "logical_id": "asset.sfx.core",
           "media_type": "audio/wav",
           "contract": "audio.sfx"
         }
@@ -420,30 +420,30 @@
       "description": "Tích hợp vertical slice 1",
       "capability": "integration",
       "depends_on": [
-        "task.shark_movement",
-        "task.prey_spawner",
-        "task.eat_growth",
+        "task.player_controller",
+        "task.spawner",
+        "task.core_mechanic",
         "task.hud",
-        "task.shark_model",
-        "task.prey_model",
-        "task.ocean_texture",
-        "task.sfx_eat"
+        "task.player_model",
+        "task.npc_model",
+        "task.environment_texture",
+        "task.sfx_core"
       ],
       "inputs": [
         {
-          "name": "shark",
-          "from_task": "task.shark_movement",
-          "logical_id": "code.shark_controller"
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
         },
         {
           "name": "spawner",
-          "from_task": "task.prey_spawner",
-          "logical_id": "code.prey_spawner"
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
         },
         {
-          "name": "eat",
-          "from_task": "task.eat_growth",
-          "logical_id": "code.eat_growth"
+          "name": "mechanic",
+          "from_task": "task.core_mechanic",
+          "logical_id": "code.core_mechanic"
         },
         {
           "name": "hud",
@@ -451,24 +451,24 @@
           "logical_id": "code.hud"
         },
         {
-          "name": "shark_mesh",
-          "from_task": "task.shark_model",
-          "logical_id": "asset.shark.mesh"
+          "name": "player_mesh",
+          "from_task": "task.player_model",
+          "logical_id": "asset.player.mesh"
         },
         {
-          "name": "prey_mesh",
-          "from_task": "task.prey_model",
-          "logical_id": "asset.prey.mesh"
+          "name": "npc_mesh",
+          "from_task": "task.npc_model",
+          "logical_id": "asset.npc.mesh"
         },
         {
-          "name": "ocean",
-          "from_task": "task.ocean_texture",
-          "logical_id": "asset.ocean.texture"
+          "name": "environment",
+          "from_task": "task.environment_texture",
+          "logical_id": "asset.environment.texture"
         },
         {
           "name": "sfx",
-          "from_task": "task.sfx_eat",
-          "logical_id": "asset.sfx.eat"
+          "from_task": "task.sfx_core",
+          "logical_id": "asset.sfx.core"
         }
       ],
       "outputs": [

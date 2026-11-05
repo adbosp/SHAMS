@@ -221,7 +221,7 @@ function chatView(){
   const modeLbl = {autonomous:"Autonomous",guided:"Guided",collaborative:"Collaborative"}[S.mode] || S.mode;
   let h = `<div class="ctitle"><h2>Studio Chat</h2><span class="badge b-chip">${esc(modeLbl)}</span></div>`;
   if (!S.chat.length){
-    h += `<div class="empty">Nhập ý tưởng game để SHAMS lập kế hoạch và triển khai.<br><span class="small">Ví dụ: Tạo game cá mập 3D bằng Godot có hệ thống săn mồi và tiến hóa.</span></div>`;
+    h += `<div class="empty">Mô tả dự án bạn muốn SHAMS sản xuất. SHAMS lập Task DAG, giao từng việc cho model AI phù hợp, kiểm thử độc lập và sửa lỗi theo vòng lặp.<br><span class="small">Ví dụ: "Game đua xe 3D bằng UE5" hoặc "Game giải đố chạy trên trình duyệt bằng Three.js".</span></div>`;
     h += `<div class="small muted" style="text-align:center;margin-bottom:6px">Engine (hoặc ghi trong yêu cầu: Unity, UE5, Godot, Three.js/WebGPU)</div><div class="engines">` +
       (S.engines||[]).map(e => `<button type="button" class="eng" data-engine="${esc(e.id)}" aria-pressed="${e.id===S.project.engine_id}"><b>${esc(e.display)}</b><span>${esc(e.language)}</span></button>`).join("") + `</div>`;
   }
@@ -376,7 +376,7 @@ async function decide(task_id, decision){
   poll();
 }
 
-/* ---- Demo mode: opened as a file without the controller. Simulates the shark plan. ---- */
+/* ---- Demo mode: opened as a file without the controller. Simulates the generic vertical_slice_3d plan. ---- */
 const Demo = (() => {
   const ENGINES = [
     {id:"unity", display:"Unity", language:"C#", words:["unity"]},
@@ -389,15 +389,15 @@ const Demo = (() => {
   const eng = () => ENGINES.find(e => e.id === engine);
   const PLAN = [
     ["task.project_scaffold","Khởi tạo project","code",[]],
-    ["task.shark_movement","Movement System","code",["task.project_scaffold"]],
-    ["task.prey_spawner","Spawner cá mồi","code",["task.project_scaffold"]],
-    ["task.eat_growth","Cơ chế săn mồi và tiến hóa","code",["task.shark_movement","task.prey_spawner"]],
-    ["task.hud","HUD điểm và kích thước","code",["task.eat_growth"]],
-    ["task.shark_model","Shark 3D Mesh","mesh",[]],
-    ["task.prey_model","Prey 3D Mesh","mesh",[]],
-    ["task.ocean_texture","Texture đại dương","image",[]],
-    ["task.sfx_eat","Âm thanh ăn mồi","audio",[]],
-    ["task.integration_slice1","Tích hợp vertical slice","code",["task.shark_movement","task.prey_spawner","task.eat_growth","task.hud","task.shark_model","task.prey_model","task.ocean_texture","task.sfx_eat"]],
+    ["task.player_controller","Điều khiển nhân vật chính 3D","code",["task.project_scaffold"]],
+    ["task.spawner","Hệ thống sinh đối tượng","code",["task.project_scaffold"]],
+    ["task.core_mechanic","Cơ chế gameplay cốt lõi","code",["task.player_controller","task.spawner"]],
+    ["task.hud","HUD trạng thái người chơi","code",["task.core_mechanic"]],
+    ["task.player_model","Mesh nhân vật chính","mesh",[]],
+    ["task.npc_model","Mesh đối tượng phụ / NPC","mesh",[]],
+    ["task.environment_texture","Texture môi trường","image",[]],
+    ["task.sfx_core","Âm thanh hành động chính","audio",[]],
+    ["task.integration_slice1","Tích hợp vertical slice","code",["task.player_controller","task.spawner","task.core_mechanic","task.hud","task.player_model","task.npc_model","task.environment_texture","task.sfx_core"]],
     ["task.build_game","Build game","tool",["task.integration_slice1"]],
   ];
   const LBL = {code:"Coding Worker", mesh:"3D Generator", image:"Image Generator", audio:"Audio Generator", tool:"Build & Test Tools"};
@@ -413,7 +413,7 @@ const Demo = (() => {
       const hit = DETECT_ORDER.find(id => ENGINES.find(e => e.id===id).words.some(w => low.includes(w)));
       if (hit) engine = hit;
       st.tasks = PLAN.map(([id,title,fam,deps]) => ({task_id:id, title, fam, depends_on:deps, state:deps.length?"PENDING":"READY", attempt:0}));
-      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho engine ${eng().display}. Đang triển khai gameplay và tài nguyên 3D.`});
+      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho engine ${eng().display}. Đang triển khai.`});
       log(`Plan created: ${PLAN.length} tasks`);
     } else st.chat.push({role:"director", text:"Bản demo: yêu cầu bổ sung chưa được xử lý."});
   }
@@ -424,7 +424,7 @@ const Demo = (() => {
     if (st.cur){
       const t = st.cur;
       if (t.state === "RUNNING"){ t.state = "QC_PENDING"; log(`${t.task_id} handoff saved (attempt ${t.attempt})`); return; }
-      if (t.task_id==="task.prey_spawner" && t.attempt===0){ t.state="READY"; t.attempt=1; st.qc.unshift({task_id:t.task_id,attempt:0,gate:"task_qc",verdict:"FAIL",stopped_at_stage:3,ts:new Date().toISOString()}); log(`QC FAIL ${t.task_id} (stage 3)`); log(`Repair scheduled for ${t.task_id}: fix_in_place`); st.cur=null; return; }
+      if (t.task_id==="task.spawner" && t.attempt===0){ t.state="READY"; t.attempt=1; st.qc.unshift({task_id:t.task_id,attempt:0,gate:"task_qc",verdict:"FAIL",stopped_at_stage:3,ts:new Date().toISOString()}); log(`QC FAIL ${t.task_id} (stage 3)`); log(`Repair scheduled for ${t.task_id}: fix_in_place`); st.cur=null; return; }
       t.state = "ACCEPTED"; st.qc.unshift({task_id:t.task_id,attempt:t.attempt,gate:"task_qc",verdict:"PASS",ts:new Date().toISOString()});
       st.arts.unshift({logical_id:t.task_id.replace("task.","out."),version:1,state:"ACCEPTED",media_type:"demo",sha256:Math.random().toString(16).slice(2).padEnd(12,"0"),produced_task_id:t.task_id});
       log(`QC PASS ${t.task_id}`); st.cur = null; return;
@@ -442,7 +442,7 @@ const Demo = (() => {
     const T = st.tasks, lbl = {ACCEPTED:"PASS",QC_PENDING:"QC"};
     const ready = T.filter(t=>t.state==="READY");
     return {
-      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Shark Survival 3D", engine:eng().display, engine_id:engine, language:eng().language},
+      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Dự án mới", engine:eng().display, engine_id:engine, language:eng().language},
       engines: ENGINES.map(({id,display,language}) => ({id,display,language})),
       mode:"autonomous", mock_mode:true, running:true,
       progress:{done:T.filter(t=>t.state==="ACCEPTED").length, total:T.length},

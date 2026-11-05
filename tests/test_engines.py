@@ -52,7 +52,7 @@ def test_full_mock_run_for_each_engine(tmp_path, engine):
     ("Game cá mập chạy trên trình duyệt bằng Three.js WebGPU", "web"),
     ("làm bằng UE5 nhé", "unreal"),
     ("Godot 4 platformer", "godot"),
-    ("Unity shark game", "unity"),
+    ("Unity racing game", "unity"),
     ("game cá mập 3D", None),
 ])
 def test_detect_engine_from_chat(text, expected):

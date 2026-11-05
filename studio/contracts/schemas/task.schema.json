@@ -134,7 +134,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Glob đường dẫn worker được ghi, ví dụ Assets/Scripts/Shark/**"
+      "description": "Glob đường dẫn worker được ghi, ví dụ Assets/Scripts/Player/**"
     },
     "provider_hint": {
       "type": "string"

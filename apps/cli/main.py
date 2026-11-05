@@ -1,6 +1,6 @@
 """`shams` CLI (ADR-112): human review and operation before the desktop UI exists.
 
-  shams init <dir> --project-id shark_mvp --goal "..." [--engine unity|unreal|godot|web] [--mode guided] [--mock]
+  shams init <dir> --project-id my_game --goal "..." [--engine unity|unreal|godot|web] [--mode guided] [--mock]
   shams plan <dir> [--template vertical_slice_3d] [--engine ...] --approve <name>
   shams engines                           # list supported engines
   shams run <dir> [--defect task_id:criterion_id[:fail_attempts]]...

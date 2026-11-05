@@ -164,7 +164,7 @@
         },
         "check": {
           "type": "object",
-          "description": "Tham số cho checker deterministic, ví dụ {test_filter:'SharkMovementTests'} hoặc {metric:'fps', op:'>=', value:30}"
+          "description": "Tham số cho checker deterministic, ví dụ {test_filter:'PlayerControllerTests'} hoặc {metric:'fps', op:'>=', value:30}"
         }
       }
     }
