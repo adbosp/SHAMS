@@ -64,6 +64,14 @@ def _scene3d_hook(reg, w: dict) -> None:
     if bl:
         w["config"]["blender"] = bl
     w["config"].setdefault("impl", "scene3d")
+    # optional: a different (stronger coding) model writes Blender Python for complex scenes (ADR-121)
+    want = ((reg.cfg.get("roles") or {}).get("scene3d") or {}).get("blender_model")
+    if want:
+        from shams.models import match_model
+        names = [m["name"] for m in reg.ollama().get("models", [])]
+        mid, _how = match_model(want, names, dict(reg.cfg.get("aliases") or {}))
+        if mid:
+            w["config"]["blender_model"] = mid
 
 
 def _probe_blender(settings: dict) -> dict:
@@ -110,7 +118,7 @@ def register() -> None:
     workers.register_worker("scene3d", blender.Scene3DWorker)
     workers.register_worker("comfyui_image", comfyui.ComfyUIImageWorker)
     workers.register_worker("sf3d", sf3d.StableFast3DWorker)
-    workers.worker_only_keys("blender", "blender_timeout")
+    workers.worker_only_keys("blender", "blender_timeout", "blender_model")
     models.register_backend("comfyui", _ComfyBackend())
     models.register_backend("stable_fast_3d", _SF3DBackend())
     models.register_role_hook("scene3d", _scene3d_hook)

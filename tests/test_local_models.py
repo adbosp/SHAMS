@@ -643,3 +643,14 @@ def test_scene_json_flags_half_sunk_ball_and_wall_below_floor():
     assert "ball sinks 12 cm into top" in msg and "wall goes 3.0 m below the floor" in msg and "top sinks" not in msg
     example = scene_json.SCENE_JSON_PROMPT.split("on it):\n")[1]
     assert scene_json.build_scene(example, None, None)["mesh_objects"] == 7      # the prompt's own example is valid
+
+
+def test_scene3d_can_use_a_stronger_model_for_blender(ollama):
+    roles = {**ROLES, "scene3d": {"model": "qwen3.5-4b-coder:Q8", "blender_model": "qwen2.5-coder:14b"}}
+    ws = {w["id"]: w for w in models.ModelRegistry({"models": {"ollama": {"base_url": ollama.url}, "roles": roles}}).workers()}
+    cfg = ws["worker.role.scene3d"]["config"]
+    assert ws["worker.role.scene3d"]["model"] == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0"     # JSON scenes
+    assert cfg["blender_model"] == "qwen2.5-coder:14b"                                     # Blender scripts
+    w = blender_tools.Scene3DWorker(entry={"worker": {"worker_id": "w", "model": "small"},
+                                           "provider_config": {"blender_model": "big"}}, attempts_root=Path("."))
+    assert (w.model, w.blender_model) == ("small", "big")

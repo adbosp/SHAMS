@@ -190,8 +190,14 @@ def t3b_blender(c: Ctx) -> tuple[str, str]:
     if not bl:
         return BLOCKED, "Blender not found (tools.blender.path)"
     c.free_gpu()
+    want = ((c.settings.get("models") or {}).get("roles", {}).get("scene3d") or {}).get("blender_model")
+    bm = None
+    if want:
+        from shams.models import match_model
+        bm = match_model(want, [x["name"] for x in c.reg.ollama().get("models", [])])[0]
     entry = {"worker": {"worker_id": "selftest.scene3d", "kind": "llm_agent", "model": m},
-             "provider_config": {"blender": bl, "max_fix_rounds": 2}}
+             "provider_config": {"blender": bl, "max_fix_rounds": 2, "blender_model": bm}}
+    m = bm or m
     prov = providers.create("ollama", {"base_url": c.ollama.root, "num_ctx": 16384})
     w = Scene3DWorker(entry=entry, attempts_root=c.out, provider=prov)
     work = c.out / "t3b_blender"

@@ -63,3 +63,6 @@ redirects), cap the size, honour `allow_domains` / `deny_domains`, log every URL
 Simple scenes: the 3D model writes a JSON scene description; SHAMS builds the GLB and renders evidence in pure
 Python. Complex scenes (modifiers, booleans, sculpting, rigs, terrain, vehicles...) go to Blender. Force one
 with the task parameter `builder` (`json` or `blender`).
+
+The Blender route can use a different, stronger coding model than the JSON route:
+`models.roles.scene3d.blender_model` (for example `qwen2.5-coder:14b`). Without it the scene3d model writes both.

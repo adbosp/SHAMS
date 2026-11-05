@@ -145,6 +145,7 @@ class Scene3DWorker:
         cfg = entry.get("provider_config", {})
         self.entry, self.provider, self.read_blob = entry, provider, read_blob
         self.model = entry["worker"].get("model") or ""
+        self.blender_model = cfg.get("blender_model") or self.model      # complex scenes may use a stronger coder
         self.attempts_root = Path(attempts_root)
         self.blender = find_blender(cfg.get("blender"))
         self.max_fix_rounds = int(cfg.get("max_fix_rounds", 3))
@@ -166,7 +167,7 @@ class Scene3DWorker:
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
 
     def generate_script(self, messages: list[dict]) -> tuple[str | None, str, dict]:
-        r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
+        r = providers.timed_chat(self.provider, messages, self.blender_model, **self.chat_options)
         return extract_code(r["text"]), r["text"], r
 
     def build(self, ctx: dict, workdir: Path, want: dict[str, str | None], route: str) -> tuple[dict, str, dict]:
