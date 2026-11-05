@@ -237,8 +237,9 @@ class Scene3DWorker:
             for k in ("tokens_in", "tokens_out", "wall_seconds"):
                 usage[k] += r.get(k, 0)
             try:
+                last = round_ == self.max_fix_rounds        # last round: geometry warnings no longer block
                 rep = scene_json.build_scene(raw, want.get("glb"), want.get("render"), resolution=self.resolution,
-                                             max_triangles=budget)
+                                             max_triangles=budget, check_support=not last)
                 rep["scene_description"] = scene_json.extract_json(raw)
                 self.log.append({"round": round_, "result": "ok"})
                 return rep, raw, usage

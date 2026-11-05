@@ -612,3 +612,19 @@ def test_scene_json_validation_messages_are_actionable(tmp_path):
     assert scene_builder({"title": "a red cube on a table"}, blender_available=True)[0] == "json"
     assert scene_builder({"title": "rigged character with animation"}, blender_available=True)[0] == "blender"
     assert scene_builder({"title": "x", "params": {"builder": "blender"}}, blender_available=True)[0] == "blender"
+
+
+def test_scene_json_fixes_threejs_habits_and_reports_sinking(tmp_path):
+    from shams_tools import scene_json
+    s = {"objects": [{"name": "floor", "shape": "plane", "size": [10, 10], "rotation": [-90, 0, 0]},
+                     {"name": "top", "shape": "box", "size": [1.2, 0.12, 0.8], "position": [0, 0.75, 0]},
+                     {"name": "ball", "shape": "sphere", "radius": 0.12, "position": [0, 0.84, 0]}],
+         "lights": [{"type": "sun", "direction": [-0.4, 0.8, -0.3]}]}
+    with pytest.raises(scene_json.SceneError, match=r"ball sinks 9 cm into top .*y = 0.93"):
+        scene_json.build_scene(s, None, None)
+    rep = scene_json.build_scene(s, None, None, check_support=False)
+    assert rep["bbox"]["min"][1] == 0.0 and rep["bbox"]["max"][1] < 1.0          # floor lies flat
+    assert rep["notes"] and "planes are horizontal" in rep["notes"][0]
+    s["objects"][2]["position"][1] = 0.93
+    assert scene_json.build_scene(s, None, None)["ok"]
+    assert scene_json.normalise(s)["lights"][0]["direction"][1] < 0            # upward sun flipped

@@ -35,9 +35,11 @@ Schema:
  "camera": {"position": [x, y, z], "target": [x, y, z], "fov": 50},
  "lights": [{"type": "sun", "direction": [-0.4, -1, -0.3], "intensity": 3}, {"type": "point", "position": [x, y, z]}],
  "background": "#202830"}
-Rules: build each thing from several primitives (a chair = seat box + 4 leg boxes + back box), place objects so
-they rest on the ground or on each other (position is the CENTRE of the shape), use distinct colours, give every
-object a meaningful name, keep the camera looking at the scene. Stay within the polygon budget."""
+Rules: a "plane" is already horizontal (lying on the ground, facing +Y): do NOT rotate it. Build each thing from
+several primitives: a table = one thin top box + 4 thin leg boxes at the corners (not solid side panels); a chair =
+seat + 4 legs + back. Position is the CENTRE of the shape, so an object resting on a surface at height h has
+y = h + half its height (a sphere of radius r on a table top at h: y = h + r). Use distinct colours, meaningful
+names, keep the camera looking at the scene. Stay within the polygon budget."""
 
 
 class SceneError(ValueError):
@@ -117,6 +119,9 @@ def normalise(scene: dict) -> dict:
                              "scale": _vec(o.get("scale"), 3, [1, 1, 1], w + ".scale"),
                              "color": _colour(o.get("color") or o.get("colour"), w + ".color"),
                              "metallic": float(o.get("metallic", 0.0)), "roughness": float(o.get("roughness", 0.6))}
+        if shape == "plane" and abs(abs(e["rotation"][0]) - 90) < 1e-6 and not any(e["rotation"][1:]):
+            e["rotation"] = [0.0, 0.0, 0.0]        # three.js habit: PlaneGeometry is vertical there, flat here
+            e["note"] = "rotation x=±90 ignored: planes are horizontal"
         if shape == "box":
             e["size"] = _vec(o.get("size"), 3, [1, 1, 1], w + ".size")
         elif shape == "plane":
@@ -143,7 +148,9 @@ def normalise(scene: dict) -> dict:
         t = "point" if t in ("point", "spot", "lamp", "bulb") else "sun"
         lights.append({"type": t, "intensity": float(l.get("intensity", 3.0 if t == "sun" else 30.0)),
                        "color": _colour(l.get("color"), f"lights[{j}].color") if l.get("color") else [1, 1, 1],
-                       "direction": _vec(l.get("direction"), 3, [-0.4, -1, -0.3], f"lights[{j}].direction"),
+                       # a sun that "points up" means the direction *towards* the light: flip it
+                       "direction": [(-x if (l.get("direction") or [0, -1, 0])[1:2] and (l.get("direction") or [0, -1, 0])[1] > 0 else x)
+                                     for x in _vec(l.get("direction"), 3, [-0.4, -1, -0.3], f"lights[{j}].direction")],
                        "position": _vec(l.get("position"), 3, [3, 5, 3], f"lights[{j}].position")})
     return {"objects": out, "lights": lights,
             "camera": {"position": _vec(cam.get("position"), 3, [0, 0, 0], "camera.position") if cam.get("position") else None,
@@ -280,6 +287,32 @@ def build(scene: dict) -> dict:
             "background": scene["background"]}
 
 
+def support_problems(built: dict, tol: float = 0.02) -> list[str]:
+    """Objects that sink into the box they stand on (centre above its top, bottom below it), with the fix."""
+    boxes = []
+    for m in built["meshes"]:
+        t = m["object"]["position"]
+        lo = [min(p[k] for p in m["P"]) + t[k] for k in range(3)]
+        hi = [max(p[k] for p in m["P"]) + t[k] for k in range(3)]
+        boxes.append((m["object"], lo, hi))
+    out = []
+    for a, alo, ahi in boxes:
+        if a["shape"] == "plane":
+            continue
+        cx, cy, cz = [(alo[k] + ahi[k]) / 2 for k in range(3)]
+        for b, blo, bhi in boxes:
+            if b is a or b["shape"] not in ("box", "plane", "cylinder"):
+                continue
+            if not (blo[0] <= cx <= bhi[0] and blo[2] <= cz <= bhi[2]):
+                continue
+            top = bhi[1]
+            if cy > top and alo[1] < top - tol and (ahi[1] - alo[1]) < 4 * max(bhi[1] - blo[1], 0.05):
+                need = round(top + (cy - alo[1]), 3)
+                out.append(f"{a['name']} sinks {round((top - alo[1]) * 100)} cm into {b['name']} (top at y={round(top, 3)}); "
+                           f"set {a['name']}.position y = {need}")
+    return out
+
+
 # --------------------------------------------------------------------------- GLB
 def _look_quat(pos, target):
     f = _norm([t - p for t, p in zip(target, pos)])
@@ -397,7 +430,7 @@ def render(built: dict, path: Path | str, size: int = 384) -> dict:
             cen = [(pa[i] + pb[i] + pc[i]) / 3 for i in range(3)]
             if _dot(n, [pos[i] - cen[i] for i in range(3)]) < 0:
                 n = [-x for x in n]
-            light = 0.22
+            light = 0.35
             for ld, l in suns:
                 light += max(_dot(n, ld), 0.0) * min(l["intensity"], 10) / 3 * 0.8
             for l in points:
@@ -434,17 +467,21 @@ def render(built: dict, path: Path | str, size: int = 384) -> dict:
 
 # --------------------------------------------------------------------------- one call
 def build_scene(text_or_scene: str | dict, glb: Path | str | None, png: Path | str | None, *, resolution: int = 384,
-                max_triangles: int | None = None, min_coverage: float = 0.01) -> dict:
+                max_triangles: int | None = None, min_coverage: float = 0.01, check_support: bool = True) -> dict:
     """Parse -> normalise -> mesh -> GLB -> render. Returns a scene report like the Blender harness's.
     Raises SceneError with a fixable message."""
     scene = normalise(extract_json(text_or_scene) if isinstance(text_or_scene, str) else text_or_scene)
     built = build(scene)
     tris = sum(len(m["I"]) // 3 for m in built["meshes"])
+    sinking = support_problems(built)
+    if sinking and check_support:
+        raise SceneError("objects intersect the surface they rest on: " + "; ".join(sinking[:6]))
     if max_triangles and tris > max_triangles:
         raise SceneError(f"{tris} triangles > budget {max_triangles}; use fewer spheres/cylinders/tori")
     rep: dict[str, Any] = {"ok": True, "builder": "scene_json", "mesh_objects": len(built["meshes"]),
                            "cameras": 1, "camera_added": bool(built["camera"].get("auto")), "lights": len(built["lights"]),
                            "triangles": tris, "bbox": built["bbox"],
+                           "notes": [f"{o['name']}: {o['note']}" for o in scene["objects"] if o.get("note")],
                            "objects": [{"name": m["object"]["name"], "type": "MESH", "shape": m["object"]["shape"],
                                         "location": m["object"]["position"], "vertices": len(m["P"]),
                                         "faces": len(m["I"]) // 3, "triangles": len(m["I"]) // 3, "non_manifold_edges": 0,
