@@ -141,7 +141,7 @@ class LLMWorker:
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
 
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
-        _, plan = output_plan(ctx, self.attempts_root)
+        adir, plan = output_plan(ctx, self.attempts_root)
         binary = [o["logical_id"] for o in plan if not is_text(o["media_type"])]
         if binary:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", f"cannot produce binary outputs {binary}",
@@ -155,6 +155,11 @@ class LLMWorker:
             r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
                  "wall_seconds": r.get("wall_seconds", 0.0)}
+        try:                                  # the raw reply stays with the attempt, for diagnosis
+            adir.mkdir(parents=True, exist_ok=True)
+            (adir / "_model_reply.txt").write_text(r.get("text") or "", encoding="utf-8")
+        except OSError:
+            pass
         try:
             reply = extract_json(r["text"])
         except ValueError as e:
@@ -173,6 +178,13 @@ class LLMWorker:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(str(by_id[o["logical_id"]]), encoding="utf-8")
             files.append(o)
+        if plan and not files:                # nothing usable: a task failure (repair loop), not an empty handoff
+            got = sorted(str(k) for k in by_id)
+            issue = (f"missing output: the reply had none of the declared outputs "
+                     f"{[o['logical_id'] for o in plan]}" + (f"; it returned {got}" if got else "; it returned no files"))
+            return [], base_handoff(ctx, worker_ref, "FAILED", str(reply.get("summary", ""))[:300] or issue,
+                                    known_issues=[{"issue": issue, "severity": "high"}], usage=usage,
+                                    blocked_reason=issue)
         decisions = list(reply.get("decisions") or [])
         decisions += [{"decision": f"used tool {t['tool']}" + (" (denied)" if t["denied"] else ""),
                        "reason": t["summary"]} for t in self.tool_log]

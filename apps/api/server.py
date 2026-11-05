@@ -166,7 +166,9 @@ class StudioService:
                         "mock": cfg.get("mock_mode", False), "mtime": pj.parent.stat().st_mtime})
         return sorted(out, key=lambda p: -p["mtime"])
 
-    def open(self, project_dir: Path) -> None:
+    def open(self, project_dir: Path, resume: bool = False) -> None:
+        """Open a project. An unfinished project is NOT resumed on its own (opening the app must not spend
+        model time on an old project); the user presses "Tiếp tục chạy" (POST /api/run) or passes resume."""
         self.stop()
         with self.lock:
             if self.studio:
@@ -175,7 +177,8 @@ class StudioService:
             self.studio = Studio(self.dir, mock=MockWorker(self.dir / "attempts", delay_s=self.mock_delay))
             self.chat_file = self.dir / "chat.json"
             self.chat = json.loads(self.chat_file.read_text(encoding="utf-8")) if self.chat_file.exists() else []
-        if self.studio.db.tasks() and not self.studio.status()["done"]:
+            go = resume and bool(self.studio.db.tasks()) and not self.studio.status()["done"]
+        if go:                                  # decided under the lock: another open() may follow at once
             self.start()
 
     def open_by_id(self, pid: str) -> dict:
@@ -303,8 +306,8 @@ class StudioService:
                     reply += (" Project này chạy chế độ thử (không gọi model AI). Thêm model trong Settings → "
                               "Model & API để chạy thật.")
                 else:
-                    missing = sorted({t["capability"] for t in st.db.tasks()} - {c for w in st.nodes.workers.values()
-                                                                                for c in w.capabilities})
+                    missing = sorted({t["capability"] for t in st.db.tasks()       # same matching as the scheduler
+                                      if not st.nodes.candidates(t["capability"])})
                     if missing:
                         reply += " Chưa có worker cho: " + ", ".join(missing) + " (Settings → Model & API)."
                 self.chat.append({"role": "director", "text": reply, "ts": contracts.now_iso(), "live": True})

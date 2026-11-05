@@ -110,6 +110,11 @@ def build_graph(studio: "Studio", checkpointer):
         handoff["outputs"] = refs
         handoff["consumers"] = db.dependents(tid)
         handoff["timestamp"] = contracts.now_iso()
+        problems = contracts.errors("handoff", handoff)
+        if problems:                            # a bad handoff fails this attempt; it must not stop the controller
+            studio.record_failure(tid, attempt, "schema violation: handoff " + "; ".join(problems)[:500],
+                                  source="worker_failed", event="task.worker_failed")
+            return {"trace": ["persist:invalid_handoff"]}
         with db.tx():
             db.save_handoff(handoff)        # persist BEFORE releasing the GPU (principle 4)
             if outcome == "blocked":

@@ -710,3 +710,46 @@ def test_png_power_of_two_and_max_size(tmp_path):
     v, d = assets.check_png(make_png(tmp_path / "b.png", 96, 64), {"power_of_two": True})
     assert v == "FAIL" and "power of two" in d
     assert assets.check_png(make_png(tmp_path / "c.png", 64, 64), {"max_width": 32})[0] == "FAIL"
+
+
+def test_ollama_tool_calls_use_native_chat_with_num_ctx():
+    """Tool turns must keep num_ctx: the OpenAI-compatible endpoint would run with Ollama's small default."""
+    def handle(method, path, body):
+        if path == "/api/chat" and body.get("tools"):
+            return 200, {"message": {"role": "assistant", "content": "",
+                                     "tool_calls": [{"function": {"name": "research__web_search",
+                                                                  "arguments": {"query": "three.js"}}}]},
+                         "prompt_eval_count": 7, "eval_count": 3}
+        return 200, {"message": {"role": "assistant", "content": '{"done": true}'}}
+    srv = Server(handle)
+    try:
+        prov = providers.create("ollama", {"base_url": srv.url, "num_ctx": 16384})
+        r = prov.chat_tools([{"role": "user", "content": "x"}], model="m",
+                            tools=[{"name": "research__web_search", "input_schema": {"type": "object"}}])
+        method, path, body = srv.calls[-1]
+        assert path == "/api/chat" and body["options"]["num_ctx"] == 16384 and body["stream"] is False
+        assert r["tool_calls"][0]["name"] == "research__web_search" and r["tool_calls"][0]["arguments"]["query"] == "three.js"
+        msgs = prov.tool_results([(r["tool_calls"][0], "result")])
+        assert msgs[0]["role"] == "tool" and msgs[0]["tool_name"] == "research__web_search"
+        r2 = prov.chat_tools([{"role": "user", "content": "x"}], model="m", tools=[])
+        assert r2["text"] == '{"done": true}' and not r2["tool_calls"]
+    finally:
+        srv.close()
+
+
+def test_llm_worker_reply_without_declared_outputs_is_a_task_failure(tmp_path):
+    from shams.workers import LLMWorker
+
+    class P:
+        name = "fake"
+        def chat(self, messages, *, model, **o):
+            return {"text": json.dumps({"files": [{"logical_id": "wrong.id", "content": "x"}], "summary": "s",
+                                        "status": "READY_FOR_QC"})}
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    w = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P())
+    ref = {"worker_id": "worker.x", "model": "m"}
+    files, h = w.run(ctx, ref)
+    assert files == [] and h["status"] == "FAILED" and "wrong.id" in h["blocked_reason"]
+    assert (tmp_path / "task.a" / "a1" / "_model_reply.txt").read_text(encoding="utf-8").startswith("{")

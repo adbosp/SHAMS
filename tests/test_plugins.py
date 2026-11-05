@@ -311,3 +311,30 @@ def test_example_nodes_toml_parses():
 def test_short_worker_form_rejects_unknown_keys():
     with pytest.raises(ValueError, match="unknown keys"):
         normalize_worker({"id": "w", "node": "n", "capabilities": ["code.x"], "api_key": "sk-123"})
+
+
+class EmptyWorker:
+    """Claims READY_FOR_QC but produces nothing (a model that answered with no usable files)."""
+    def __init__(self, *, entry, attempts_root, **_):
+        pass
+
+    def run(self, ctx, worker_ref):
+        return [], workers.base_handoff(ctx, worker_ref, "READY_FOR_QC", "nothing")
+
+
+def test_empty_handoff_fails_the_attempt_not_the_controller(tmp_path):
+    caps = sorted({t["capability"] for t in instantiate("vertical_slice_3d", "real_game", "g", engine="godot")["tasks"]})
+    reg = NodeRegistry.from_dict({
+        "node": [{"id": "node.cloud", "kind": "external", "rate_limit_per_min": 1000}],
+        "worker": [{"id": "worker.empty", "node": "node.cloud", "lane": "external", "capabilities": caps,
+                    "config": {"impl": "test_plugins:EmptyWorker"}}]})
+    d = tmp_path / "p"
+    Studio.init_project(d, "real_game", "g", mode="autonomous", engine={"name": "godot"})
+    st = Studio(d, nodes=reg, checkers=dict(CHECKERS))
+    st.load_plan(instantiate("vertical_slice_3d", "real_game", "g", engine="godot"))
+    for _ in range(6):                       # must not raise ContractError
+        if not st.step():
+            break
+    types = [r["type"] for r in st.db.q("SELECT type FROM events")]
+    assert "task.worker_failed" in types
+    assert st.db.state("task.project_scaffold") != "RUNNING"

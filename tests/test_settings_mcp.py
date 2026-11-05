@@ -340,3 +340,20 @@ def test_crash_log_is_enabled(tmp_path):
         assert p.exists() and "started" in p.read_text(encoding="utf-8") and faulthandler.is_enabled()
     finally:
         faulthandler.disable()
+
+
+def test_app_does_not_resume_an_unfinished_project_on_open(tmp_path, monkeypatch):
+    from shams.orchestration.project import Shams
+    from apps.api.server import StudioService
+    started = []
+    monkeypatch.setattr(StudioService, "start", lambda self: started.append(self.dir))
+    ws = tmp_path / "ws"
+    proj = ws / "g1"
+    Shams.init_project(proj, "g1", "CLI Python", mode="autonomous", mock_mode=True)
+    st = Shams(proj)
+    st.plan_from_template(goal="CLI Python", approved_by="t")
+    st.close()
+    svc = StudioService(ws)                 # opens the most recent project
+    assert svc.dir == proj and started == []
+    svc.open(proj, resume=True)
+    assert started == [proj]

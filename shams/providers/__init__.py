@@ -229,6 +229,45 @@ class Ollama(OpenAICompatible):
                 "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0)),
                 "load_seconds": round(r.get("load_duration", 0) / 1e9, 3)}
 
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
+        """Tool calls over native /api/chat, so num_ctx and keep_alive apply (the OpenAI-compatible endpoint
+        ignores num_ctx and runs with Ollama's small default context, which cuts long task prompts)."""
+        if not self.native:
+            return super().chat_tools(messages, model=model, tools=tools, **opts)
+        options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
+        if self.num_ctx and "num_ctx" not in options:
+            options["num_ctx"] = self.num_ctx
+        body: dict[str, Any] = {"model": model, "messages": [dict(m) for m in messages], "stream": False,
+                                "keep_alive": self.keep_alive, "options": options}
+        if self.think is not None:
+            body["think"] = self.think
+        if tools:
+            body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+                                                               "parameters": t["input_schema"]}} for t in tools]
+        r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
+        if "error" in r:
+            raise ProviderError(f"ollama: {r['error']}")
+        msg = r.get("message") or {}
+        calls = []
+        for i, c in enumerate(msg.get("tool_calls") or []):
+            fn = c.get("function", {})
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args or "{}")
+                except json.JSONDecodeError:
+                    args = {"_raw": args}
+            calls.append({"id": c.get("id") or f"{fn.get('name')}_{i}", "name": fn.get("name"), "arguments": args})
+        assistant = {"role": "assistant", "content": msg.get("content") or ""}
+        if msg.get("tool_calls"):
+            assistant["tool_calls"] = msg["tool_calls"]
+        return {"text": msg.get("content") or "", "tool_calls": calls, "assistant": assistant,
+                "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0))}
+
+    def tool_results(self, results: list[tuple[dict, str]]) -> list[dict]:
+        return [{"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": text}
+                for call, text in results]
+
     def embed(self, texts: list[str], *, model: str) -> list[list[float]]:
         r = _post_json(f"{self.root}/api/embed", {"model": model, "input": list(texts), "keep_alive": self.keep_alive},
                        self.extra_headers, self.timeout)

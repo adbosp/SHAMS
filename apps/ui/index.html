@@ -188,6 +188,7 @@ textarea.f{width:100%;font-family:var(--mono);font-size:12px;min-height:90px}
         <div class="lbl">Tiến độ</div>
         <div class="big" id="prog">0/0</div>
         <div class="bar"><i id="progbar" style="width:0"></i></div>
+        <button class="btn sm" id="resume" style="display:none;margin-top:8px">Tiếp tục chạy</button>
       </div>
       <div class="blk">
         <div class="lbl">Worker đang chạy</div>
@@ -484,6 +485,7 @@ function render(force){
   const p = S.progress;
   $("prog").textContent = `${p.done}/${p.total}`;
   $("progbar").style.width = p.total ? (100*p.done/p.total)+"%" : "0";
+  $("resume").style.display = (S.project && S.project.id && p.total && p.done < p.total && !S.running) ? "" : "none";
   $("active").textContent = S.active ? S.active.label + (S.active.model ? ` · ${S.active.model}` : "") : (S.running ? "Đang chuyển…" : "—");
   $("gpu").innerHTML = S.active ? (S.active.gpu ? '<span class="badge b-ok">GPU lane</span>' : '<span class="badge b-chip">CPU / API</span>') : "";
   const hw = S.hardware || {}, v = S.vram;
@@ -532,6 +534,12 @@ async function api(path, body, method){
   if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail);
   return r.json();
 }
+document.addEventListener("click", async e => {
+  if (e.target && e.target.id === "resume") {
+    e.target.disabled = true;
+    try { await api("/api/run", {}); } catch (err) { alert(err.message); } finally { e.target.disabled = false; }
+  }
+});
 async function poll(){
   try { S = await api("/api/state"); $("offline").hidden = true; render(false); }
   catch (e) { $("offline").hidden = false; $("conn").textContent = "Disconnected"; $("conn").className = "badge b-bad"; }
