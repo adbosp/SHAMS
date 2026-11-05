@@ -48,6 +48,9 @@ class FakeServer:
                 outer.requests.append({"path": self.path, "body": body, "headers": dict(self.headers)})
                 user = next(m["content"] for m in body["messages"] if m["role"] == "user")
                 text = outer.reply(user)
+                if self.path == "/api/chat":
+                    return self._send(200, {"message": {"role": "assistant", "content": text},
+                                            "prompt_eval_count": 11, "eval_count": 7})
                 if self.path.endswith("/v1/messages"):
                     return self._send(200, {"content": [{"type": "text", "text": text}],
                                             "usage": {"input_tokens": 11, "output_tokens": 7}})
@@ -131,7 +134,7 @@ def test_full_run_with_local_model_server_and_command_tool(tmp_path, server):
     s = st.run()
     assert s["done"] and s["counts"] == {"ACCEPTED": 11}
     assert {r["body"]["model"] for r in server.requests} == {"coder-model:7b"}
-    assert all(r["path"] == "/v1/chat/completions" for r in server.requests)
+    assert all(r["path"] == "/api/chat" for r in server.requests)          # Ollama native chat (think off)
     # Ollama got an explicit load (keep_alive) and a final unload (keep_alive 0) from the Model Lifecycle
     assert server.generate[0]["keep_alive"] == "30m" and server.generate[-1]["keep_alive"] == 0
     h = st.db.handoff("task.player_controller")

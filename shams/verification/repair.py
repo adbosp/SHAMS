@@ -16,7 +16,14 @@ RULES: list[tuple[str, str, str]] = [
     # regex, failure_class, default strategy
     (r"(?i)\berror [A-Z]{1,4}\d{3,5}\b|compil(e|ation) error|syntax ?error|undefined (name|reference|symbol)",
      "compile_error", "fix_in_place"),
-    (r"out of memory", "resource_oom", "retry_same"),
+    (r"(?i)out of memory|CUDA error: out of memory|OOM", "resource_oom", "retry_same"),
+    (r"(?i)GLB invalid|image invalid|image is blank|no UV|no base colour texture|vertices|scale\?|render evidence",
+     "asset_validation", "fix_in_place"),
+    (r"(?i)visual check failed|does not match the description", "visual_mismatch", "fix_in_place"),
+    (r"(?i)tool unavailable|is not installed|model file .* not found|not usable|is not running|cannot reach|"
+     r"program not found",
+     "tool_unavailable", "human_review"),
+    (r"(?i)HTTP \d{3} from|provider error|ollama:", "provider_error", "retry_same"),
     (r"(?i)test(s)? failed", "test_failure", "fix_in_place"),
     (r"\w+Exception", "runtime_exception", "fix_in_place"),
     (r"missing output|hash mismatch", "missing_output", "retry_with_context"),
@@ -27,7 +34,8 @@ RULES: list[tuple[str, str, str]] = [
 ]
 SEVERITY = {"compile_error": "high", "missing_output": "high", "schema_violation": "medium",
             "test_failure": "medium", "runtime_exception": "high", "resource_oom": "medium",
-            "tool_unavailable": "high", "unknown": "medium"}
+            "tool_unavailable": "high", "asset_validation": "medium", "visual_mismatch": "medium",
+            "provider_error": "medium", "unknown": "medium"}
 
 
 def normalize(text: str) -> str:

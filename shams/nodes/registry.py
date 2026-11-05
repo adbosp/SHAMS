@@ -97,6 +97,13 @@ def normalize_worker(w: dict) -> dict:
     return entry
 
 
+def covers(capabilities: list[str], capability: str) -> bool:
+    """Exact match, or a family entry ``prefix.*`` that covers ``prefix.anything``."""
+    if capability in capabilities:
+        return True
+    return any(c.endswith(".*") and capability.startswith(c[:-1]) for c in capabilities)
+
+
 class NodeRegistry:
     def __init__(self, nodes: list[dict] | None = None, workers: list[dict] | None = None):
         self.nodes: dict[str, dict] = {}
@@ -150,7 +157,7 @@ class NodeRegistry:
         for w in self.workers.values():
             pol = w.entry["policy"]
             node = self.nodes.get(w.node_id, {})
-            if (capability in w.capabilities and pol.get("enabled", True) and node.get("enabled", True)
+            if (covers(w.capabilities, capability) and pol.get("enabled", True) and node.get("enabled", True)
                     and w.entry.get("health", {}).get("status", "ok") != "down"):
                 out.append(w)
         return out

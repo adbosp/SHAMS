@@ -95,7 +95,7 @@ class Shams:
                 check = make_mock_check(self.pack.mock_failure_logs())
                 checkers = {k: check for k in MOCK_KINDS}
             else:
-                checkers = {**self.pack.checkers(), **registered_checkers()}
+                checkers = asset_checkers(self.settings, {**self.pack.checkers(), **registered_checkers()})
         self.qc = QCRunner(self.db, self.artifacts, checkers)
         self.classifier = FailureClassifier(self.pack.failure_rules())
         self.repair = RepairRouter(self.db, self.nodes, analysis, repair_policy,
@@ -195,6 +195,32 @@ class Shams:
                           domain=self.pack.name, config=self.domain_config, project_dir=self.dir)
         self.load_plan(dag, approved_by=approved_by)
         return dag
+
+    def plan_from_llm(self, goal: str | None = None, approved_by: str | None = None, *, fallback: bool = True,
+                      max_rounds: int = 3) -> dict:
+        """The planner role writes the DAG (ADR-120); the Plan Validator decides; template as fallback."""
+        from shams.planning import llm_planner
+        goal = goal if goal is not None else self.project.get("goal", "")
+        planners = [w for w in self.nodes.candidates("plan.dag") if w.entry["worker"]["kind"] != "mock"]
+        result = {"dag": None, "issues": ["no planner worker (capability plan.dag)"], "rounds": 0}
+        if planners:
+            w = planners[0]
+            impl = self.worker_impl(w)
+            caps = sorted({c for x in self.nodes.workers.values() for c in x.capabilities})
+            result = llm_planner.plan(impl.provider, w.model, goal=goal, project_id=self.db.project_id,
+                                      capabilities=caps, domain=self.pack.name,
+                                      domain_context=self.pack.domain_context(self.domain_config),
+                                      nodes=self.nodes, max_rounds=max_rounds)
+        with self.db.tx():
+            self.db.append("plan.llm_attempted", "plan", f"plan.{self.db.project_id}", "planner",
+                           payload={"ok": result["dag"] is not None, "rounds": result.get("rounds", 0),
+                                    "issues": result["issues"][:10]})
+        if result["dag"] is not None:
+            self.load_plan(result["dag"], approved_by=approved_by)
+            return result["dag"]
+        if not fallback:
+            raise ValueError("LLM plan invalid:\n" + "\n".join(result["issues"]))
+        return self.plan_from_template(goal=goal, approved_by=approved_by)
 
     def close(self) -> None:
         self.mcp.close()
@@ -430,10 +456,27 @@ class Shams:
         }
 
 
+def asset_checkers(s: dict, fallback: dict) -> dict:
+    """Path-aware checkers selected by criterion.check.type (ADR-120), the pack's checkers as fallback."""
+    from shams.models import ModelRegistry
+    from shams.verification.checkers import AssetCheckers, make_visual_checker
+    visual = None
+    roles = (s.get("models") or {}).get("roles") or {}
+    if "visual_qc" in roles:
+        b = ModelRegistry(s).binding("visual_qc")
+        if b is not None and b.ok:
+            from shams import providers
+            o = (s.get("models") or {}).get("ollama") or {}
+            visual = make_visual_checker(providers.create("ollama", {k: v for k, v in o.items() if k == "base_url"}
+                                                          | {"num_ctx": 8192}), b.model_id)
+    return AssetCheckers(fallback, settings=s, visual=visual).table()
+
+
 def build_registry(s: dict) -> NodeRegistry:
     from shams import hardware
     nodes = [dict(n) for n in s.get("nodes") or []]
-    wks = settings_mod.resolve_workers(s)
+    from shams.models import merge_role_workers
+    wks = merge_role_workers(s)
     declared = {n.get("id") or n.get("node_id") for n in nodes}
     for nid in dict.fromkeys(w.get("node") for w in wks if w.get("node")):
         if nid not in declared:

@@ -270,6 +270,7 @@ def register_worker(name: str, factory: Callable[..., Any]) -> None:
 def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | None = None,
            mcp: Any = None, max_tool_rounds: int = 8) -> Any:
     """Build the implementation for a Capability Registry entry (nodes.toml [[worker]])."""
+    plugins.load_extensions()
     w = entry["worker"]
     cfg = dict(entry.get("provider_config", {}))
     impl = cfg.pop("impl", None)
@@ -291,8 +292,16 @@ def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | 
     raise ValueError(f"{w['worker_id']}: no implementation for kind {w['kind']!r}")
 
 
-_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds"}
+_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds",
+                # tool workers (ADR-120); extensions add theirs with worker_only_keys()
+                "max_fix_rounds", "render_resolution", "render_engine", "workflow", "params", "force"}
+
+
+def worker_only_keys(*keys: str) -> None:
+    """Config keys a custom worker reads that must not reach its provider."""
+    _WORKER_ONLY.update(keys)
 
 
 def _provider_cfg(cfg: dict) -> dict:
     return {k: v for k, v in cfg.items() if k not in _WORKER_ONLY}
+

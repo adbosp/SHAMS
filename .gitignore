@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 projects/*/
 !projects/.gitkeep
+
+# local model assets kept next to the repo (never commit)
+Models/
+stable-fast-3d/
+_selftest/

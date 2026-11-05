@@ -52,6 +52,9 @@ DEFAULTS: dict[str, Any] = {
     "mcp_servers": {},
     "hooks": {},
     "env": {},
+    "models": {"ollama": {"base_url": "http://127.0.0.1:11434", "keep_alive": "10m"}, "auto_workers": True,
+               "node": "node.local", "roles": {}, "aliases": {}},
+    "tools": {},
 }
 
 SECRET_KEY = re.compile(r"(?i)(^|_)(api_?key|token|secret|password|passwd|authorization)$")
@@ -203,6 +206,11 @@ def validate(s: dict) -> list[str]:
     for w in s.get("workers") or []:
         if w.get("connection") and w["connection"] not in conns:
             errs.append(f"workers.{w.get('id')}: unknown connection {w['connection']!r}")
+    from shams.models import ROLE_SPECS
+    for role, r in ((s.get("models") or {}).get("roles") or {}).items():
+        if role not in ROLE_SPECS and not (isinstance(r, dict) and r.get("backend") and r.get("capabilities")):
+            errs.append(f"models.roles.{role}: unknown role; known: {sorted(ROLE_SPECS)} "
+                        f"(a custom role needs backend and capabilities)")
     for pat, hooks in (s.get("hooks") or {}).items():
         for h in hooks if isinstance(hooks, list) else [hooks]:
             if not isinstance(h, dict) or not h.get("command"):

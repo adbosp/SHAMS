@@ -1,0 +1,34 @@
+{
+  "_comment": "Local models by role (ADR-120). Copy into ~/.shams/settings.json (user) or <project>/.shams/settings.json. Model names are preferences: SHAMS maps them onto the IDs Ollama really has (see `shams models`). Paths below are an example Windows layout.",
+  "models": {
+    "ollama": {"base_url": "http://127.0.0.1:11434", "keep_alive": "10m"},
+    "auto_workers": true,
+    "node": "node.local",
+    "roles": {
+      "planner":   {"model": "qwen3.5:9b", "num_ctx": 16384},
+      "coder":     {"model": "qwen2.5-coder:14b", "num_ctx": 16384},
+      "scene3d":   {"model": "qwen3.5-4b-coder:Q8", "num_ctx": 16384},
+      "visual_qc": {"model": "qwen3-vl:4b", "num_ctx": 8192},
+      "embedding": {"model": "qwen3-embedding:0.6b"},
+      "image":     {"backend": "comfyui", "workflow": "sdxl_lightning_4step"},
+      "image_to_3d": {"backend": "stable_fast_3d"}
+    },
+    "aliases": {}
+  },
+  "tools": {
+    "blender": {"path": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"},
+    "comfyui": {
+      "base_url": "http://127.0.0.1:8188",
+      "autostart": true,
+      "launch": ["C:\\AI\\ComfyUI_windows_portable\\python_embeded\\python.exe", "-s", "ComfyUI\\main.py",
+                 "--windows-standalone-build", "--disable-auto-launch"],
+      "launch_cwd": "C:\\AI\\ComfyUI_windows_portable",
+      "params": {"z_image_turbo": {"unet": "z_image_turbo_bf16.safetensors"}}
+    },
+    "stable_fast_3d": {
+      "repo": "C:\\AI\\SHAMS\\stable-fast-3d",
+      "weights": "C:\\AI\\SHAMS\\Models\\StableFast3D",
+      "texture_resolution": 1024
+    }
+  }
+}
