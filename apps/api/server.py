@@ -24,6 +24,7 @@ from shams.orchestration.project import Shams as Studio
 from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
+STATIC_DIR = UI_FILE.parent / "static"
 
 FAMILY_LABEL = {
     "code": "Coding Worker", "integration": "Integration Worker", "plan": "Planner",
@@ -501,6 +502,17 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     @app.get("/")
     def index():
         return FileResponse(UI_FILE, headers={"Cache-Control": "no-store"})
+
+    @app.get("/static/{name}")
+    def static(name: str):
+        f = STATIC_DIR / name
+        if f.parent != STATIC_DIR or not f.is_file():
+            raise HTTPException(404, "not found")
+        return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return FileResponse(STATIC_DIR / "favicon.ico")
 
     @app.get("/api/state")
     def state():

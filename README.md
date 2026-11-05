@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo.png" alt="SHAMS" width="96"></p>
+
 # SHAMS — Sequential Heterogeneous AI Manufacturing System
 
 Hệ thống sản xuất bằng AI dùng chung: một **bộ điều khiển** chia việc theo Task DAG, giao từng việc cho model AI chuyên môn phù hợp (code, reasoning, image, 3D, animation, audio), kiểm thử độc lập và sửa lỗi theo vòng lặp có giới hạn để tạo ra sản phẩm hoàn chỉnh: phần mềm, game, hoặc lĩnh vực bạn tự thêm. Không gắn với một lĩnh vực, một model hay một nhà cung cấp: **mọi model local, mọi API đều gắn thêm được** (ADR-116), **mỗi lĩnh vực là một Domain Pack** (ADR-117).

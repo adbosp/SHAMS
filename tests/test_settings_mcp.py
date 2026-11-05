@@ -305,3 +305,14 @@ def test_parse_windows_counters():
     assert hardware.parse_windows_counters(out) == {"dedicated_mb": 256, "shared_mb": 3072, "utilization_pct": 17}
     assert hardware.parse_windows_counters('{"memory": null, "engines": null}') == {}
     assert hardware.parse_windows_counters("not json") == {}
+
+
+def test_logo_and_favicon_are_served(tmp_path):
+    from fastapi.testclient import TestClient
+    from apps.api.server import create_app
+    c = TestClient(create_app(tmp_path / "ws"))
+    assert 'src="/static/logo.png"' in c.get("/").text
+    r = c.get("/static/logo.png")
+    assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
+    assert c.get("/favicon.ico").status_code == 200
+    assert c.get("/static/..%2Fserver.py").status_code == 404

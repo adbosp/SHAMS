@@ -30,7 +30,7 @@ include = ["shams*", "shams_packs*", "apps*"]
 "shams_packs.game" = ["templates/*.json", "*.toml"]
 "shams_packs.software" = ["templates/*.json"]
 "shams.examples" = ["*.toml", "*.json"]
-"apps.ui" = ["index.html"]
+"apps.ui" = ["index.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
