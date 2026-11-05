@@ -13,7 +13,10 @@
   shams decide <dir> <task_id> accept|retry|fail|cancel|unblock [--note ...]
   shams events <dir> [--task <id>] [--since N]
   shams templates [--dir <dir>]
-  shams ui <dir> [--port 8765] [--mock-delay 0.8]   # main UI at http://127.0.0.1:8765
+  shams ui [workspace|project] [--port 8765] [--no-browser]   # the app at http://127.0.0.1:8765
+  shams hardware [--json]                 # real GPUs / VRAM / RAM / CPU
+  shams settings [<dir>] [--json]         # merged settings (user + project + local), validation
+  shams mcp [<dir>] [--name <server>]     # connect to MCP servers, list tools and permissions
 """
 from __future__ import annotations
 
@@ -82,9 +85,16 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("packs"); a.add_argument("--dir")
     sub.add_parser("providers")
     a = sub.add_parser("nodes"); a.add_argument("dir"); a.add_argument("--check", action="store_true")
-    a = sub.add_parser("ui", help="open the SHAMS main UI (local web server)"); a.add_argument("dir")
+    a = sub.add_parser("ui", help="open the SHAMS app (local web server)")
+    a.add_argument("dir", nargs="?", help="workspace folder or a project folder (default: $SHAMS_WORKSPACE or ~/SHAMS)")
+    a.add_argument("--no-browser", action="store_true", help="do not open the browser")
     a.add_argument("--host", default="127.0.0.1"); a.add_argument("--port", type=int, default=8765)
     a.add_argument("--mock-delay", type=float, default=0.8, help="seconds of simulated work per mock task")
+    a = sub.add_parser("hardware", help="GPUs / VRAM / RAM / CPU of this PC"); a.add_argument("--json", action="store_true")
+    a = sub.add_parser("settings", help="show merged settings (user + project) and check them")
+    a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
+    a = sub.add_parser("mcp", help="connect to the configured MCP servers and list their tools")
+    a.add_argument("dir", nargs="?"); a.add_argument("--name")
     args = p.parse_args(argv)
 
     if args.cmd == "ui":
@@ -93,9 +103,68 @@ def main(argv: list[str] | None = None) -> int:
         except ImportError:
             print('error: install the UI extra first: pip install -e ".[ui]"', file=sys.stderr)
             return 2
-        print(f"SHAMS UI: http://{args.host}:{args.port}  (Ctrl+C to stop)")
-        serve(args.dir, args.host, args.port, args.mock_delay)
+        import os
+        target = args.dir or os.environ.get("SHAMS_WORKSPACE") or str(Path.home() / "SHAMS")
+        print("Ctrl+C to stop")
+        serve(target, args.host, args.port, args.mock_delay, open_browser=False if args.no_browser else None)
         return 0
+    if args.cmd == "hardware":
+        from shams import hardware
+        hw = hardware.detect()
+        if args.json:
+            print(json.dumps(hw, ensure_ascii=False, indent=2))
+            return 0
+        print(f"{hw['hostname']}  {hw['os']}  CPU: {hw['cpu']['name']} ({hw['cpu']['cores']} threads)")
+        ram = hw["ram"]
+        if ram["total_mb"]:
+            print(f"RAM: {ram['total_mb'] / 1024:.1f} GB" + (f" ({ram['available_mb'] / 1024:.1f} GB free)"
+                                                          if ram["available_mb"] else ""))
+        for g in hw["gpus"]:
+            used = f"{g['vram_used_mb'] / 1024:.1f} / " if g["vram_used_mb"] is not None else ""
+            print(f"GPU {g['index']}: {g['name']}  VRAM {used}{g['vram_total_mb'] / 1024:.1f} GB  [{g['source']}]")
+        if not hw["gpus"]:
+            print("GPU: none detected (SHAMS still runs; attach models on another node or use APIs)")
+        return 0
+    if args.cmd == "settings":
+        from shams import settings as settings_mod
+        s = settings_mod.load(args.dir)
+        if args.json:
+            print(json.dumps(s, ensure_ascii=False, indent=2))
+        else:
+            for k, v in settings_mod.sources(args.dir).items():
+                print(f"{k:<8} {v}{'' if Path(v).exists() else '  (not created)'}")
+            print(f"permissions: {s['permissions']['mode']}  allow={s['permissions']['allow']}  deny={s['permissions']['deny']}")
+            print(f"connections: {', '.join(s['connections']) or '-'}")
+            print(f"workers:     {', '.join(w.get('id', '?') for w in s['workers']) or '-'}")
+            print(f"mcp servers: {', '.join(s['mcp_servers']) or '-'}")
+            print(f"hooks:       {', '.join(s['hooks']) or '-'}")
+            for name, ok in settings_mod.env_status(s).items():
+                print(f"env {name}: {'set' if ok else 'NOT SET'}")
+        errs = settings_mod.validate(s)
+        for e in errs:
+            print(f"error: {e}", file=sys.stderr)
+        return 2 if errs else 0
+    if args.cmd == "mcp":
+        from shams import settings as settings_mod
+        from shams.mcp import MCPManager
+        mgr = MCPManager.from_settings(settings_mod.load(args.dir))
+        if args.name:
+            mgr.servers = {k: v for k, v in mgr.servers.items() if k == args.name}
+        if not mgr.servers:
+            print("No MCP servers. Add them in Settings → MCP, or a .mcp.json file (mcpServers).")
+            return 0
+        bad = 0
+        for row in mgr.status():
+            if row["ok"]:
+                print(f"{row['name']:<16} ok   {len(row['tools'])} tools")
+                for t in row["tools"]:
+                    flag = "allowed" if t["allowed"] else "needs permission"
+                    print(f"    {t['qualified']:<48} {flag}{' (read-only)' if t['read_only'] else ''}")
+            else:
+                bad += 1
+                print(f"{row['name']:<16} DOWN {row['error']}")
+        mgr.close()
+        return 1 if bad else 0
 
     if args.cmd == "templates":
         print("\n".join(list_templates(args.dir)))

@@ -92,7 +92,6 @@ td code{font-family:var(--mono);font-size:12px}
 .eng{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;padding:8px 12px;cursor:pointer;text-align:left;font:inherit;min-width:120px}
 .eng b{display:block;font-size:13px}.eng span{font-size:11px;color:var(--muted)}
 .eng[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.demo{font-size:11px;color:var(--warn)}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spin{animation:spin 1s linear infinite;transform-origin:50% 50%}
 @media (max-width:900px){
@@ -105,6 +104,53 @@ td code{font-family:var(--mono);font-size:12px}
   aside{border-left:0;border-top:1px solid var(--border)}
   .center{max-height:none;padding:16px}
 }
+.nav-proj{font-size:12.5px}
+nav .grow{flex:1}
+nav .bottom{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
+.newproj{color:var(--accent)!important}
+.offline{position:fixed;inset:0;background:color-mix(in srgb,var(--bg) 88%,transparent);display:grid;place-items:center;z-index:9}
+.offline[hidden]{display:none}
+.offline .card{background:var(--panel);max-width:460px;text-align:center;padding:24px}
+.offline code{font-family:var(--mono);background:var(--chip);padding:2px 6px;border-radius:6px}
+/* settings */
+.stabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:8px}
+.stabs button{border:0;background:transparent;color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px}
+.stabs button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.scope{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.scope select{font:inherit;font-size:12px}
+.group{border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:0}
+.row .t b{display:block;font-size:13.5px}.row .t span{font-size:12px;color:var(--muted)}
+.row .c{flex:none;display:flex;gap:6px;align-items:center}
+.gtitle{font-weight:600;font-size:13px;margin:6px 0 2px}
+input.f,select.f,textarea.f{font:inherit;font-size:13px;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px 8px}
+textarea.f{width:100%;font-family:var(--mono);font-size:12px;min-height:90px}
+.btn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font:inherit;font-size:13px}
+.btn:hover{background:var(--chip)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:3px 8px;font-size:12px}
+.switch{position:relative;width:40px;height:22px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch i{position:absolute;inset:0;background:var(--chip);border-radius:99px;transition:.2s;cursor:pointer}
+.switch i:before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px #0003}
+.switch input:checked+i{background:var(--accent)}
+.switch input:checked+i:before{transform:translateX(18px)}
+.choice{display:grid;gap:8px}
+.choice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer}
+.choice label.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.choice b{display:block;font-size:13px}.choice span{font-size:12px;color:var(--muted)}
+.formgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;align-items:end}
+.formgrid label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+.note{font-size:12px;color:var(--muted)}
+.msgbar{font-size:12px;padding:6px 10px;border-radius:8px}
+.toolrow{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)}
+.toolrow:last-child{border-bottom:0}
+.gpu-meter{margin-top:6px}
+.center>*{flex-shrink:0}
+.formgrid input.f,.formgrid select.f{width:100%;min-width:0}
+.big.sm{font-size:15px}
 </style>
 </head>
 <body>
@@ -114,42 +160,46 @@ td code{font-family:var(--mono);font-size:12px}
       <div class="brand">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         <h1>SHAMS</h1><span class="full">Sequential Heterogeneous AI Manufacturing System</span>
+        <span class="badge b-chip" id="ver"></span>
       </div>
       <div class="crumb">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-        <b id="pname">—</b><span id="ppath">/ Projects</span>
+        <b id="pname">—</b><span id="ppath"></span>
       </div>
     </div>
     <div class="hright">
-      <span id="demo" class="demo" hidden>Bản demo (không kết nối controller)</span>
-      <span id="wmode" class="badge b-ok">Local Workers</span>
+      <span id="wmode" class="badge b-ok">—</span>
       <button class="iconbtn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
       </button>
     </div>
   </header>
 
   <div class="main">
-    <nav id="nav">
-      <div class="sect">WORKSPACE</div>
-    </nav>
+    <nav id="nav"></nav>
     <section class="center" id="center"></section>
     <aside>
-      <div class="sect" style="padding:0 0 10px">STUDIO STATUS</div>
+      <div class="sect" style="padding:0 0 10px">TRẠNG THÁI</div>
       <div class="blk">
-        <div class="lbl">Progress</div>
+        <div class="lbl">Tiến độ</div>
         <div class="big" id="prog">0/0</div>
         <div class="bar"><i id="progbar" style="width:0"></i></div>
       </div>
       <div class="blk">
-        <div class="lbl">Active Worker</div>
+        <div class="lbl">Worker đang chạy</div>
         <div class="val" id="active">—</div>
         <div style="margin-top:6px" id="gpu"></div>
-        <div class="lbl" style="margin-top:10px" id="vramlbl">VRAM</div>
-        <div class="big" id="vram">—</div>
       </div>
       <div class="blk">
-        <div class="lbl">Next Worker</div>
+        <div class="lbl" id="vramlbl">VRAM</div>
+        <div class="big" id="vram">—</div>
+        <div class="bar gpu-meter"><i id="vrambar" style="width:0"></i></div>
+        <div class="small muted" id="gpuname" style="margin-top:6px"></div>
+        <div class="lbl" style="margin-top:10px">RAM</div>
+        <div class="val" id="ram">—</div>
+      </div>
+      <div class="blk">
+        <div class="lbl">Worker kế tiếp</div>
         <div class="val" id="next">—</div>
       </div>
       <div class="blk" id="reviewblk" hidden>
@@ -160,9 +210,17 @@ td code{font-family:var(--mono);font-size:12px}
   </div>
 
   <footer>
-    <div class="fhead"><b>Execution Console</b><span id="conn" class="badge b-ok">Connected</span></div>
+    <div class="fhead"><b>Console</b><span id="conn" class="badge b-ok">Connected</span></div>
     <div class="console" id="console"></div>
   </footer>
+</div>
+<div class="offline" id="offline" hidden>
+  <div class="card">
+    <h3>Không kết nối được SHAMS</h3>
+    <p class="small muted">Giao diện cần SHAMS server đang chạy trên máy này. Mở terminal và chạy:</p>
+    <p><code>shams ui</code></p>
+    <p class="small muted">Trang sẽ tự kết nối lại.</p>
+  </div>
 </div>
 
 <script>
@@ -174,10 +232,12 @@ const VIEWS = [
   ["artifacts","Artifacts",'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'],
   ["qa","QA Results",'<path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>'],
 ];
+const GEAR = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let view = "chat", S = null, demo = false, sending = false;
-try { view = localStorage.getItem("shams.view") || "chat"; } catch (e) {}
+const gb = mb => (mb/1024).toFixed(mb >= 10240 ? 0 : 1) + " GB";
+let view = "chat", S = null, sending = false, SET = null, stab = "general", scope = "user", flash = null, mcpRows = null, testResults = {};
+try { view = localStorage.getItem("shams.view") || "chat"; stab = localStorage.getItem("shams.stab") || "general"; } catch (e) {}
 try { const t = localStorage.getItem("shams.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 
 $("theme").onclick = () => {
@@ -188,22 +248,28 @@ $("theme").onclick = () => {
   try { localStorage.setItem("shams.theme", nxt); } catch (e) {}
 };
 
+function go(v){ view = v; try{localStorage.setItem("shams.view", v)}catch(e){}; if (v === "settings") loadSettings(); else render(true); }
+
 function navRender(){
   const nav = $("nav");
-  nav.querySelectorAll("button").forEach(b => b.remove());
-  for (const [id, label, icon] of VIEWS){
-    const b = document.createElement("button");
-    b.className = id === view ? "on" : "";
-    let count = "";
-    if (S && id === "workflow") count = S.tasks.length;
-    if (S && id === "artifacts") count = S.artifacts.length;
-    if (S && id === "qa") count = S.qc.length;
-    b.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>${label}${count!==""?`<span class="count">${count}</span>`:""}`;
-    b.onclick = () => { view = id; try{localStorage.setItem("shams.view", id)}catch(e){}; render(); };
-    nav.appendChild(b);
+  const btn = (id, label, icon, count, cls="") => `<button data-v="${id}" class="${id===view?"on":""} ${cls}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>${label}${count!==undefined&&count!==""?`<span class="count">${count}</span>`:""}</button>`;
+  let h = `<div class="sect">DỰ ÁN</div>`;
+  for (const v of VIEWS){
+    const c = v[0]==="workflow" ? S.tasks.length : v[0]==="artifacts" ? S.artifacts.length : v[0]==="qa" ? S.qc.length : "";
+    h += btn(v[0], v[1], v[2], c);
   }
+  h += `<div class="sect" style="margin-top:14px">WORKSPACE</div>`;
+  for (const p of S.projects.slice(0, 12)){
+    const on = p.id === S.project.id;
+    h += `<button class="nav-proj ${on?"on":""}" data-p="${esc(p.id)}" title="${esc(p.goal||p.folder)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc((p.goal||p.folder).slice(0,22))}</button>`;
+  }
+  h += `<button class="newproj" data-new="1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Dự án mới</button>`;
+  h += `<div class="bottom">${btn("settings","Settings",GEAR)}</div>`;
+  nav.innerHTML = h;
+  nav.querySelectorAll("[data-v]").forEach(b => b.onclick = () => go(b.dataset.v));
+  nav.querySelectorAll("[data-p]").forEach(b => b.onclick = () => openProject(b.dataset.p));
+  nav.querySelector("[data-new]").onclick = newProject;
 }
-
 function stateIcon(state){
   if (state === "ACCEPTED") return '<svg class="dot" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>';
   if (["RUNNING","LEASED","QC_PENDING"].includes(state)) return '<svg class="dot spin" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
@@ -310,23 +376,34 @@ function qaView(){
     S.qc.map(q => `<tr><td><code>${esc(q.task_id)}</code></td><td class="small">${esc(q.gate)}</td><td>${q.attempt+1}</td><td><span class="badge ${cls(q.verdict)}">${esc(q.verdict)}</span></td><td>${q.stopped_at_stage ?? "—"}</td><td class="small">${esc((q.ts||"").slice(11,19))}</td></tr>`).join("") + `</table>`;
 }
 
-function render(){
+
+/* ------------------------------------------------------------------ main render */
+function render(force){
   if (!S) return;
   navRender();
+  $("ver").textContent = "v" + (S.version || "");
   $("pname").textContent = S.project.name;
-  $("ppath").textContent = `/ Projects / ${S.project.setup}`;
-  $("wmode").textContent = S.mock_mode ? "Mock Workers" : "Local Workers";
+  $("ppath").textContent = ` / ${S.project.setup}`;
+  $("wmode").textContent = S.mock_mode ? "Chế độ thử (không gọi model)" : "Model thật";
   $("wmode").className = "badge " + (S.mock_mode ? "b-warn" : "b-ok");
-  $("demo").hidden = !demo;
   const p = S.progress;
   $("prog").textContent = `${p.done}/${p.total}`;
   $("progbar").style.width = p.total ? (100*p.done/p.total)+"%" : "0";
-  $("active").textContent = S.active ? S.active.label : (S.running ? "Đang chuyển…" : "—");
-  $("gpu").innerHTML = S.active ? (S.active.gpu ? '<span class="badge b-ok">GPU Active</span>' : '<span class="badge b-chip">CPU</span>') : "";
-  if (S.vram){
-    $("vramlbl").textContent = "VRAM" + (S.vram.simulated ? " (mô phỏng)" : "");
-    $("vram").textContent = `${(S.vram.used_mb/1024).toFixed(1)} / ${(S.vram.total_mb/1024).toFixed(0)} GB`;
-  } else { $("vramlbl").textContent = "VRAM"; $("vram").textContent = "Không GPU"; }
+  $("active").textContent = S.active ? S.active.label + (S.active.model ? ` · ${S.active.model}` : "") : (S.running ? "Đang chuyển…" : "—");
+  $("gpu").innerHTML = S.active ? (S.active.gpu ? '<span class="badge b-ok">GPU lane</span>' : '<span class="badge b-chip">CPU / API</span>') : "";
+  const hw = S.hardware || {}, v = S.vram;
+  if (v){
+    $("vramlbl").textContent = "VRAM" + (v.count > 1 ? ` (GPU 0 / ${v.count})` : "");
+    $("vram").classList.remove("sm");
+    $("vram").textContent = v.used_mb != null ? `${gb(v.used_mb)} / ${gb(v.total_mb)}` : gb(v.total_mb);
+    $("vrambar").style.width = v.used_mb != null && v.total_mb ? (100*v.used_mb/v.total_mb)+"%" : "0";
+    $("gpuname").textContent = v.name + (v.utilization_pct != null ? ` · ${v.utilization_pct}% tải` : "") + (v.used_mb == null ? " · driver không báo VRAM đang dùng" : "");
+  } else {
+    $("vramlbl").textContent = "VRAM"; $("vram").textContent = "Không phát hiện GPU"; $("vram").classList.add("sm"); $("vrambar").style.width = "0";
+    $("gpuname").textContent = "SHAMS vẫn chạy được; gắn model qua API hoặc máy khác.";
+  }
+  const ram = hw.ram || {};
+  $("ram").textContent = ram.total_mb ? (ram.available_mb != null ? `${gb(ram.total_mb - ram.available_mb)} / ${gb(ram.total_mb)}` : gb(ram.total_mb)) : "—";
   $("next").textContent = S.next_worker || "—";
   $("reviewblk").hidden = !S.review.length;
   $("reviewlist").innerHTML = S.review.map(t => `<div class="small" style="margin-bottom:8px"><b>${esc(t.title)}</b> ${badgeFor(t.state)}
@@ -337,14 +414,14 @@ function render(){
   const atBottom = con.scrollTop + con.clientHeight >= con.scrollHeight - 4;
   con.innerHTML = S.console.slice(-60).map(c => `[${esc(c.ts)}] ${esc(c.text)}`).join("<br>") || "—";
   if (atBottom) con.scrollTop = con.scrollHeight;
-  $("conn").textContent = demo ? "Demo" : "Connected";
-  $("conn").className = "badge " + (demo ? "b-warn" : "b-ok");
+  $("conn").textContent = "Connected"; $("conn").className = "badge b-ok";
 
+  if (view === "settings") { if (force) renderSettings(); return; }   // forms are not redrawn by polling
   const center = $("center");
   const focused = document.activeElement && document.activeElement.id === "msg";
   const draft = $("msg") ? $("msg").value : "";
-  center.innerHTML = {chat:chatView, workflow:workflowView, workers:workersView, models:modelsView, artifacts:artifactsView, qa:qaView}[view]();
-  if (view === "chat"){
+  center.innerHTML = ({chat:chatView, workflow:workflowView, workers:workersView, models:modelsView, artifacts:artifactsView, qa:qaView}[view] || chatView)();
+  if (view === "chat" || !VIEWS.find(x => x[0]===view)){
     const input = $("msg"); input.value = draft;
     if (focused) input.focus();
     $("send").disabled = sending;
@@ -353,137 +430,265 @@ function render(){
   }
 }
 
-async function api(path, body){
-  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+async function api(path, body, method){
+  const opt = body !== undefined ? {method: method || "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt);
   if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail);
   return r.json();
 }
 async function poll(){
-  if (demo){ Demo.tick(); S = Demo.state(); render(); return; }
-  try { S = await api("/api/state"); render(); }
-  catch (e) { if (!S) { demo = true; Demo.init(); S = Demo.state(); render(); } else { $("conn").textContent = "Disconnected"; $("conn").className = "badge b-bad"; } }
+  try { S = await api("/api/state"); $("offline").hidden = true; render(false); }
+  catch (e) { $("offline").hidden = false; $("conn").textContent = "Disconnected"; $("conn").className = "badge b-bad"; }
 }
 async function configure(domain, options){
-  try { if (demo) Demo.configure(domain, options); else S = await api("/api/configure", {domain, options}); }
-  catch (e) { alert(e.message); }
-  poll();
+  try { S = await api("/api/configure", {domain, options}); } catch (e) { alert(e.message); }
+  render(true);
 }
 async function send(text){
   if (!text.trim() || sending) return;
   sending = true;
-  try { if (demo) { Demo.chat(text); S = Demo.state(); } else S = await api("/api/chat", {text}); $("msg").value = ""; }
-  catch (e) { alert(e.message); }
-  sending = false; render();
+  try { S = await api("/api/chat", {text}); $("msg").value = ""; } catch (e) { alert(e.message); }
+  sending = false; render(true);
 }
 async function decide(task_id, decision){
-  try { if (demo) Demo.decide(task_id, decision); else S = await api("/api/decide", {task_id, decision}); }
+  try { S = await api("/api/decide", {task_id, decision}); } catch (e) { alert(e.message); }
+  render(true);
+}
+async function openProject(id){
+  try { S = await api("/api/projects/open", {id}); view = "chat"; } catch (e) { alert(e.message); }
+  render(true);
+}
+async function newProject(){
+  const name = prompt("Tên dự án mới (có thể để trống, SHAMS lấy từ câu yêu cầu đầu tiên):", "");
+  if (name === null) return;
+  try { S = name.trim() ? await api("/api/projects", {name}) : await api("/api/projects/close", {}); view = "chat"; }
   catch (e) { alert(e.message); }
-  poll();
+  render(true);
 }
 
-/* ---- Demo mode: opened as a file without the controller. Simulates a pack template (software_basic or vertical_slice_3d). ---- */
-const Demo = (() => {
-  const PACKS = [
-    {id:"software", display:"Software", description:"Software development: apps, libraries, CLIs, APIs, websites", opt:"stack",
-     words:["app","ứng dụng","website","api","cli","library","thư viện","tool","service","backend","dashboard"],
-     choices:[{id:"python", display:"Python", language:"Python", words:["python","django","flask","fastapi"]},
-              {id:"typescript", display:"TypeScript (Node.js)", language:"TypeScript", words:["typescript","node","react","next.js","express"]}],
-     plan:[
-       ["task.project_scaffold","Khởi tạo project","code",[]],
-       ["task.core_module","Module lõi","code",["task.project_scaffold"]],
-       ["task.entrypoint","Điểm vào (CLI/API)","code",["task.project_scaffold"]],
-       ["task.integration","Tích hợp và test","code",["task.core_module","task.entrypoint"]],
-       ["task.package","Đóng gói","tool",["task.integration","task.entrypoint","task.project_scaffold"]],
-     ]},
-    {id:"game", display:"Game", description:"Game development: engine profiles, gameplay templates, engine automation", opt:"engine",
-     words:["game","trò chơi","gameplay","platformer","rpg","fps"],
-     choices:[{id:"unity", display:"Unity", language:"C#", words:["unity"]},
-              {id:"unreal", display:"Unreal Engine 5", language:"C++", words:["ue5","unreal"]},
-              {id:"godot", display:"Godot", language:"GDScript", words:["godot"]},
-              {id:"web", display:"Three.js (WebGPU)", language:"TypeScript", words:["three.js","threejs","webgpu","webgl"]}],
-     plan:[
-       ["task.project_scaffold","Khởi tạo project","code",[]],
-       ["task.player_controller","Điều khiển nhân vật chính 3D","code",["task.project_scaffold"]],
-       ["task.spawner","Hệ thống sinh đối tượng","code",["task.project_scaffold"]],
-       ["task.core_mechanic","Cơ chế gameplay cốt lõi","code",["task.player_controller","task.spawner"]],
-       ["task.hud","HUD trạng thái người chơi","code",["task.core_mechanic"]],
-       ["task.player_model","Mesh nhân vật chính","mesh",[]],
-       ["task.npc_model","Mesh đối tượng phụ / NPC","mesh",[]],
-       ["task.environment_texture","Texture môi trường","image",[]],
-       ["task.sfx_core","Âm thanh hành động chính","audio",[]],
-       ["task.integration_slice1","Tích hợp vertical slice","code",["task.player_controller","task.spawner","task.core_mechanic","task.hud","task.player_model","task.npc_model","task.environment_texture","task.sfx_core"]],
-       ["task.build_game","Build game","tool",["task.integration_slice1"]],
-     ]},
-  ];
-  let domain = "software", choice = {software:"python", game:"unity"};
-  const pack = () => PACKS.find(p => p.id === domain);
-  const cur = () => pack().choices.find(c => c.id === choice[domain]);
-  const score = (p, low) => p.words.filter(w => low.includes(w)).length + (p.choices.some(c => c.words.some(w => low.includes(w))) ? 2 : 0);
-  const LBL = {code:"Coding Worker", mesh:"3D Generator", image:"Image Generator", audio:"Audio Generator", tool:"Build & Test Tools"};
-  const MODEL = {code:"mock-coder", mesh:"mock-mesh", image:"mock-diffusion", audio:"mock-audio", tool:null};
-  let st, n = 0;
-  const ts = () => new Date().toTimeString().slice(0,8);
-  function init(){ st = {chat:[], tasks:[], console:[], loaded:null, cur:null, phase:0, qc:[], arts:[]}; }
-  function log(t, type="x"){ st.console.push({ts:ts(), text:t, type}); }
-  function chat(text){
-    st.chat.push({role:"user", text});
-    if (!st.tasks.length){
-      const low = text.toLowerCase();
-      const best = PACKS.map(p => [p, score(p, low) * (p.id==="game" ? 2 : 1)]).sort((a,b) => b[1]-a[1])[0];
-      if (best[1] > 0) domain = best[0].id;
-      const hit = pack().choices.find(c => c.words.some(w => low.includes(w)));
-      if (hit) choice[domain] = hit.id;
-      const PLAN = pack().plan;
-      st.tasks = PLAN.map(([id,title,fam,deps]) => ({task_id:id, title, fam, depends_on:deps, state:deps.length?"PENDING":"READY", attempt:0}));
-      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho ${pack().display} · ${cur().display}. Đang triển khai.`});
-      log(`Plan created: ${PLAN.length} tasks`);
-    } else st.chat.push({role:"director", text:"Bản demo: yêu cầu bổ sung chưa được xử lý."});
-  }
-  function tick(){
-    if (++n % 2 || !st.tasks.length) return;
-    const T = st.tasks, ok = id => T.find(t=>t.task_id===id).state==="ACCEPTED";
-    T.forEach(t => { if (t.state==="PENDING" && t.depends_on.every(ok)) t.state = "READY"; });
-    if (st.cur){
-      const t = st.cur;
-      if (t.state === "RUNNING"){ t.state = "QC_PENDING"; log(`${t.task_id} handoff saved (attempt ${t.attempt})`); return; }
-      if (t.task_id==="task.spawner" && t.attempt===0){ t.state="READY"; t.attempt=1; st.qc.unshift({task_id:t.task_id,attempt:0,gate:"task_qc",verdict:"FAIL",stopped_at_stage:3,ts:new Date().toISOString()}); log(`QC FAIL ${t.task_id} (stage 3)`); log(`Repair scheduled for ${t.task_id}: fix_in_place`); st.cur=null; return; }
-      t.state = "ACCEPTED"; st.qc.unshift({task_id:t.task_id,attempt:t.attempt,gate:"task_qc",verdict:"PASS",ts:new Date().toISOString()});
-      st.arts.unshift({logical_id:t.task_id.replace("task.","out."),version:1,state:"ACCEPTED",media_type:"demo",sha256:Math.random().toString(16).slice(2).padEnd(12,"0"),produced_task_id:t.task_id});
-      log(`QC PASS ${t.task_id}`); st.cur = null; return;
-    }
-    const ready = T.filter(t => t.state==="READY");
-    if (!ready.length) return;
-    const pick = ready.find(t => MODEL[t.fam] && MODEL[t.fam]===st.loaded) || ready[0];
-    const m = MODEL[pick.fam];
-    if (m && m !== st.loaded){ if (st.loaded) log(`Unloaded ${st.loaded}`, "model.unloaded"); log(`Loading ${m} on gpu:node.mock_gpu:0`, "model.loaded"); st.loaded = m; }
-    pick.state = "RUNNING"; st.cur = pick; log(`Executing task ${pick.task_id}`);
-  }
-  function decide(){}
-  function configure(d, opts){ if (st.tasks.length) return; domain = d; const v = opts[pack().opt]; if (v) choice[domain] = v; }
-  function state(){
-    const T = st.tasks, lbl = {ACCEPTED:"PASS",QC_PENDING:"QC"};
-    const ready = T.filter(t=>t.state==="READY");
-    return {
-      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Dự án mới", domain, domain_display:pack().display,
-        setup:`${pack().display} · ${cur().display}`, selected:{[pack().opt]: choice[domain]}},
-      packs: PACKS.map(p => ({id:p.id, display:p.display, description:p.description,
-        options:{[p.opt]: p.choices.map(({id,display,language}) => ({id,display,language}))}})),
-      mode:"autonomous", mock_mode:true, running:true,
-      progress:{done:T.filter(t=>t.state==="ACCEPTED").length, total:T.length},
-      chat:st.chat, tasks:T.map(t=>({...t, label:lbl[t.state]||t.state, worker:LBL[t.fam], capability:t.fam})),
-      active: st.cur ? {label:LBL[st.cur.fam], gpu:!!MODEL[st.cur.fam]} : null,
-      vram: {used_mb: st.loaded ? 4000 : 0, total_mb: 8192, simulated:true},
-      next_worker: ready[0] ? LBL[ready[0].fam] : null,
-      nodes:[{node_id:"node.controller",kind:"local",cpu_slots:3,gpus:[],profile:"profile.cpu_only"},{node_id:"node.mock_gpu",kind:"local",cpu_slots:0,gpus:[{index:0,vram_mb:8192}],profile:"profile.mock"}],
-      workers:Object.entries(LBL).map(([f,l])=>({worker_id:"worker.mock_"+f,label:l,node_id:MODEL[f]?"node.mock_gpu":"node.controller",lane:MODEL[f]?"gpu":"cpu",model:MODEL[f],capabilities:[f]})),
-      models: st.loaded ? [{lane:"gpu:node.mock_gpu:0", model:st.loaded, worker_id:"worker.mock", loaded_at:""}] : [],
-      artifacts:st.arts, qc:st.qc, console:st.console.slice(-200), review:[],
-    };
-  }
-  return {init, chat, tick, state, decide, configure};
-})();
+/* ------------------------------------------------------------------ settings */
+const STABS = [["general","Chung"],["permissions","Quyền"],["models","Model & API"],["mcp","MCP"],["hooks","Hooks"],["hardware","Phần cứng"],["env","Biến môi trường"],["files","Tệp cấu hình"]];
+const SCOPE_LBL = {user:"Người dùng (mọi dự án)", project:"Dự án (chia sẻ, commit)", local:"Dự án · máy này (không commit)"};
 
-poll();
+async function loadSettings(){
+  try { SET = await api("/api/settings"); } catch (e) { alert(e.message); return; }
+  if (!SET.scopes[scope]) scope = "user";
+  render(true);
+}
+function cur(){ return JSON.parse(JSON.stringify(SET.scopes[scope] || {})); }
+async function saveScope(data, okText){
+  try { SET = await api("/api/settings", {scope, data}, "PUT"); flash = {ok:true, text: okText || "Đã lưu."}; }
+  catch (e) { flash = {ok:false, text: e.message}; }
+  renderSettings();
+}
+function patch(fn, okText){ const d = cur(); fn(d); return saveScope(d, okText); }
+
+function renderSettings(){
+  const c = $("center");
+  if (!SET){ c.innerHTML = `<div class="empty">Đang tải Settings…</div>`; return; }
+  const M = SET.merged;
+  let h = `<div class="ctitle"><h2>Settings</h2><div class="scope">Lưu vào <select class="f" id="scopesel">${Object.keys(SET.scopes).map(s => `<option value="${s}" ${s===scope?"selected":""}>${esc(SCOPE_LBL[s])}</option>`).join("")}</select></div></div>`;
+  h += `<div class="stabs">${STABS.map(([id,l]) => `<button data-s="${id}" class="${id===stab?"on":""}">${l}</button>`).join("")}</div>`;
+  if (flash) h += `<div class="msgbar ${flash.ok?"b-ok":"b-bad"}">${esc(flash.text)}</div>`;
+  if (SET.errors.length) h += `<div class="msgbar b-bad">${SET.errors.map(esc).join("<br>")}</div>`;
+  h += `<div class="note">Đang hiển thị giá trị đã gộp (người dùng → dự án → máy này). Thay đổi được ghi vào phạm vi đang chọn. Khóa API không bao giờ được ghi xuống file.</div>`;
+  h += ({general:sGeneral, permissions:sPerms, models:sModels, mcp:sMcp, hooks:sHooks, hardware:sHardware, env:sEnv, files:sFiles}[stab])(M);
+  c.innerHTML = h;
+  flash = null;
+  $("scopesel").onchange = e => { scope = e.target.value; renderSettings(); };
+  c.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { stab = b.dataset.s; try{localStorage.setItem("shams.stab", stab)}catch(e){}; if (stab==="mcp") mcpRows = null; renderSettings(); });
+  (BIND[stab] || (()=>{}))(M);
+}
+const sw = (id, on) => `<label class="switch"><input type="checkbox" id="${id}" ${on?"checked":""}><i></i></label>`;
+const row = (t, d, ctl) => `<div class="row"><div class="t"><b>${t}</b><span>${d}</span></div><div class="c">${ctl}</div></div>`;
+const sel = (id, opts, v) => `<select class="f" id="${id}">${opts.map(([k,l]) => `<option value="${esc(k)}" ${String(k)===String(v)?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+
+function sGeneral(M){
+  const g = M.general;
+  return `<div class="gtitle">Chung</div><div class="group">` +
+    row("Ngôn ngữ", "Ngôn ngữ giao diện và trả lời", sel("g_lang", [["vi","Tiếng Việt"],["en","English"]], g.language)) +
+    row("Chế độ vận hành mặc định", "Dùng khi tạo dự án mới (ADR-113)", sel("g_mode", [["guided","Guided: duyệt plan"],["autonomous","Autonomous: tự chạy"],["collaborative","Collaborative: duyệt từng bước"]], g.default_mode)) +
+    row("Lĩnh vực mặc định", "Khi yêu cầu không nói rõ", sel("g_dom", [["","Tự nhận diện"], ...S.packs.map(p => [p.id, p.display])], g.default_domain || "")) +
+    row("Chế độ thử (không gọi model)", "Tự động: bật khi chưa có worker nào; Bật: luôn dùng; Tắt: luôn dùng model thật", sel("g_mock", [["auto","Tự động"],["on","Bật"],["off","Tắt"]], g.mock)) +
+    row("Số vòng gọi tool tối đa", "Mỗi lần worker LLM làm việc với MCP", `<input class="f" id="g_rounds" type="number" min="0" max="50" value="${g.max_tool_rounds}" style="width:80px">`) +
+    row("Mở trình duyệt khi chạy shams ui", "", sw("g_browser", g.open_browser)) +
+    `</div><div class="actions"><button class="btn primary" id="g_save">Lưu</button></div>`;
+}
+function sPerms(M){
+  const p = M.permissions, opt = [
+    ["default","Mặc định","Worker chỉ dùng tool chỉ-đọc (readOnlyHint) và tool trong danh sách cho phép."],
+    ["full_access","Toàn quyền","Worker dùng mọi tool MCP, trừ danh sách cấm. Tăng rủi ro mất hoặc lộ dữ liệu."],
+    ["read_only","Chỉ đọc","Chỉ tool chỉ-đọc. Không tool nào được thay đổi hệ thống bên ngoài."]];
+  return `<div class="gtitle">Quyền dùng tool</div><div class="choice">` +
+    opt.map(([k,t,d]) => `<label class="${p.mode===k?"on":""}"><input type="radio" name="pmode" value="${k}" ${p.mode===k?"checked":""}><div><b>${t}</b><span>${d}</span></div></label>`).join("") +
+    `</div><div class="formgrid" style="grid-template-columns:1fr 1fr"><label>Cho phép (mỗi dòng một mẫu, vd. mcp__github__*)<textarea class="f" id="p_allow">${esc(p.allow.join("\n"))}</textarea></label>
+     <label>Cấm (luôn thắng)<textarea class="f" id="p_deny">${esc(p.deny.join("\n"))}</textarea></label></div>
+     <div class="actions"><button class="btn primary" id="p_save">Lưu</button></div>`;
+}
+function sModels(M){
+  const conns = Object.entries(M.connections || {});
+  let h = `<div class="gtitle">Kết nối model / API</div><div class="note">Một kết nối = một server model local (Ollama, llama.cpp, LM Studio, vLLM…) hoặc một API (OpenAI, Anthropic, Gemini, OpenRouter…). Worker dùng lại kết nối.</div><div class="group">`;
+  h += conns.map(([n,c]) => {
+    const t = testResults[n];
+    const res = t ? (t.ok ? `<span class="badge b-ok">OK · ${t.models.length} model</span>` : `<span class="badge b-bad" title="${esc(t.error||t.health)}">Lỗi</span>`) : "";
+    return row(esc(n), `${esc(c.provider)}${c.base_url?` · ${esc(c.base_url)}`:""}${c.api_key_env?` · key: $${esc(c.api_key_env)} ${SET.env[c.api_key_env]?"✓":"(chưa đặt)"}`:""}${t && t.error ? `<br><span style="color:var(--bad)">${esc(t.error)}</span>` : ""}`,
+      `${res}<button class="btn sm" data-test="${esc(n)}">Kiểm tra</button><button class="btn sm danger" data-delconn="${esc(n)}">Xóa</button>`);
+  }).join("") || `<div class="row"><div class="t"><span>Chưa có kết nối.</span></div></div>`;
+  h += `</div><div class="formgrid">
+    <label>Tên<input class="f" id="c_name" placeholder="vd. ollama_local"></label>
+    <label>Provider${sel("c_prov", SET.providers.map(p => [p,p]), "ollama")}</label>
+    <label>Base URL<input class="f" id="c_url" placeholder="mặc định của provider"></label>
+    <label>Biến môi trường chứa key<input class="f" id="c_env" placeholder="vd. OPENAI_API_KEY"></label>
+    <button class="btn primary" id="c_add">Thêm kết nối</button></div>`;
+  const ws = M.workers || [];
+  const caps = [...new Set(S.tasks.map(t => t.capability))];
+  const servers = Object.keys(M.mcp_servers || {});
+  h += `<div class="gtitle" style="margin-top:14px">Worker</div><div class="note">Worker = model + capability nó nhận (code.python, code.unity_csharp, image.texture…). SHAMS giao mỗi nhiệm vụ cho worker có đúng capability.${caps.length?` Dự án này cần: <code>${esc(caps.join(", "))}</code>`:""}</div><div class="group">`;
+  h += ws.map(w => row(esc(w.id), `${esc(w.connection || w.provider || "")} · ${esc(w.model || "")} · ${esc(w.node||"")}/${esc(w.lane||"cpu")} · ${esc((w.capabilities||[]).join(", "))}${w.mcp?` · MCP: ${esc([].concat(w.mcp).join(", "))}`:""}`,
+      `<label class="switch" title="Bật/tắt"><input type="checkbox" data-wen="${esc(w.id)}" ${w.enabled===false?"":"checked"}><i></i></label><button class="btn sm danger" data-delw="${esc(w.id)}">Xóa</button>`)).join("") ||
+    `<div class="row"><div class="t"><span>Chưa có worker. Khi chưa có worker, dự án mới chạy chế độ thử.</span></div></div>`;
+  const models = Object.values(testResults).flatMap(t => t.models || []);
+  h += `</div><div class="formgrid">
+    <label>ID<input class="f" id="w_id" placeholder="vd. worker.coder"></label>
+    <label>Kết nối${sel("w_conn", conns.map(([n]) => [n,n]), conns[0]?.[0])}</label>
+    <label>Model<input class="f" id="w_model" list="w_models" placeholder="vd. qwen2.5-coder:14b"><datalist id="w_models">${models.map(m => `<option value="${esc(m)}">`).join("")}</datalist></label>
+    <label>Máy${sel("w_node", [["node.local","PC này"],["node.cloud","API (cloud)"]], "node.local")}</label>
+    <label>Lane${sel("w_lane", [["gpu","GPU"],["cpu","CPU"],["external","API"]], "gpu")}</label>
+    <label>VRAM ước tính (MB)<input class="f" id="w_vram" type="number" placeholder="vd. 9000"></label>
+    <label style="grid-column:span 2">Capabilities (phẩy ngăn cách)<input class="f" id="w_caps" value="${esc(caps.filter(c => !c.startsWith("build")).join(", "))}"></label>
+    <label style="grid-column:span 2">Tool MCP được dùng${servers.length ? `<span>${servers.map(s => `<label style="display:inline-flex;gap:4px;margin-right:10px"><input type="checkbox" class="w_mcp" value="${esc(s)}">${esc(s)}</label>`).join("")}</span>` : `<span class="note">Chưa có MCP server</span>`}</label>
+    <button class="btn primary" id="w_add">Thêm worker</button></div>`;
+  return h;
+}
+function sMcp(M){
+  const servers = Object.entries(M.mcp_servers || {});
+  let h = `<div class="gtitle">MCP servers</div><div class="note">Model Context Protocol: cho worker dùng tool bên ngoài (file, GitHub, database, trình duyệt, editor engine…). Tương thích file <code>.mcp.json</code> (mcpServers) của Claude Code.</div><div class="group">`;
+  h += servers.map(([n,s]) => {
+    const st = mcpRows && mcpRows.find(r => r.name === n);
+    const badge = !mcpRows ? `<span class="badge b-chip">Đang kiểm tra…</span>` : st && st.ok ? `<span class="badge b-ok">${st.tools.length} tool</span>` : `<span class="badge b-bad">Lỗi</span>`;
+    const tools = st && st.ok ? `<div style="margin-top:6px">${st.tools.map(t => `<div class="toolrow"><code>${esc(t.qualified)}</code><span>${t.read_only?'<span class="badge b-chip">chỉ đọc</span> ':""}${t.allowed?'<span class="badge b-ok">được dùng</span>':`<button class="btn sm" data-allow="${esc(t.qualified)}">Cho phép</button>`}</span></div>`).join("")}</div>` : st && st.error ? `<br><span style="color:var(--bad)">${esc(st.error)}</span>` : "";
+    return `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><div class="t"><b>${esc(n)}</b><span>${esc(s.type||"stdio")} · ${esc(s.url || [s.command, ...(s.args||[])].join(" "))}</span></div><div class="c">${badge}<label class="switch"><input type="checkbox" data-men="${esc(n)}" ${s.enabled===false?"":"checked"}><i></i></label><button class="btn sm danger" data-delm="${esc(n)}">Xóa</button></div></div>${tools}</div>`;
+  }).join("") || `<div class="row"><div class="t"><span>Chưa có MCP server.</span></div></div>`;
+  h += `</div><div class="formgrid">
+    <label>Tên<input class="f" id="m_name" placeholder="vd. filesystem"></label>
+    <label>Kiểu${sel("m_type", [["stdio","stdio (chạy chương trình)"],["http","HTTP (URL)"]], "stdio")}</label>
+    <label>Lệnh<input class="f" id="m_cmd" placeholder="vd. npx"></label>
+    <label style="grid-column:span 2">Tham số (mỗi dòng một)<textarea class="f" id="m_args" style="min-height:52px" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\\Projects"></textarea></label>
+    <label>URL<input class="f" id="m_url" placeholder="https://…/mcp"></label>
+    <label style="grid-column:span 2">Header / env (KEY=value, dùng \${VAR} cho bí mật)<textarea class="f" id="m_kv" style="min-height:52px" placeholder="Authorization=Bearer \${GITHUB_TOKEN}"></textarea></label>
+    <button class="btn primary" id="m_add">Thêm MCP server</button></div>`;
+  return h;
+}
+function sHooks(M){
+  const hooks = Object.entries(M.hooks || {});
+  let h = `<div class="gtitle">Hooks</div><div class="note">Chạy lệnh của bạn khi có sự kiện. Lệnh nhận sự kiện dạng JSON qua stdin và biến <code>SHAMS_EVENT</code>. Mẫu dùng glob: <code>task.*</code>, <code>qc.failed</code>, <code>run.finished</code>, <code>*</code>.</div><div class="group">`;
+  h += hooks.flatMap(([pat, list]) => [].concat(list).map((x, i) => row(`<code>${esc(pat)}</code>`, esc([].concat(x.command).join(" ")), `<button class="btn sm danger" data-delh="${esc(pat)}" data-i="${i}">Xóa</button>`))).join("") ||
+    `<div class="row"><div class="t"><span>Chưa có hook.</span></div></div>`;
+  h += `</div><div class="formgrid">
+    <label>Sự kiện<input class="f" id="h_pat" list="h_list" placeholder="run.finished"><datalist id="h_list">${["run.finished","plan.created","task.*","qc.failed","qc.passed","repair.exhausted","task.blocked","human.decided","*"].map(x => `<option value="${x}">`).join("")}</datalist></label>
+    <label style="grid-column:span 2">Lệnh<input class="f" id="h_cmd" placeholder="vd. git add -A && git commit -m &quot;SHAMS build&quot;"></label>
+    <label>Timeout (giây)<input class="f" id="h_to" type="number" value="60"></label>
+    <button class="btn primary" id="h_add">Thêm hook</button></div>`;
+  return h;
+}
+function sHardware(M){
+  const hw = S.hardware || {};
+  let h = `<div class="gtitle">Phần cứng của PC này (đọc thật)</div><div class="group">`;
+  h += row("Máy", esc(`${hw.hostname||""} · ${hw.os||""}`), "");
+  h += row("CPU", esc(`${hw.cpu?.name||""} · ${hw.cpu?.cores||"?"} luồng`), "");
+  h += row("RAM", hw.ram?.total_mb ? `${gb(hw.ram.total_mb)}${hw.ram.available_mb!=null?` · còn trống ${gb(hw.ram.available_mb)}`:""}` : "Không đọc được", "");
+  h += (hw.gpus||[]).map(g => row(`GPU ${g.index}: ${esc(g.name)}`, `VRAM ${g.vram_used_mb!=null?`${gb(g.vram_used_mb)} / `:""}${gb(g.vram_total_mb)}${g.utilization_pct!=null?` · ${g.utilization_pct}% tải`:""} · nguồn: ${esc(g.source)}${g.driver?` · driver ${esc(g.driver)}`:""}`, "")).join("") ||
+    row("GPU", "Không phát hiện GPU. SHAMS vẫn chạy; gắn model qua API hoặc máy khác trong mạng.", "");
+  const nodes = M.nodes || [];
+  h += `</div><div class="gtitle" style="margin-top:12px">Node đã khai báo</div><div class="group">` +
+    (nodes.map(n => row(esc(n.id), `${esc(n.kind)} · ${(n.gpus||[]).map(g => `GPU ${g.index} ${gb(g.vram_mb)}`).join(", ") || "không GPU"}`, `<button class="btn sm danger" data-deln="${esc(n.id)}">Xóa</button>`)).join("") ||
+     `<div class="row"><div class="t"><span>Chưa khai báo. Worker trên <code>node.local</code> sẽ tự dùng phần cứng thật của PC này.</span></div></div>`) +
+    `</div><div class="actions"><button class="btn" id="hw_add">Khai báo PC này là node.local</button></div>`;
+  return h;
+}
+function sEnv(M){
+  const env = Object.entries(SET.env);
+  let h = `<div class="gtitle">Khóa API và biến được tham chiếu</div><div class="note">Khóa nhập ở đây chỉ nằm trong bộ nhớ của SHAMS đang chạy, không ghi xuống đĩa. Muốn lưu lâu dài, đặt biến môi trường của Windows (setx TEN_BIEN giá_trị) rồi mở lại SHAMS.</div><div class="group">`;
+  h += env.map(([n, ok]) => row(`<code>${esc(n)}</code>`, ok ? "Đã đặt" : "Chưa đặt", `${ok?'<span class="badge b-ok">✓</span>':""}<input class="f" type="password" data-sec="${esc(n)}" placeholder="dán khóa" style="width:200px"><button class="btn sm" data-secbtn="${esc(n)}">Đặt cho phiên này</button>`)).join("") ||
+    `<div class="row"><div class="t"><span>Chưa có biến nào được tham chiếu.</span></div></div>`;
+  const kv = Object.entries(M.env || {}).map(([k,v]) => `${k}=${v}`).join("\n");
+  h += `</div><div class="gtitle" style="margin-top:12px">Biến môi trường không bí mật (cho worker, hook, MCP)</div>
+    <textarea class="f" id="e_kv" placeholder="UNITY_PATH=C:\\Program Files\\Unity\\Editor\\Unity.exe">${esc(kv)}</textarea>
+    <div class="actions"><button class="btn primary" id="e_save">Lưu</button></div>`;
+  return h;
+}
+function sFiles(M){
+  let h = `<div class="gtitle">Tệp cấu hình</div><div class="group">` +
+    Object.entries(SET.sources).map(([k,v]) => row(esc(k), `<code>${esc(v)}</code>`, "")).join("") + `</div>`;
+  h += `<div class="gtitle" style="margin-top:12px">Sửa trực tiếp JSON · ${esc(SCOPE_LBL[scope])}</div>
+    <textarea class="f" id="raw" style="min-height:260px">${esc(JSON.stringify(SET.scopes[scope] || {}, null, 2))}</textarea>
+    <div class="actions"><button class="btn primary" id="raw_save">Lưu JSON</button></div>`;
+  return h;
+}
+const lines = id => $(id).value.split("\n").map(s => s.trim()).filter(Boolean);
+const kvs = id => Object.fromEntries(lines(id).map(l => { const i = l.indexOf("="); return i > 0 ? [l.slice(0,i).trim(), l.slice(i+1).trim()] : null; }).filter(Boolean));
+const BIND = {
+  general(){ $("g_save").onclick = () => patch(d => { d.general = {...(d.general||{}), language:$("g_lang").value, default_mode:$("g_mode").value,
+      default_domain:$("g_dom").value || null, mock:$("g_mock").value, max_tool_rounds:+$("g_rounds").value, open_browser:$("g_browser").checked}; }); },
+  permissions(){
+    document.querySelectorAll("[name=pmode]").forEach(r => r.onchange = () => document.querySelectorAll(".choice label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked)));
+    $("p_save").onclick = () => patch(d => { d.permissions = {mode: document.querySelector("[name=pmode]:checked").value, allow: lines("p_allow"), deny: lines("p_deny")}; });
+  },
+  models(){
+    const prov = $("c_prov"), fill = () => { const p = SET.presets[prov.value] || {}; $("c_url").placeholder = p.base_url || "mặc định của provider"; $("c_env").placeholder = p.api_key_env || "(không cần với server local)"; };
+    prov.onchange = fill; fill();
+    $("c_add").onclick = () => { const n = $("c_name").value.trim(); if (!n) return alert("Nhập tên kết nối");
+      const c = {provider: prov.value}; if ($("c_url").value.trim()) c.base_url = $("c_url").value.trim(); if ($("c_env").value.trim()) c.api_key_env = $("c_env").value.trim();
+      patch(d => { d.connections = {...(d.connections||{}), [n]: c}; }, `Đã thêm kết nối ${n}.`); };
+    document.querySelectorAll("[data-test]").forEach(b => b.onclick = async () => { b.textContent = "…";
+      try { testResults[b.dataset.test] = await api("/api/connections/test", {name: b.dataset.test}); } catch (e) { testResults[b.dataset.test] = {ok:false, error:e.message, models:[]}; }
+      renderSettings(); });
+    document.querySelectorAll("[data-delconn]").forEach(b => b.onclick = () => patch(d => { delete (d.connections||{})[b.dataset.delconn]; }, "Đã xóa (chỉ xóa được trong phạm vi đang chọn)."));
+    document.querySelectorAll("[data-delw]").forEach(b => b.onclick = () => patch(d => { d.workers = (d.workers||[]).filter(w => w.id !== b.dataset.delw); }, "Đã xóa worker (trong phạm vi đang chọn)."));
+    document.querySelectorAll("[data-wen]").forEach(b => b.onchange = () => patch(d => { d.workers = d.workers || []; let w = d.workers.find(x => x.id === b.dataset.wen); if (!w) d.workers.push(w = {id: b.dataset.wen}); w.enabled = b.checked; }));
+    $("w_add").onclick = () => { const id = $("w_id").value.trim(), conn = $("w_conn").value, caps = $("w_caps").value.split(",").map(s => s.trim()).filter(Boolean);
+      if (!id || !conn || !caps.length) return alert("Cần ID, kết nối và ít nhất một capability");
+      const w = {id, connection: conn, model: $("w_model").value.trim(), node: $("w_node").value, lane: $("w_lane").value, capabilities: caps};
+      if (+$("w_vram").value) w.vram_mb = +$("w_vram").value;
+      const mcp = [...document.querySelectorAll(".w_mcp:checked")].map(x => x.value); if (mcp.length) w.mcp = mcp;
+      patch(d => { d.workers = [...(d.workers||[]).filter(x => x.id !== id), w]; }, `Đã thêm worker ${id}.`); };
+  },
+  async mcp(){
+    document.querySelectorAll("[data-delm]").forEach(b => b.onclick = () => patch(d => { delete (d.mcp_servers||{})[b.dataset.delm]; mcpRows = null; }, "Đã xóa (trong phạm vi đang chọn)."));
+    document.querySelectorAll("[data-men]").forEach(b => b.onchange = () => patch(d => { d.mcp_servers = d.mcp_servers || {}; d.mcp_servers[b.dataset.men] = {...(d.mcp_servers[b.dataset.men] || SET.merged.mcp_servers[b.dataset.men]), enabled: b.checked}; mcpRows = null; }));
+    document.querySelectorAll("[data-allow]").forEach(b => b.onclick = () => patch(d => { d.permissions = d.permissions || {}; d.permissions.allow = [...new Set([...(d.permissions.allow||[]), b.dataset.allow])]; mcpRows = null; }, `Đã cho phép ${b.dataset.allow}.`));
+    $("m_add").onclick = () => { const n = $("m_name").value.trim(), t = $("m_type").value; if (!n) return alert("Nhập tên");
+      const s = {type: t}; const kv = kvs("m_kv");
+      if (t === "stdio"){ s.command = $("m_cmd").value.trim(); s.args = lines("m_args"); if (Object.keys(kv).length) s.env = kv; }
+      else { s.url = $("m_url").value.trim(); if (Object.keys(kv).length) s.headers = kv; }
+      mcpRows = null; patch(d => { d.mcp_servers = {...(d.mcp_servers||{}), [n]: s}; }, `Đã thêm MCP server ${n}.`); };
+    if (mcpRows === null && Object.keys(SET.merged.mcp_servers || {}).length){
+      mcpRows = undefined;
+      try { mcpRows = await api("/api/mcp"); } catch (e) { mcpRows = []; }
+      if (view === "settings" && stab === "mcp") renderSettings();
+    }
+  },
+  hooks(){
+    document.querySelectorAll("[data-delh]").forEach(b => b.onclick = () => patch(d => { const l = [].concat((d.hooks||{})[b.dataset.delh] || []); l.splice(+b.dataset.i, 1); if (l.length) d.hooks[b.dataset.delh] = l; else delete d.hooks[b.dataset.delh]; }, "Đã xóa hook (trong phạm vi đang chọn)."));
+    $("h_add").onclick = () => { const p = $("h_pat").value.trim(), c = $("h_cmd").value.trim(); if (!p || !c) return alert("Cần sự kiện và lệnh");
+      patch(d => { d.hooks = d.hooks || {}; d.hooks[p] = [...[].concat(d.hooks[p] || []), {command: c, timeout: +$("h_to").value || 60}]; }, "Đã thêm hook."); };
+  },
+  hardware(){
+    document.querySelectorAll("[data-deln]").forEach(b => b.onclick = () => patch(d => { d.nodes = (d.nodes||[]).filter(n => n.id !== b.dataset.deln); }));
+    $("hw_add").onclick = () => { const hw = S.hardware;
+      const node = {id:"node.local", kind:"local", cpu_slots: Math.max(1, Math.min(4, Math.floor(hw.cpu.cores/4))), gpus: hw.gpus.map(g => ({index:g.index, vram_mb:g.vram_total_mb, name:g.name}))};
+      patch(d => { d.nodes = [...(d.nodes||[]).filter(n => n.id !== "node.local"), node]; }, "Đã khai báo PC này là node.local."); };
+  },
+  env(){
+    document.querySelectorAll("[data-secbtn]").forEach(b => b.onclick = async () => { const n = b.dataset.secbtn, v = document.querySelector(`[data-sec="${n}"]`).value;
+      if (!v) return; try { await api("/api/secret", {name:n, value:v}); flash = {ok:true, text:`Đã đặt ${n} cho phiên này (không ghi xuống đĩa).`}; } catch (e) { flash = {ok:false, text:e.message}; }
+      loadSettings(); });
+    $("e_save").onclick = () => patch(d => { d.env = kvs("e_kv"); });
+  },
+  files(){ $("raw_save").onclick = () => { let data; try { data = JSON.parse($("raw").value || "{}"); } catch (e) { flash = {ok:false, text:"JSON không hợp lệ: " + e.message}; return renderSettings(); } saveScope(data); }; },
+};
+
+poll().then(() => { if (view === "settings") loadSettings(); });
 setInterval(poll, 1000);
 </script>
 </body>

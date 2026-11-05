@@ -60,7 +60,8 @@
             "minimum": 0
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Display name, e.g. from hardware detection"
           },
           "vram_mb": {
             "type": "integer",

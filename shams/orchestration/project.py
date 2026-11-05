@@ -14,7 +14,12 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+import os
+
 from shams import contracts, packs
+from shams import settings as settings_mod
+from shams.hooks import HookRunner
+from shams.mcp import MCPManager
 from shams.artifacts.registry import ArtifactRegistry, ImpactAnalyzer
 from shams.context.compiler import ContextCompiler
 from shams.events.store import EventStore
@@ -65,6 +70,12 @@ class Shams:
         self.pack.activate(self.dir)
         cfg["domain"], cfg["domain_config"] = self.pack.name, self.pack.normalize_config(dcfg, self.dir)
         cfg.pop("engine", None)
+        self.settings = settings_mod.load(self.dir)
+        for k, v in (self.settings.get("env") or {}).items():       # non-secret env (ADR-118)
+            os.environ.setdefault(k, str(v))
+        self.mcp = MCPManager.from_settings(self.settings)
+        self.hooks = HookRunner(self.settings.get("hooks"), self.dir, self.settings.get("env"))
+        self.hooks.last_seq = self.db.q1("SELECT COALESCE(MAX(seq),0) FROM events")[0]
         self.artifacts = ArtifactRegistry(self.db, self.dir / "artifacts")
         self.impact = ImpactAnalyzer(self.db, self.artifacts)
         caps = {t["capability"] for t in self.db.tasks()}
@@ -186,6 +197,7 @@ class Shams:
         return dag
 
     def close(self) -> None:
+        self.mcp.close()
         self.db.close()
         self._ckpt_conn.close()
 
@@ -228,12 +240,11 @@ class Shams:
         return next(l for l in self.nodes.lanes() if l.lane_id == lane_id)
 
     def _load_nodes(self) -> NodeRegistry:
-        """nodes.toml in the project, else $SHAMS_HOME/nodes.toml (ADR-114/116). Empty if neither exists."""
-        from shams.plugins import shams_home
-        for p in (self.dir / "nodes.toml", shams_home() / "nodes.toml"):
-            if p.exists():
-                return NodeRegistry.from_toml(p)
-        return NodeRegistry()
+        """Nodes and workers from settings (which include nodes.toml, ADR-114/116/118).
+
+        A worker may name a node nobody declared: ``node.local`` is then filled from the real hardware
+        of this PC, any other id becomes an ``external`` node (remote API)."""
+        return build_registry(self.settings)
 
     def worker_impl(self, worker: Worker):
         if worker.entry["worker"]["kind"] == "mock":
@@ -241,7 +252,8 @@ class Shams:
         impl = self._impls.get(worker.worker_id)
         if impl is None:
             from shams import workers
-            impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path)
+            impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path,
+                                  mcp=self.mcp, max_tool_rounds=int(self.settings["general"].get("max_tool_rounds", 8)))
             self._impls[worker.worker_id] = impl
         return impl
 
@@ -387,6 +399,13 @@ class Shams:
                                "lane_id": a.lane.lane_id, "worker_id": a.worker.worker_id, "trace": []},
                               task_runner.config(a.task_id, a.attempt))
             progressed = True
+        if self.hooks:
+            extra = []
+            if not progressed and self.db.tasks():
+                s = self.status()
+                extra.append({"type": "run.finished", "subject_id": self.db.project_id, "payload":
+                              {"done": s["done"], "counts": s["counts"]}})
+            self.hooks.dispatch(self.db, extra)
         return progressed
 
     def run(self, max_steps: int = 500) -> dict:
@@ -409,6 +428,19 @@ class Shams:
             "events": self.db.q1("SELECT COUNT(*) FROM events")[0],
             "done": all(S(t["state"]) in {S.ACCEPTED, S.CANCELED} for t in tasks) and bool(tasks),
         }
+
+
+def build_registry(s: dict) -> NodeRegistry:
+    from shams import hardware
+    nodes = [dict(n) for n in s.get("nodes") or []]
+    wks = settings_mod.resolve_workers(s)
+    declared = {n.get("id") or n.get("node_id") for n in nodes}
+    for nid in dict.fromkeys(w.get("node") for w in wks if w.get("node")):
+        if nid not in declared:
+            nodes.append({k: v for k, v in hardware.local_node(node_id=nid).items()} if nid == "node.local"
+                         else {"id": nid, "kind": "external"})
+            declared.add(nid)
+    return NodeRegistry.from_dict({"node": nodes, "worker": wks})
 
 
 Studio = Shams      # pre-V2.0 name, kept for compatibility

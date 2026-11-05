@@ -7,6 +7,14 @@ from shams.planning.validator import instantiate
 PID = "game_mvp"
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path, monkeypatch):
+    """User-level settings / nodes.toml of the machine running the tests must not leak in."""
+    home = tmp_path / "_shams_home"
+    monkeypatch.setenv("SHAMS_HOME", str(home))
+    return home
+
+
 @pytest.fixture
 def make_studio(tmp_path):
     def _make(defects=None, mode="guided", plan=True, **kw):

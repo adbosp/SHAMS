@@ -94,7 +94,8 @@ def extract_json(text: str) -> dict:
 
 class LLMWorker:
     def __init__(self, *, entry: dict, attempts_root: Path, provider: Any,
-                 read_blob: Callable[[str], Path] | None = None, system_prompt: str | None = None, **_: Any):
+                 read_blob: Callable[[str], Path] | None = None, system_prompt: str | None = None,
+                 mcp: Any = None, max_tool_rounds: int = 8, **_: Any):
         self.entry = entry
         self.model = entry["worker"].get("model") or ""
         self.provider = provider
@@ -103,6 +104,10 @@ class LLMWorker:
         cfg = entry.get("provider_config", {})
         self.system_prompt = system_prompt or cfg.get("system_prompt") or SYSTEM_PROMPT
         self.chat_options = dict(cfg.get("chat_options", {}))
+        self.mcp = mcp                                  # shams.mcp.MCPManager (ADR-118)
+        self.mcp_servers = cfg.get("mcp")               # ["github", ...] | "all" | None
+        self.max_tool_rounds = int(cfg.get("max_tool_rounds", max_tool_rounds))
+        self.tool_log: list[dict] = []
 
     def _input_payload(self, ctx: dict) -> list[dict]:
         out = []
@@ -141,7 +146,11 @@ class LLMWorker:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", f"cannot produce binary outputs {binary}",
                                     blocked_reason=f"{worker_ref['worker_id']} only writes text; route "
                                                    f"{binary} to a generator (command/plugin) worker")
-        r = providers.timed_chat(self.provider, self.prompt(ctx, plan), self.model, **self.chat_options)
+        messages = self.prompt(ctx, plan)
+        if self.mcp is not None and self.mcp_servers and getattr(self.provider, "supports_tools", False):
+            r = self._chat_with_tools(messages)
+        else:
+            r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
                  "wall_seconds": r.get("wall_seconds", 0.0)}
         try:
@@ -162,9 +171,39 @@ class LLMWorker:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(str(by_id[o["logical_id"]]), encoding="utf-8")
             files.append(o)
+        decisions = list(reply.get("decisions") or [])
+        decisions += [{"decision": f"used tool {t['tool']}" + (" (denied)" if t["denied"] else ""),
+                       "reason": t["summary"]} for t in self.tool_log]
         return files, base_handoff(ctx, worker_ref, "READY_FOR_QC", str(reply.get("summary", "")),
-                                   decisions=reply.get("decisions"), known_issues=reply.get("known_issues"),
+                                   decisions=decisions, known_issues=reply.get("known_issues"),
                                    usage=usage)
+
+    def _chat_with_tools(self, messages: list[dict]) -> dict:
+        """Agent loop: the model may call MCP tools (subject to Permissions) before its final JSON reply."""
+        t0 = time.monotonic()
+        catalog = self.mcp.tools(self.mcp_servers)
+        msgs = list(messages)
+        msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\nYou may call the provided tools to inspect or change "
+                   "external systems before replying. When done, reply with the JSON object only."}
+        tin = tout = 0
+        self.tool_log = []
+        for round_ in range(self.max_tool_rounds + 1):
+            tools = catalog if round_ < self.max_tool_rounds else []
+            r = self.provider.chat_tools(msgs, model=self.model, tools=tools, **self.chat_options)
+            tin, tout = tin + r.get("tokens_in", 0), tout + r.get("tokens_out", 0)
+            if not r["tool_calls"]:
+                return {"text": r["text"], "tokens_in": tin, "tokens_out": tout,
+                        "wall_seconds": round(time.monotonic() - t0, 3)}
+            msgs.append(r["assistant"])
+            results = []
+            for call in r["tool_calls"]:
+                res = self.mcp.call(call["name"], call["arguments"], catalog)
+                text = res["text"][:MAX_INPUT_CHARS]
+                results.append((call, ("ERROR: " if res["is_error"] else "") + text))
+                self.tool_log.append({"tool": call["name"], "denied": res.get("denied", False),
+                                      "summary": text[:200]})
+            msgs += self.provider.tool_results(results)
+        return {"text": "", "tokens_in": tin, "tokens_out": tout, "wall_seconds": round(time.monotonic() - t0, 3)}
 
 
 # --------------------------------------------------------------------------- command worker
@@ -228,7 +267,8 @@ def register_worker(name: str, factory: Callable[..., Any]) -> None:
     _REGISTERED[name] = factory
 
 
-def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | None = None) -> Any:
+def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | None = None,
+           mcp: Any = None, max_tool_rounds: int = 8) -> Any:
     """Build the implementation for a Capability Registry entry (nodes.toml [[worker]])."""
     w = entry["worker"]
     cfg = dict(entry.get("provider_config", {}))
@@ -246,11 +286,12 @@ def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | 
     if w["kind"] in ("llm_agent", "inference"):
         if not w.get("provider"):
             raise ValueError(f"{w['worker_id']}: set worker.provider (e.g. ollama, openai, anthropic)")
-        return LLMWorker(provider=providers.create(w["provider"], _provider_cfg(cfg)), **kw)
+        return LLMWorker(provider=providers.create(w["provider"], _provider_cfg(cfg)), mcp=mcp,
+                         max_tool_rounds=max_tool_rounds, **kw)
     raise ValueError(f"{w['worker_id']}: no implementation for kind {w['kind']!r}")
 
 
-_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd"}
+_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds"}
 
 
 def _provider_cfg(cfg: dict) -> dict:

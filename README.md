@@ -4,7 +4,7 @@ Hệ thống sản xuất bằng AI dùng chung: một **bộ điều khiển** 
 
 Thiết kế chi tiết: [`docs/design/`](docs/design/README.md) (ADR, state machine, contracts, scheduling, component design, benchmark).
 
-## Trạng thái: SHAMS V2.0 — lõi + Domain Packs
+## Trạng thái: SHAMS 2.0 — lõi + Domain Packs + ứng dụng
 
 Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI được gắn sau qua *Compute Node*. Khi chưa có model, **Mock Worker** cho phép chạy đầy đủ vòng đời để kiểm thử orchestrator.
 
@@ -23,6 +23,7 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Side-effect ledger (ADR-111) | ✅ |
 | Worker thật qua provider: Ollama, llama.cpp, LM Studio, vLLM, mọi API OpenAI-compatible, Anthropic, lệnh CLI, plugin Python (ADR-116) | ✅ |
 | Lõi không biết lĩnh vực; Domain Pack: Software (Python, TypeScript), Game (ADR-117) | ✅ |
+| Phần cứng thật (GPU/VRAM, RAM, CPU), Settings nhiều lớp, kết nối model/API, MCP, quyền, hooks (ADR-118) | ✅ |
 | Engine / template / checker / pack tùy biến (TOML hoặc entry point) | ✅ |
 | Intent & Scope Manager, Reuse Before Generate, Fidelity Tier, Generation Budget (V2.1) | ⏳ |
 | Checker thật cho Software Pack: pytest, tsc, vitest (V2.2) | ⏳ |
@@ -30,7 +31,7 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Game Pack: Unity, Unreal Engine 5, Godot, Three.js/WebGPU (ADR-115), template trung lập engine | ✅ (mock) |
 | Checker engine thật (compile/test/build/screenshot cho 4 engine; lệnh đã dựng sẵn) | ⏳ Spike S2 |
 | Git worktree theo attempt (ADR-105) | ⏳ |
-| Giao diện chính (`shams ui`): Chat, Workflow, AI Workers, Models, Artifacts, QA, Console | ✅ |
+| Ứng dụng (`shams ui`): workspace nhiều dự án, Chat, Workflow, AI Workers, Models, Artifacts, QA, Settings, Console | ✅ |
 | SSE thay polling, Node Agent cho máy remote, desktop Tauri | ⏳ Phase 2/4 |
 
 ## Chạy thử (mock, không cần GPU)
@@ -93,14 +94,31 @@ capabilities = ["code.godot_gdscript", "integration"]
 - **Checker thật**: `shams.verification.qc.register_checker("compile", fn)`.
 - **Đóng gói plugin**: khai báo entry point `shams.packs`, `shams.providers`, `shams.workers`, `shams.engines`, `shams.checkers` hoặc `shams.templates` trong gói Python của bạn.
 
-## Giao diện chính
+## Ứng dụng
 
 ```bash
 pip install -e ".[ui]"
-shams ui projects/demo          # mở http://127.0.0.1:8765, chọn lĩnh vực và stack/engine, hoặc ghi trong câu chat ("API bằng TypeScript", "game bằng UE5")
+shams ui                        # workspace mặc định ~/SHAMS, tự mở http://127.0.0.1:8765
+shams ui D:\SHAMS_Projects      # hoặc thư mục bạn chọn
 ```
 
-Mở trực tiếp `apps/ui/index.html` (không chạy server) sẽ vào **chế độ demo** với dữ liệu mô phỏng.
+- Gõ yêu cầu vào Chat là SHAMS tạo dự án, nhận lĩnh vực và stack/engine ("API bằng TypeScript", "game bằng UE5").
+- **Dự án mới** và danh sách dự án ở cột trái.
+- **Settings** (giống Claude Code), lưu vào phạm vi Người dùng / Dự án / Máy này:
+  - Chung: ngôn ngữ, chế độ vận hành, lĩnh vực mặc định, chế độ thử, số vòng gọi tool.
+  - Quyền: Mặc định / Toàn quyền / Chỉ đọc, danh sách cho phép và cấm (`mcp__server__tool`, glob).
+  - Model & API: thêm kết nối (Ollama, llama.cpp, LM Studio, vLLM, OpenAI, Anthropic, Gemini, OpenRouter…), kiểm tra, liệt kê model, thêm worker theo capability.
+  - MCP: thêm server stdio hoặc HTTP, xem tool, cho phép từng tool.
+  - Hooks, Phần cứng (đọc thật), Biến môi trường (đặt khóa cho phiên, không ghi xuống đĩa), Tệp cấu hình (sửa JSON trực tiếp).
+- Panel bên phải hiển thị VRAM, tải GPU và RAM **thật** của máy.
+
+Mẫu đầy đủ: [`shams/examples/settings.example.json`](shams/examples/settings.example.json). Dự án có `.mcp.json` (định dạng Claude Code) cũng được đọc.
+
+```bash
+shams hardware                  # GPU / VRAM / RAM / CPU thật
+shams settings <dự án>          # settings đã gộp + kiểm tra lỗi + biến môi trường thiếu
+shams mcp <dự án>               # kết nối MCP server, liệt kê tool và quyền
+```
 
 ## Cấu trúc
 
@@ -121,13 +139,17 @@ shams/            Lõi (không biết lĩnh vực; test bắt buộc)
   providers/      Provider cho model local / API (ADR-116)
   workers/        LLMWorker, CommandWorker, plugin worker
   plugins.py      Nạp plugin (entry points, 'module:Class')
-  examples/       nodes.example.toml
+  hardware.py     GPU/VRAM/RAM/CPU thật (ADR-118)
+  settings.py     Settings nhiều lớp, connections, bí mật qua biến môi trường
+  mcp.py          MCP client (stdio, HTTP) + quyền dùng tool
+  hooks.py        Hooks theo sự kiện
+  examples/       nodes.example.toml, settings.example.json
   mock/           Mock Worker + mock checkers
 shams_packs/
   software/       Software Pack: stack Python, TypeScript; template software_basic
   game/           Game Pack: engine Unity, Unreal, Godot, Web + engine tùy biến; template vertical_slice_3d
 apps/cli/         `shams` CLI
-apps/api/         FastAPI: /api/state, /api/chat, /api/configure, /api/decide
+apps/api/         FastAPI: state, chat, projects, settings, connections, mcp, hardware
 apps/ui/          Giao diện chính (một file HTML, không cần build)
 docs/design/      Bộ thiết kế v1.1 + ADR-117
 ```

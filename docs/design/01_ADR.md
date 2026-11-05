@@ -156,6 +156,23 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Checker thật cho Software Pack (pytest, tsc, vitest) đến ở V2.2; trước đó compile/test kết thúc `NOT_VERIFIED` nếu chưa đăng ký checker.
 - Intent & Scope Manager, Reuse Before Generate, Fidelity Tier, Generation Budget (SHAMS V2) xây trên lớp pack này, bắt đầu từ V2.1.
 
+### ADR-118 — Ứng dụng chính thức: phần cứng thật, Settings nhiều lớp, MCP, hooks
+**Vấn đề:** Bản trước còn VRAM mô phỏng, chế độ demo khi mở file HTML, cấu hình model chỉ qua `nodes.toml` viết tay, chưa có MCP. SHAMS được phát hành cho người khác nên cần tinh chỉnh được như Claude Code.
+**Quyết định:**
+- **Phần cứng thật** (`shams.hardware`): GPU qua `nvidia-smi` (NVIDIA), `rocm-smi` (AMD/Linux), registry Windows (mọi GPU, chỉ tổng VRAM), `sysctl` (Apple Silicon, bộ nhớ hợp nhất); RAM và CPU từ hệ điều hành. Không thêm thư viện. UI và `shams hardware` hiển thị số đo thật; không có GPU thì báo rõ, SHAMS vẫn chạy (ADR-114). Worker gắn vào `node.local` mà chưa khai báo node sẽ tự dùng phần cứng thật.
+- **Settings nhiều lớp** (`shams.settings`), sau thắng trước: mặc định → người dùng `~/.shams/settings.json` → dự án `<project>/.shams/settings.json` → máy này `<project>/.shams/settings.local.json` (tự gitignore). Đọc thêm `nodes.toml` và `.mcp.json` (định dạng `mcpServers` của Claude Code). Khóa: `general`, `permissions`, `connections`, `nodes`, `workers`, `mcp_servers`, `hooks`, `env`.
+- **Bí mật không bao giờ ghi xuống file**: lưu settings bị từ chối nếu có giá trị bí mật trực tiếp; chỉ chấp nhận `api_key_env` hoặc `${VAR}`. Khóa nhập trên UI chỉ nằm trong bộ nhớ tiến trình (`/api/secret`).
+- **Connections**: kết nối model/API dùng lại (provider + base_url + api_key_env); worker trỏ `connection` thay vì lặp cấu hình. UI kiểm tra kết nối và liệt kê model (`list_models` cho OpenAI-compatible, Ollama, Anthropic).
+- **MCP** (`shams.mcp`): client JSON-RPC không phụ thuộc thư viện, transport `stdio` và Streamable HTTP (JSON hoặc SSE, `Mcp-Session-Id`). Tool lộ ra cho model dưới tên `mcp__<server>__<tool>`. `LLMWorker` có vòng gọi tool (giới hạn `max_tool_rounds`) với provider hỗ trợ tool calling (OpenAI-compatible, Anthropic). Mỗi lần gọi tool được ghi vào `decisions` của handoff.
+- **Quyền** (giống Claude Code): `default` (chỉ tool `readOnlyHint` + danh sách `allow`), `full_access` (mọi tool trừ `deny`), `read_only`. Mẫu glob trên tên tool; `deny` luôn thắng. Tool bị từ chối trả lỗi cho model, không dừng pipeline.
+- **Hooks**: lệnh chạy khi có sự kiện (glob trên loại event, thêm `run.finished`); nhận JSON qua stdin và `SHAMS_EVENT`. Hook lỗi ghi `hook.failed`, không dừng pipeline.
+- **Ứng dụng**: `shams ui [workspace]` mở thư mục làm việc (mặc định `~/SHAMS`) chứa nhiều dự án, tự mở trình duyệt; tạo/chuyển dự án trên UI; câu chat đầu tiên tự tạo dự án. Bỏ chế độ demo trong UI: không có server thì hiện hướng dẫn chạy `shams ui`. Chế độ thử (mock) là lựa chọn rõ ràng trong Settings (`general.mock`: tự động khi chưa có worker / bật / tắt).
+- Phát hành: workflow `release.yml` dựng wheel + sdist và GitHub Release khi đẩy tag `v*` khớp version gói.
+**Hệ quả:**
+- Mọi tinh chỉnh làm được trên UI (8 tab Settings) hoặc bằng file JSON; CLI có `shams hardware`, `shams settings`, `shams mcp`.
+- Người dùng tự chịu trách nhiệm khi bật `full_access`; mặc định an toàn.
+- Checker thật cho từng pack và Intent & Scope Manager vẫn là V2.1/V2.2.
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

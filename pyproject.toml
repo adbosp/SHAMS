@@ -29,7 +29,7 @@ include = ["shams*", "shams_packs*", "apps*"]
 "shams.contracts" = ["schemas/*.json"]
 "shams_packs.game" = ["templates/*.json", "*.toml"]
 "shams_packs.software" = ["templates/*.json"]
-"shams.examples" = ["*.toml"]
+"shams.examples" = ["*.toml", "*.json"]
 "apps.ui" = ["index.html"]
 
 [tool.pytest.ini_options]
