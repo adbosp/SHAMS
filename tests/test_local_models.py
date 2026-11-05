@@ -628,3 +628,18 @@ def test_scene_json_fixes_threejs_habits_and_reports_sinking(tmp_path):
     s["objects"][2]["position"][1] = 0.93
     assert scene_json.build_scene(s, None, None)["ok"]
     assert scene_json.normalise(s)["lights"][0]["direction"][1] < 0            # upward sun flipped
+
+
+def test_scene_json_flags_half_sunk_ball_and_wall_below_floor():
+    from shams_tools import scene_json
+    s = {"objects": [{"name": "floor", "shape": "plane", "size": [20, 20]},
+                     {"name": "top", "shape": "box", "size": [1.2, 0.12, 0.8], "position": [0, 0.75, 0]},
+                     {"name": "side", "shape": "box", "size": [0.12, 0.75, 0.8], "position": [-0.54, 0.375, 0]},
+                     {"name": "ball", "shape": "sphere", "radius": 0.12, "position": [0.15, 0.81, 0.05]},
+                     {"name": "wall", "shape": "plane", "size": [12, 6], "position": [0, 3, -5], "rotation": [0, 0, 90]}]}
+    with pytest.raises(scene_json.SceneError) as e:
+        scene_json.build_scene(s, None, None)
+    msg = str(e.value)
+    assert "ball sinks 12 cm into top" in msg and "wall goes 3.0 m below the floor" in msg and "top sinks" not in msg
+    example = scene_json.SCENE_JSON_PROMPT.split("on it):\n")[1]
+    assert scene_json.build_scene(example, None, None)["mesh_objects"] == 7      # the prompt's own example is valid

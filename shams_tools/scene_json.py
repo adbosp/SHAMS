@@ -39,7 +39,17 @@ Rules: a "plane" is already horizontal (lying on the ground, facing +Y): do NOT 
 several primitives: a table = one thin top box + 4 thin leg boxes at the corners (not solid side panels); a chair =
 seat + 4 legs + back. Position is the CENTRE of the shape, so an object resting on a surface at height h has
 y = h + half its height (a sphere of radius r on a table top at h: y = h + r). Use distinct colours, meaningful
-names, keep the camera looking at the scene. Stay within the polygon budget."""
+names, keep the camera looking at the scene. Stay within the polygon budget.
+Example (a table with legs and a cup on it):
+{"objects": [{"name": "floor", "shape": "plane", "size": [8, 8], "color": "#777777"},
+ {"name": "table_top", "shape": "box", "size": [1.2, 0.06, 0.8], "position": [0, 0.72, 0], "color": "#8b5a2b"},
+ {"name": "leg_fl", "shape": "box", "size": [0.06, 0.69, 0.06], "position": [0.55, 0.345, 0.35], "color": "#6b4423"},
+ {"name": "leg_fr", "shape": "box", "size": [0.06, 0.69, 0.06], "position": [-0.55, 0.345, 0.35], "color": "#6b4423"},
+ {"name": "leg_bl", "shape": "box", "size": [0.06, 0.69, 0.06], "position": [0.55, 0.345, -0.35], "color": "#6b4423"},
+ {"name": "leg_br", "shape": "box", "size": [0.06, 0.69, 0.06], "position": [-0.55, 0.345, -0.35], "color": "#6b4423"},
+ {"name": "cup", "shape": "cylinder", "radius": 0.04, "height": 0.1, "position": [0.2, 0.80, 0], "color": "#2e6fd8"}],
+ "camera": {"position": [2.0, 1.4, 2.4], "target": [0, 0.6, 0], "fov": 45},
+ "lights": [{"type": "sun", "direction": [-0.4, -1, -0.3], "intensity": 3}]}"""
 
 
 class SceneError(ValueError):
@@ -288,28 +298,39 @@ def build(scene: dict) -> dict:
 
 
 def support_problems(built: dict, tol: float = 0.02) -> list[str]:
-    """Objects that sink into the box they stand on (centre above its top, bottom below it), with the fix."""
+    """Physical sanity, with the fix spelled out for the model:
+    * a smaller object whose centre sits over a larger box/cylinder and whose bottom is inside it (sinking);
+    * anything that goes below the ground plane."""
     boxes = []
     for m in built["meshes"]:
         t = m["object"]["position"]
         lo = [min(p[k] for p in m["P"]) + t[k] for k in range(3)]
         hi = [max(p[k] for p in m["P"]) + t[k] for k in range(3)]
         boxes.append((m["object"], lo, hi))
+    area = lambda lo, hi: (hi[0] - lo[0]) * (hi[2] - lo[2])  # noqa: E731
     out = []
+    flats = [(o, lo, hi) for o, lo, hi in boxes if hi[1] - lo[1] < 1e-6]
+    ground = min((lo[1] for o, lo, hi in flats), default=None)
     for a, alo, ahi in boxes:
-        if a["shape"] == "plane":
-            continue
+        h = ahi[1] - alo[1]
         cx, cy, cz = [(alo[k] + ahi[k]) / 2 for k in range(3)]
+        if ground is not None and h > 1e-6 and alo[1] < ground - tol:
+            out.append(f"{a['name']} goes {round(ground - alo[1], 2)} m below the floor (its lowest point is "
+                       f"y={round(alo[1], 2)}); move it up so its bottom is at y={round(ground, 2)}"
+                       + (" or fix its rotation" if any(a["rotation"]) else ""))
+            continue
+        if h < 1e-6:
+            continue
         for b, blo, bhi in boxes:
-            if b is a or b["shape"] not in ("box", "plane", "cylinder"):
+            if b is a or b["shape"] not in ("box", "cylinder") or area(alo, ahi) >= area(blo, bhi):
                 continue
             if not (blo[0] <= cx <= bhi[0] and blo[2] <= cz <= bhi[2]):
                 continue
-            top = bhi[1]
-            if cy > top and alo[1] < top - tol and (ahi[1] - alo[1]) < 4 * max(bhi[1] - blo[1], 0.05):
-                need = round(top + (cy - alo[1]), 3)
-                out.append(f"{a['name']} sinks {round((top - alo[1]) * 100)} cm into {b['name']} (top at y={round(top, 3)}); "
-                           f"set {a['name']}.position y = {need}")
+            top, bmid = bhi[1], (blo[1] + bhi[1]) / 2
+            if cy > bmid and alo[1] < top - tol and cy < top + h:
+                out.append(f"{a['name']} sinks {round((top - alo[1]) * 100)} cm into {b['name']} (top at "
+                           f"y={round(top, 3)}); set {a['name']}.position y = {round(top + (cy - alo[1]), 3)}")
+                break
     return out
 
 
@@ -475,7 +496,7 @@ def build_scene(text_or_scene: str | dict, glb: Path | str | None, png: Path | s
     tris = sum(len(m["I"]) // 3 for m in built["meshes"])
     sinking = support_problems(built)
     if sinking and check_support:
-        raise SceneError("objects intersect the surface they rest on: " + "; ".join(sinking[:6]))
+        raise SceneError("physical problems: " + "; ".join(sinking[:6]))
     if max_triangles and tris > max_triangles:
         raise SceneError(f"{tris} triangles > budget {max_triangles}; use fewer spheres/cylinders/tori")
     rep: dict[str, Any] = {"ok": True, "builder": "scene_json", "mesh_objects": len(built["meshes"]),
