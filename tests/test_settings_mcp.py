@@ -316,3 +316,17 @@ def test_logo_and_favicon_are_served(tmp_path):
     assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
     assert c.get("/favicon.ico").status_code == 200
     assert c.get("/static/..%2Fserver.py").status_code == 404
+
+
+def test_app_auto_mock_counts_model_registry_role_workers(tmp_path, monkeypatch):
+    """general.mock=auto: workers generated from models.roles count, so a configured PC gets real mode."""
+    from apps.api.server import StudioService
+    import shams.models as models
+    svc = StudioService(tmp_path / "ws")
+    s = {"general": {"mock": "auto"}}
+    monkeypatch.setattr(models, "merge_role_workers", lambda st: [{"id": "worker.role.coder"}])
+    assert svc._mock_default(s) is False
+    monkeypatch.setattr(models, "merge_role_workers", lambda st: [])
+    assert svc._mock_default(s) is True
+    assert svc._mock_default({"general": {"mock": "off"}}) is False
+    assert svc._mock_default({"general": {"mock": "on"}}) is True

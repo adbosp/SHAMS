@@ -195,7 +195,13 @@ class StudioService:
 
     def _mock_default(self, s: dict) -> bool:
         m = s["general"].get("mock", "auto")
-        return m == "on" or (m == "auto" and not settings_mod.resolve_workers(s))
+        if m != "auto":
+            return m == "on"
+        from shams.models import merge_role_workers     # same worker list the project will load (roles too)
+        try:
+            return not merge_role_workers(s)
+        except Exception:  # noqa: BLE001 - an unreachable model server means test mode, not a crash
+            return True
 
     def create_project(self, name: str, goal: str = "", domain: str | None = None, options: dict | None = None,
                        mode: str | None = None, mock: bool | None = None) -> Path:
