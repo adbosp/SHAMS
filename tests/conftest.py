@@ -1,8 +1,8 @@
 import pytest
 
-from studio.mock.worker import MockWorker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate
+from shams.mock.worker import MockWorker
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate
 
 PID = "game_mvp"
 

@@ -122,7 +122,7 @@ td code{font-family:var(--mono);font-size:12px}
     </div>
     <div class="hright">
       <span id="demo" class="demo" hidden>Bản demo (không kết nối controller)</span>
-      <span id="engine" class="badge b-ok">Local Engine</span>
+      <span id="wmode" class="badge b-ok">Local Workers</span>
       <button class="iconbtn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
       </button>
@@ -219,18 +219,23 @@ function badgeFor(state){
 
 function chatView(){
   const modeLbl = {autonomous:"Autonomous",guided:"Guided",collaborative:"Collaborative"}[S.mode] || S.mode;
-  let h = `<div class="ctitle"><h2>Studio Chat</h2><span class="badge b-chip">${esc(modeLbl)}</span></div>`;
+  let h = `<div class="ctitle"><h2>Chat</h2><span class="badge b-chip">${esc(modeLbl)}</span></div>`;
   if (!S.chat.length){
-    h += `<div class="empty">Mô tả dự án bạn muốn SHAMS sản xuất. SHAMS lập Task DAG, giao từng việc cho model AI phù hợp, kiểm thử độc lập và sửa lỗi theo vòng lặp.<br><span class="small">Ví dụ: "Game đua xe 3D bằng UE5" hoặc "Game giải đố chạy trên trình duyệt bằng Three.js".</span></div>`;
-    h += `<div class="small muted" style="text-align:center;margin-bottom:6px">Engine (hoặc ghi trong yêu cầu: Unity, UE5, Godot, Three.js/WebGPU)</div><div class="engines">` +
-      (S.engines||[]).map(e => `<button type="button" class="eng" data-engine="${esc(e.id)}" aria-pressed="${e.id===S.project.engine_id}"><b>${esc(e.display)}</b><span>${esc(e.language)}</span></button>`).join("") + `</div>`;
+    h += `<div class="empty">Mô tả dự án bạn muốn SHAMS sản xuất. SHAMS lập Task DAG, giao từng việc cho model AI phù hợp, kiểm thử độc lập và sửa lỗi theo vòng lặp.<br><span class="small">Ví dụ: "CLI Python quản lý ghi chú", "API backend bằng TypeScript" hoặc "Game giải đố 3D bằng Godot".</span></div>`;
+    h += `<div class="small muted" style="text-align:center;margin-bottom:6px">Lĩnh vực (Domain Pack, SHAMS tự nhận ra từ yêu cầu)</div><div class="engines">` +
+      (S.packs||[]).map(p => `<button type="button" class="eng" data-domain="${esc(p.id)}" aria-pressed="${p.id===S.project.domain}"><b>${esc(p.display)}</b><span>${esc(p.description||"")}</span></button>`).join("") + `</div>`;
+    const pk = (S.packs||[]).find(p => p.id===S.project.domain);
+    for (const [opt, choices] of Object.entries(pk ? pk.options||{} : {})){
+      h += `<div class="small muted" style="text-align:center;margin-bottom:6px">${esc(opt)}</div><div class="engines">` +
+        choices.map(c => `<button type="button" class="eng" data-opt="${esc(opt)}" data-val="${esc(c.id)}" aria-pressed="${c.id===(S.project.selected||{})[opt]}"><b>${esc(c.display)}</b><span>${esc(c.language||"")}</span></button>`).join("") + `</div>`;
+    }
   }
   const order = {RUNNING:0,LEASED:0,QC_PENDING:0,REPAIR_REQUIRED:1,HUMAN_REVIEW:1,BLOCKED:1,ACCEPTED:2,STALE:1,READY:3,PENDING:4};
   for (const m of S.chat){
     if (m.role === "user"){
       h += `<div class="msg user"><div class="who">You</div><div class="body">${esc(m.text)}</div></div>`;
     } else {
-      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>Studio Director</div><div class="body">${esc(m.text)}</div>`;
+      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body">${esc(m.text)}</div>`;
       if (m.live && S.tasks.length){
         const active = S.tasks.filter(t => !["PENDING","READY"].includes(t.state))
           .sort((a,b) => (order[a.state]??5)-(order[b.state]??5)).slice(0,8);
@@ -309,9 +314,9 @@ function render(){
   if (!S) return;
   navRender();
   $("pname").textContent = S.project.name;
-  $("ppath").textContent = `/ Projects / ${S.project.engine}`;
-  $("engine").textContent = S.mock_mode ? "Mock Engine" : "Local Engine";
-  $("engine").className = "badge " + (S.mock_mode ? "b-warn" : "b-ok");
+  $("ppath").textContent = `/ Projects / ${S.project.setup}`;
+  $("wmode").textContent = S.mock_mode ? "Mock Workers" : "Local Workers";
+  $("wmode").className = "badge " + (S.mock_mode ? "b-warn" : "b-ok");
   $("demo").hidden = !demo;
   const p = S.progress;
   $("prog").textContent = `${p.done}/${p.total}`;
@@ -344,7 +349,7 @@ function render(){
     if (focused) input.focus();
     $("send").disabled = sending;
     $("composer").onsubmit = e => { e.preventDefault(); send(input.value); };
-    center.querySelectorAll(".eng").forEach(b => b.onclick = () => pickEngine(b.dataset.engine));
+    center.querySelectorAll(".eng").forEach(b => b.onclick = () => b.dataset.domain ? configure(b.dataset.domain, {}) : configure(S.project.domain, {[b.dataset.opt]: b.dataset.val}));
   }
 }
 
@@ -358,8 +363,8 @@ async function poll(){
   try { S = await api("/api/state"); render(); }
   catch (e) { if (!S) { demo = true; Demo.init(); S = Demo.state(); render(); } else { $("conn").textContent = "Disconnected"; $("conn").className = "badge b-bad"; } }
 }
-async function pickEngine(id){
-  try { if (demo) Demo.setEngine(id); else S = await api("/api/engine", {engine:id}); }
+async function configure(domain, options){
+  try { if (demo) Demo.configure(domain, options); else S = await api("/api/configure", {domain, options}); }
   catch (e) { alert(e.message); }
   poll();
 }
@@ -376,30 +381,44 @@ async function decide(task_id, decision){
   poll();
 }
 
-/* ---- Demo mode: opened as a file without the controller. Simulates the generic vertical_slice_3d plan. ---- */
+/* ---- Demo mode: opened as a file without the controller. Simulates a pack template (software_basic or vertical_slice_3d). ---- */
 const Demo = (() => {
-  const ENGINES = [
-    {id:"unity", display:"Unity", language:"C#", words:["unity"]},
-    {id:"unreal", display:"Unreal Engine 5", language:"C++", words:["ue5","unreal"]},
-    {id:"godot", display:"Godot", language:"GDScript", words:["godot"]},
-    {id:"web", display:"Three.js (WebGPU)", language:"TypeScript", words:["three.js","threejs","webgpu","webgl","trình duyệt","browser","web game"]},
+  const PACKS = [
+    {id:"software", display:"Software", description:"Software development: apps, libraries, CLIs, APIs, websites", opt:"stack",
+     words:["app","ứng dụng","website","api","cli","library","thư viện","tool","service","backend","dashboard"],
+     choices:[{id:"python", display:"Python", language:"Python", words:["python","django","flask","fastapi"]},
+              {id:"typescript", display:"TypeScript (Node.js)", language:"TypeScript", words:["typescript","node","react","next.js","express"]}],
+     plan:[
+       ["task.project_scaffold","Khởi tạo project","code",[]],
+       ["task.core_module","Module lõi","code",["task.project_scaffold"]],
+       ["task.entrypoint","Điểm vào (CLI/API)","code",["task.project_scaffold"]],
+       ["task.integration","Tích hợp và test","code",["task.core_module","task.entrypoint"]],
+       ["task.package","Đóng gói","tool",["task.integration","task.entrypoint","task.project_scaffold"]],
+     ]},
+    {id:"game", display:"Game", description:"Game development: engine profiles, gameplay templates, engine automation", opt:"engine",
+     words:["game","trò chơi","gameplay","platformer","rpg","fps"],
+     choices:[{id:"unity", display:"Unity", language:"C#", words:["unity"]},
+              {id:"unreal", display:"Unreal Engine 5", language:"C++", words:["ue5","unreal"]},
+              {id:"godot", display:"Godot", language:"GDScript", words:["godot"]},
+              {id:"web", display:"Three.js (WebGPU)", language:"TypeScript", words:["three.js","threejs","webgpu","webgl"]}],
+     plan:[
+       ["task.project_scaffold","Khởi tạo project","code",[]],
+       ["task.player_controller","Điều khiển nhân vật chính 3D","code",["task.project_scaffold"]],
+       ["task.spawner","Hệ thống sinh đối tượng","code",["task.project_scaffold"]],
+       ["task.core_mechanic","Cơ chế gameplay cốt lõi","code",["task.player_controller","task.spawner"]],
+       ["task.hud","HUD trạng thái người chơi","code",["task.core_mechanic"]],
+       ["task.player_model","Mesh nhân vật chính","mesh",[]],
+       ["task.npc_model","Mesh đối tượng phụ / NPC","mesh",[]],
+       ["task.environment_texture","Texture môi trường","image",[]],
+       ["task.sfx_core","Âm thanh hành động chính","audio",[]],
+       ["task.integration_slice1","Tích hợp vertical slice","code",["task.player_controller","task.spawner","task.core_mechanic","task.hud","task.player_model","task.npc_model","task.environment_texture","task.sfx_core"]],
+       ["task.build_game","Build game","tool",["task.integration_slice1"]],
+     ]},
   ];
-  const DETECT_ORDER = ["web","unreal","godot","unity"];
-  let engine = "unity";
-  const eng = () => ENGINES.find(e => e.id === engine);
-  const PLAN = [
-    ["task.project_scaffold","Khởi tạo project","code",[]],
-    ["task.player_controller","Điều khiển nhân vật chính 3D","code",["task.project_scaffold"]],
-    ["task.spawner","Hệ thống sinh đối tượng","code",["task.project_scaffold"]],
-    ["task.core_mechanic","Cơ chế gameplay cốt lõi","code",["task.player_controller","task.spawner"]],
-    ["task.hud","HUD trạng thái người chơi","code",["task.core_mechanic"]],
-    ["task.player_model","Mesh nhân vật chính","mesh",[]],
-    ["task.npc_model","Mesh đối tượng phụ / NPC","mesh",[]],
-    ["task.environment_texture","Texture môi trường","image",[]],
-    ["task.sfx_core","Âm thanh hành động chính","audio",[]],
-    ["task.integration_slice1","Tích hợp vertical slice","code",["task.player_controller","task.spawner","task.core_mechanic","task.hud","task.player_model","task.npc_model","task.environment_texture","task.sfx_core"]],
-    ["task.build_game","Build game","tool",["task.integration_slice1"]],
-  ];
+  let domain = "software", choice = {software:"python", game:"unity"};
+  const pack = () => PACKS.find(p => p.id === domain);
+  const cur = () => pack().choices.find(c => c.id === choice[domain]);
+  const score = (p, low) => p.words.filter(w => low.includes(w)).length + (p.choices.some(c => c.words.some(w => low.includes(w))) ? 2 : 0);
   const LBL = {code:"Coding Worker", mesh:"3D Generator", image:"Image Generator", audio:"Audio Generator", tool:"Build & Test Tools"};
   const MODEL = {code:"mock-coder", mesh:"mock-mesh", image:"mock-diffusion", audio:"mock-audio", tool:null};
   let st, n = 0;
@@ -410,10 +429,13 @@ const Demo = (() => {
     st.chat.push({role:"user", text});
     if (!st.tasks.length){
       const low = text.toLowerCase();
-      const hit = DETECT_ORDER.find(id => ENGINES.find(e => e.id===id).words.some(w => low.includes(w)));
-      if (hit) engine = hit;
+      const best = PACKS.map(p => [p, score(p, low) * (p.id==="game" ? 2 : 1)]).sort((a,b) => b[1]-a[1])[0];
+      if (best[1] > 0) domain = best[0].id;
+      const hit = pack().choices.find(c => c.words.some(w => low.includes(w)));
+      if (hit) choice[domain] = hit.id;
+      const PLAN = pack().plan;
       st.tasks = PLAN.map(([id,title,fam,deps]) => ({task_id:id, title, fam, depends_on:deps, state:deps.length?"PENDING":"READY", attempt:0}));
-      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho engine ${eng().display}. Đang triển khai.`});
+      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho ${pack().display} · ${cur().display}. Đang triển khai.`});
       log(`Plan created: ${PLAN.length} tasks`);
     } else st.chat.push({role:"director", text:"Bản demo: yêu cầu bổ sung chưa được xử lý."});
   }
@@ -437,13 +459,15 @@ const Demo = (() => {
     pick.state = "RUNNING"; st.cur = pick; log(`Executing task ${pick.task_id}`);
   }
   function decide(){}
-  function setEngine(id){ if (!st.tasks.length) engine = id; }
+  function configure(d, opts){ if (st.tasks.length) return; domain = d; const v = opts[pack().opt]; if (v) choice[domain] = v; }
   function state(){
     const T = st.tasks, lbl = {ACCEPTED:"PASS",QC_PENDING:"QC"};
     const ready = T.filter(t=>t.state==="READY");
     return {
-      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Dự án mới", engine:eng().display, engine_id:engine, language:eng().language},
-      engines: ENGINES.map(({id,display,language}) => ({id,display,language})),
+      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Dự án mới", domain, domain_display:pack().display,
+        setup:`${pack().display} · ${cur().display}`, selected:{[pack().opt]: choice[domain]}},
+      packs: PACKS.map(p => ({id:p.id, display:p.display, description:p.description,
+        options:{[p.opt]: p.choices.map(({id,display,language}) => ({id,display,language}))}})),
       mode:"autonomous", mock_mode:true, running:true,
       progress:{done:T.filter(t=>t.state==="ACCEPTED").length, total:T.length},
       chat:st.chat, tasks:T.map(t=>({...t, label:lbl[t.state]||t.state, worker:LBL[t.fam], capability:t.fam})),
@@ -456,7 +480,7 @@ const Demo = (() => {
       artifacts:st.arts, qc:st.qc, console:st.console.slice(-200), review:[],
     };
   }
-  return {init, chat, tick, state, decide, setEngine};
+  return {init, chat, tick, state, decide, configure};
 })();
 
 poll();

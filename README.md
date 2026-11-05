@@ -1,10 +1,10 @@
 # SHAMS — Sequential Heterogeneous AI Manufacturing System
 
-Hệ thống sản xuất bằng AI dùng chung: một **bộ điều khiển** chia việc theo Task DAG, giao từng việc cho model AI chuyên môn phù hợp (code, reasoning, image, 3D, animation, audio), kiểm thử độc lập và sửa lỗi theo vòng lặp có giới hạn để tạo ra game hoàn chỉnh. Không gắn với một game, một model hay một nhà cung cấp: **mọi model local, mọi API, mọi engine đều gắn thêm được** (ADR-116).
+Hệ thống sản xuất bằng AI dùng chung: một **bộ điều khiển** chia việc theo Task DAG, giao từng việc cho model AI chuyên môn phù hợp (code, reasoning, image, 3D, animation, audio), kiểm thử độc lập và sửa lỗi theo vòng lặp có giới hạn để tạo ra sản phẩm hoàn chỉnh: phần mềm, game, hoặc lĩnh vực bạn tự thêm. Không gắn với một lĩnh vực, một model hay một nhà cung cấp: **mọi model local, mọi API đều gắn thêm được** (ADR-116), **mỗi lĩnh vực là một Domain Pack** (ADR-117).
 
 Thiết kế chi tiết: [`docs/design/`](docs/design/README.md) (ADR, state machine, contracts, scheduling, component design, benchmark).
 
-## Trạng thái: Phase 1a — Controller
+## Trạng thái: SHAMS V2.0 — lõi + Domain Packs
 
 Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI được gắn sau qua *Compute Node*. Khi chưa có model, **Mock Worker** cho phép chạy đầy đủ vòng đời để kiểm thử orchestrator.
 
@@ -22,9 +22,12 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Human review qua CLI (ADR-112), 3 chế độ (ADR-113) | ✅ |
 | Side-effect ledger (ADR-111) | ✅ |
 | Worker thật qua provider: Ollama, llama.cpp, LM Studio, vLLM, mọi API OpenAI-compatible, Anthropic, lệnh CLI, plugin Python (ADR-116) | ✅ |
-| Engine / template / checker tùy biến (TOML hoặc entry point) | ✅ |
+| Lõi không biết lĩnh vực; Domain Pack: Software (Python, TypeScript), Game (ADR-117) | ✅ |
+| Engine / template / checker / pack tùy biến (TOML hoặc entry point) | ✅ |
+| Intent & Scope Manager, Reuse Before Generate, Fidelity Tier, Generation Budget (V2.1) | ⏳ |
+| Checker thật cho Software Pack: pytest, tsc, vitest (V2.2) | ⏳ |
 | Deep Agents worker (tool-call nhiều bước), Analysis Agent LLM, Planner LLM | ⏳ Phase 1b |
-| Đa engine: Unity, Unreal Engine 5, Godot, Three.js/WebGPU (ADR-115), template trung lập engine | ✅ (mock) |
+| Game Pack: Unity, Unreal Engine 5, Godot, Three.js/WebGPU (ADR-115), template trung lập engine | ✅ (mock) |
 | Checker engine thật (compile/test/build/screenshot cho 4 engine; lệnh đã dựng sẵn) | ⏳ Spike S2 |
 | Git worktree theo attempt (ADR-105) | ⏳ |
 | Giao diện chính (`shams ui`): Chat, Workflow, AI Workers, Models, Artifacts, QA, Console | ✅ |
@@ -37,8 +40,15 @@ python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activ
 pip install -e ".[dev]"
 pytest -q
 
-shams engines                                     # unity | unreal (ue5) | godot | web (three.js/WebGPU)
-shams init projects/demo --project-id demo_game --goal "Game đua xe 3D" --engine godot --mock
+shams packs                                       # software (stack: python | typescript), game (engine: unity | unreal | godot | web)
+
+# Phần mềm (domain nhận diện từ yêu cầu, hoặc --domain software --opt stack=typescript)
+shams init projects/notes --project-id notes_cli --goal "CLI Python quản lý ghi chú" --mock
+shams plan projects/notes --approve <tên-bạn>
+shams run projects/notes
+
+# Game
+shams init projects/demo --project-id demo_game --goal "Game đua xe 3D" --domain game --opt engine=godot --mock
 shams plan projects/demo --approve <tên-bạn>
 shams run projects/demo --defect task.spawner:ac.spawner_tests:9   # tiêm lỗi để xem repair loop
 shams review projects/demo
@@ -51,12 +61,12 @@ shams events projects/demo --task task.spawner
 
 ```bash
 shams providers                        # các provider có sẵn
-shams init projects/game --project-id my_game --goal "..." --engine godot
+shams init projects/game --project-id my_game --goal "..." --domain game --opt engine=godot
 cp projects/game/nodes.example.toml projects/game/nodes.toml   # khai báo model / API của bạn
 shams nodes projects/game --check      # kiểm tra kết nối từng worker
 ```
 
-Ví dụ `nodes.toml` (đầy đủ ở [`studio/examples/nodes.example.toml`](studio/examples/nodes.example.toml)):
+Ví dụ `nodes.toml` (đầy đủ ở [`shams/examples/nodes.example.toml`](shams/examples/nodes.example.toml)):
 
 ```toml
 [[node]]
@@ -77,16 +87,17 @@ capabilities = ["code.godot_gdscript", "integration"]
 - **API key** không ghi trong file: dùng `config = { api_key_env = "TEN_BIEN_MOI_TRUONG" }`.
 - **Công cụ sinh ảnh/3D/âm thanh**: `provider = "command"`, `config = { argv = [...] }`. Chương trình đọc `$SHAMS_CONTEXT` và ghi output vào các đường dẫn được giao.
 - **Code riêng**: `config = { impl = "goi_cua_ban.module:Class" }` cho worker; `provider = "goi.module:Class"` cho provider.
-- **Engine mới**: thêm `engines/<ten>.toml` (mẫu: [`studio/examples/engine.example.toml`](studio/examples/engine.example.toml)).
+- **Lĩnh vực mới**: viết một lớp con của `shams.packs.DomainPack` (options, template, domain_context, failure_rules, checkers…), rồi `register_pack()` hoặc khai báo entry point `shams.packs`. Xem [`shams_packs/software`](shams_packs/software/__init__.py) làm mẫu.
+- **Engine game mới**: thêm `engines/<ten>.toml` (mẫu: [`shams_packs/game/engine.example.toml`](shams_packs/game/engine.example.toml)).
 - **Template riêng**: đặt vào thư mục `templates/` của project.
-- **Checker thật**: `studio.verification.qc.register_checker("compile", fn)`.
-- **Đóng gói plugin**: khai báo entry point `shams.providers`, `shams.workers`, `shams.engines`, `shams.checkers` hoặc `shams.templates` trong gói Python của bạn.
+- **Checker thật**: `shams.verification.qc.register_checker("compile", fn)`.
+- **Đóng gói plugin**: khai báo entry point `shams.packs`, `shams.providers`, `shams.workers`, `shams.engines`, `shams.checkers` hoặc `shams.templates` trong gói Python của bạn.
 
 ## Giao diện chính
 
 ```bash
 pip install -e ".[ui]"
-shams ui projects/demo          # mở http://127.0.0.1:8765, chọn engine hoặc ghi trong câu chat ("... bằng UE5")
+shams ui projects/demo          # mở http://127.0.0.1:8765, chọn lĩnh vực và stack/engine, hoặc ghi trong câu chat ("API bằng TypeScript", "game bằng UE5")
 ```
 
 Mở trực tiếp `apps/ui/index.html` (không chạy server) sẽ vào **chế độ demo** với dữ liệu mô phỏng.
@@ -94,7 +105,9 @@ Mở trực tiếp `apps/ui/index.html` (không chạy server) sẽ vào **chế
 ## Cấu trúc
 
 ```text
-studio/
+shams/            Lõi (không biết lĩnh vực; test bắt buộc)
+  packs.py        DomainPack + registry (ADR-117)
+  media.py        Media type chung; pack đăng ký thêm
   contracts/      JSON Schema v1 + validate()
   statemachine.py Bảng chuyển trạng thái + quyền theo actor
   events/         Event Store + projections
@@ -102,23 +115,25 @@ studio/
   nodes/          Compute Node, lanes, Capability Registry, mock registry
   scheduling/     Scheduler, Model Lifecycle (adapter theo backend)
   context/        Context Compiler
-  orchestration/  Task Runner Graph (LangGraph), Studio facade
+  orchestration/  Task Runner Graph (LangGraph), facade Shams (project.py)
   verification/   QC Runner, Failure Classifier, Repair Router
-  planning/       Plan Validator, DAG templates
-  engines/        Engine Profile + Engine Adapter (Unity, Unreal, Godot, Web, engine tùy biến)
+  planning/       Plan Validator, tìm và dựng template
   providers/      Provider cho model local / API (ADR-116)
   workers/        LLMWorker, CommandWorker, plugin worker
   plugins.py      Nạp plugin (entry points, 'module:Class')
-  examples/       nodes.example.toml, engine.example.toml
+  examples/       nodes.example.toml
   mock/           Mock Worker + mock checkers
-  templates/      vertical_slice_3d.json (khung vertical slice 3D chung, trung lập engine)
+shams_packs/
+  software/       Software Pack: stack Python, TypeScript; template software_basic
+  game/           Game Pack: engine Unity, Unreal, Godot, Web + engine tùy biến; template vertical_slice_3d
 apps/cli/         `shams` CLI
-apps/api/         FastAPI: /api/state, /api/chat, /api/decide
+apps/api/         FastAPI: /api/state, /api/chat, /api/configure, /api/decide
 apps/ui/          Giao diện chính (một file HTML, không cần build)
-docs/design/      Bộ thiết kế v1.1
+docs/design/      Bộ thiết kế v1.1 + ADR-117
 ```
 
 ## Bước tiếp theo
 
-1. Spike S2: checker engine thật (bắt đầu với engine bạn dùng trước).
-2. Phase 1b: Planner LLM tách nhiệm vụ theo từng yêu cầu, Deep Agents worker, chạy Spike S1/S3 với model thật.
+1. V2.1: Intent & Scope Manager, Reuse Before Generate, Fidelity Tier, Generation Budget.
+2. V2.2: checker thật cho Software Pack; Spike S2: checker engine game thật.
+3. Phase 1b: Planner LLM tách nhiệm vụ theo từng yêu cầu, Deep Agents worker, chạy Spike S1/S3 với model thật.

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/qc_report.schema.json",
+  "title": "QC Report",
+  "description": "Kết quả QC độc lập cho một attempt (ADR-106).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "task_id",
+    "attempt",
+    "gate",
+    "verdict",
+    "criteria",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "task_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "gate": {
+      "enum": [
+        "task_qc",
+        "integration_qc",
+        "final_qc"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_VERIFIED"
+      ]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "criterion_id",
+          "verdict",
+          "stage"
+        ],
+        "properties": {
+          "criterion_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "verdict": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_VERIFIED",
+              "SKIPPED"
+            ]
+          },
+          "stage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "1 schema/hash,2 compile/validate,3 test,4 runtime/screenshot,5 model review"
+          },
+          "checker": {
+            "$ref": "common.schema.json#/$defs/worker_ref"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/artifact_ref"
+            }
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "stopped_at_stage": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "failure_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "regression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ran"
+      ],
+      "properties": {
+        "ran": {
+          "type": "boolean"
+        },
+        "failed_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}

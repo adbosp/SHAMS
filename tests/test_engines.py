@@ -1,10 +1,10 @@
 """Multi-engine support (ADR-115): one engine-neutral plan, four engine profiles."""
 import pytest
 
-from studio import engines
-from studio.mock.worker import MockWorker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate, list_templates, validate_dag
+from shams_packs.game import engines
+from shams.mock.worker import MockWorker
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate, list_templates, validate_dag
 
 ALL = ["unity", "unreal", "godot", "web"]
 
@@ -45,7 +45,7 @@ def test_full_mock_run_for_each_engine(tmp_path, engine):
     st.load_plan(instantiate("vertical_slice_3d", "game1", "goal", engine=engine))
     s = st.run()
     assert s["done"] and s["counts"] == {"ACCEPTED": 11}
-    assert st.project["engine"]["name"] == engine
+    assert st.domain_config["engine"]["name"] == engine
 
 
 @pytest.mark.parametrize("text,expected", [
@@ -75,13 +75,13 @@ def test_adapter_commands(tmp_path, engine, needle):
 
 def test_set_engine_only_before_plan(tmp_path):
     d = tmp_path / "p"
-    Studio.init_project(d, "game1", "goal", mode="autonomous", mock_mode=True)
+    Studio.init_project(d, "game1", "goal", mode="autonomous", mock_mode=True, domain="game")
     st = Studio(d, mock=MockWorker(d / "attempts"))
-    st.set_engine("godot")
-    assert st.project["engine"]["name"] == "godot"
+    st.configure(engine="godot")
+    assert st.domain_config["engine"]["name"] == "godot"
     st.load_plan(instantiate("vertical_slice_3d", "game1", "goal", engine="godot"))
     with pytest.raises(ValueError):
-        st.set_engine("web")
+        st.configure(engine="web")
 
 
 def test_cli_engine_flow(tmp_path, capsys):

@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/capability.schema.json",
+  "title": "Capability Registry entry",
+  "description": "Một worker/model/tool khả dụng và năng lực đã đo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "worker",
+    "capabilities",
+    "runtime",
+    "policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "worker": {
+      "$ref": "common.schema.json#/$defs/worker_ref"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/capability"
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "lane",
+        "load_adapter"
+      ],
+      "properties": {
+        "node_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "lane": {
+          "enum": [
+            "gpu",
+            "cpu",
+            "external"
+          ]
+        },
+        "gpu_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "load_adapter": {
+          "type": "string",
+          "description": "Tên adapter nạp/giải phóng model: mock | none | ollama | provider | tên plugin"
+        },
+        "vram_mb_est": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ram_mb_est": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "load_seconds_p50": {
+          "type": "number"
+        },
+        "unload_seconds_p50": {
+          "type": "number"
+        },
+        "context_tokens": {
+          "type": "integer"
+        },
+        "supports_tool_calls": {
+          "type": "boolean"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "description": "capability -> {acceptance_rate, n, last_benchmark}",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acceptance_rate",
+          "n"
+        ],
+        "properties": {
+          "acceptance_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "n": {
+            "type": "integer"
+          },
+          "last_benchmark": {
+            "$ref": "common.schema.json#/$defs/timestamp"
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "usd_per_1k_tokens_in": {
+          "type": "number"
+        },
+        "usd_per_1k_tokens_out": {
+          "type": "number"
+        },
+        "usd_per_call": {
+          "type": "number"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "default": false
+        },
+        "privacy": {
+          "enum": [
+            "local",
+            "external_ok",
+            "external_forbidden"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "commercial_use": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "degraded",
+            "down"
+          ]
+        },
+        "checked_at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "provider_config": {
+      "type": "object",
+      "description": "Cấu hình riêng của provider/worker (ADR-116): base_url, api_key_env (TÊN biến môi trường, không ghi khóa), argv, impl ('package.module:Class'), system_prompt, chat_options, timeout...",
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "v1_capability_names": [
+        "plan",
+        "architect",
+        "debug_analysis",
+        "integration",
+        "semantic_review",
+        "visual_review",
+        "code.python",
+        "code.web_typescript",
+        "image.generate",
+        "image.texture",
+        "mesh.text_to_3d",
+        "mesh.process",
+        "rig",
+        "animation.generate",
+        "audio.sfx",
+        "build.python",
+        "test.python",
+        "validate.schema",
+        "vcs.git"
+      ],
+      "note": "Domain Pack định nghĩa thêm capability riêng (ví dụ Game Pack: code.<engine>, build.<engine>)"
+    }
+  ]
+}

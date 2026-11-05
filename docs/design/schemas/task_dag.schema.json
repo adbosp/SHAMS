@@ -76,6 +76,11 @@
     },
     "created_at": {
       "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Domain Pack sở hữu kế hoạch (ADR-117)"
     }
   }
 }

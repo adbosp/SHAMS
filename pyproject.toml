@@ -1,6 +1,6 @@
 [project]
 name = "shams"
-version = "0.1.0"
+version = "2.0.0"
 description = "SHAMS — Sequential Heterogeneous AI Manufacturing System (controller)"
 requires-python = ">=3.11"
 dependencies = [
@@ -23,13 +23,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["studio*", "apps*"]
+include = ["shams*", "shams_packs*", "apps*"]
 
 [tool.setuptools.package-data]
-"studio.contracts" = ["schemas/*.json"]
-"studio.templates" = ["*.json"]
-"studio.examples" = ["*.toml"]
+"shams.contracts" = ["schemas/*.json"]
+"shams_packs.game" = ["templates/*.json", "*.toml"]
+"shams_packs.software" = ["templates/*.json"]
+"shams.examples" = ["*.toml"]
 "apps.ui" = ["index.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

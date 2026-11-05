@@ -14,11 +14,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from studio import contracts, engines
-from studio.mock.worker import MockWorker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate
-from studio.statemachine import S
+from shams import __version__, contracts, packs
+from shams.mock.worker import MockWorker
+from shams.orchestration.project import Shams as Studio
+from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 
@@ -33,9 +32,9 @@ FAMILY_LABEL = {
 STATE_LABEL = {"ACCEPTED": "PASS", "QC_PENDING": "QC", "REPAIR_REQUIRED": "REPAIR", "HUMAN_REVIEW": "REVIEW"}
 
 
-def worker_label(worker) -> str:
+def worker_label(worker, extra: dict | None = None) -> str:
     fam = worker.capabilities[0].split(".")[0]
-    return FAMILY_LABEL.get(fam, worker.worker_id)
+    return {**FAMILY_LABEL, **(extra or {})}.get(fam, worker.worker_id)
 
 
 def console_line(e: dict) -> str | None:
@@ -64,8 +63,9 @@ class ChatIn(BaseModel):
     text: str
 
 
-class EngineIn(BaseModel):
-    engine: str
+class ConfigureIn(BaseModel):
+    domain: str | None = None
+    options: dict[str, str] = {}
 
 
 class DecideIn(BaseModel):
@@ -75,7 +75,7 @@ class DecideIn(BaseModel):
 
 
 class StudioService:
-    def __init__(self, project_dir: Path, mock_delay: float = 0.0, template: str = "vertical_slice_3d"):
+    def __init__(self, project_dir: Path, mock_delay: float = 0.0, template: str | None = None):
         self.dir = Path(project_dir)
         if not (self.dir / "project.json").exists():
             Studio.init_project(self.dir, "shams_project", "", mode="autonomous", mock_mode=True)
@@ -120,20 +120,21 @@ class StudioService:
         st = self.studio
         with self.lock:
             if not st.db.tasks():
-                detected = engines.detect(text)
-                if detected:
-                    st.set_engine(detected)
-                profile = engines.get(st.project["engine"]["name"])
+                domain = packs.detect_domain(text)
+                target = packs.get(domain) if domain else st.pack
+                hints = target.detect(text)
+                if (domain and target.name != st.pack.name) or hints:
+                    st.configure(domain=target.name, **hints)
                 st.project["goal"] = text
                 st.context.goal = text
                 (self.dir / "project.json").write_text(json.dumps(st.project, ensure_ascii=False, indent=2),
                                                       encoding="utf-8")
-                dag = instantiate(self.template, st.db.project_id, text, engine=profile.name, project_dir=self.dir)
-                st.load_plan(dag, approved_by="ui-user")
-                how = "nhận diện từ yêu cầu" if detected else "mặc định, ghi tên engine trong yêu cầu để đổi"
-                reply = (f"Đã tạo {len(dag['tasks'])} nhiệm vụ từ khung chung {self.template} cho engine "
-                         f"{profile.display} ({how}). Đang triển khai. Khung này chưa đọc nội dung yêu cầu; "
-                         f"Planner LLM (Phase 1b) sẽ tách nhiệm vụ riêng theo từng dự án.")
+                dag = st.plan_from_template(self.template, goal=text, approved_by="ui-user")
+                how = ("nhận diện từ yêu cầu" if (domain or hints)
+                       else "mặc định; ghi rõ lĩnh vực hoặc công nghệ trong yêu cầu để đổi")
+                reply = (f"Đã tạo {len(dag['tasks'])} nhiệm vụ từ khung {dag['template']} cho {st.describe()} "
+                         f"({how}). Đang triển khai. Khung này chưa đọc nội dung chi tiết của yêu cầu; "
+                         f"Intent & Scope Manager (V2.1) sẽ tách nhiệm vụ theo từng dự án.")
                 if st.mock_mode:
                     reply += " (Chế độ mock: chưa gắn model AI.)"
                 self.chat.append({"role": "director", "text": reply, "ts": contracts.now_iso(), "live": True})
@@ -148,6 +149,7 @@ class StudioService:
     # ------------------------------------------------------------------ state for the UI
     def state(self) -> dict:
         st = self.studio
+        labels = st.pack.worker_labels()
         # Reads use the EventStore's own lock, so a running step never blocks the UI.
         tasks = st.db.tasks()
         leases = st.scheduler.active_leases()
@@ -164,7 +166,7 @@ class StudioService:
             running = [l for l in leases if st.db.state(l["task_id"]) == S.RUNNING]
             l = (running or leases)[0]
             w = workers.get(l["worker_id"])
-            active = {"worker_id": l["worker_id"], "label": worker_label(w) if w else l["worker_id"],
+            active = {"worker_id": l["worker_id"], "label": worker_label(w, labels) if w else l["worker_id"],
                       "lane": l["lane"], "gpu": l["lane"].startswith("gpu:"), "task_id": l["task_id"]}
         vram = None
         gpu_lanes = [ln for ln in st.nodes.lanes() if ln.kind == "gpu"]
@@ -176,7 +178,7 @@ class StudioService:
         for t in sorted(ready, key=lambda t: -t.get("priority", 50)):
             c = st.nodes.candidates(t["capability"])
             if c:
-                next_worker = worker_label(c[0])
+                next_worker = worker_label(c[0], labels)
                 break
         task_rows = []
         for t in tasks:
@@ -184,7 +186,7 @@ class StudioService:
             task_rows.append({"task_id": t["task_id"], "title": t["title"], "state": t["state"],
                               "label": STATE_LABEL.get(t["state"], t["state"]), "attempt": t["attempt"],
                               "capability": t["capability"], "depends_on": t.get("depends_on", []),
-                              "worker": worker_label(c[0]) if c else None})
+                              "worker": worker_label(c[0], labels) if c else None})
         console = []
         for e in events:
             line = console_line(e)
@@ -192,29 +194,37 @@ class StudioService:
                 console.append({"ts": e["ts"][11:19], "text": line, "type": e["type"]})
         done = sum(1 for t in tasks if t["state"] == "ACCEPTED")
         goal = st.project.get("goal") or ""
-        profile = engines.get((st.project.get("engine") or {}).get("name", "unity"))
         return {
             "app": "SHAMS",
-            "engines": [{"id": p.name, "display": p.display, "language": p.language}
-                        for p in engines.ENGINES.values()],
+            "packs": [{"id": p.name, "display": p.display, "description": p.description,
+                       "options": p.options(self.dir)} for p in sorted(packs.all_packs(), key=lambda p: (p.name != packs.DEFAULT_DOMAIN, p.name))],
             "project": {"id": st.db.project_id, "name": goal[:60] or st.db.project_id,
-                        "engine": profile.display, "engine_id": profile.name, "language": profile.language,
+                        "domain": st.pack.name, "domain_display": st.pack.display, "setup": st.describe(),
+                        "selected": self._selected(),
                         "dir": str(self.dir)},
             "mode": st.mode, "mock_mode": st.mock_mode, "running": self.running, "connected": True,
             "progress": {"done": done, "total": len(tasks)},
             "chat": self.chat, "tasks": task_rows, "active": active, "vram": vram, "next_worker": next_worker,
             "nodes": list(st.nodes.nodes.values()),
-            "workers": [{"worker_id": w.worker_id, "label": worker_label(w), "node_id": w.node_id,
+            "workers": [{"worker_id": w.worker_id, "label": worker_label(w, labels), "node_id": w.node_id,
                          "lane": w.lane_kind, "model": w.model, "capabilities": w.capabilities}
                         for w in workers.values()],
             "models": models, "artifacts": arts, "qc": qcs, "console": console[-200:],
             "review": [t for t in task_rows if t["state"] in ("HUMAN_REVIEW", "BLOCKED")],
         }
 
-    def set_engine(self, name: str) -> dict:
+    def _selected(self) -> dict[str, str]:
+        """Current choice per pack option, as option ids (e.g. {"engine": "godot"})."""
+        cfg, out = self.studio.domain_config, {}
+        for opt in self.studio.pack.options(self.dir):
+            v = cfg.get(opt)
+            out[opt] = v.get("name") if isinstance(v, dict) else v
+        return out
+
+    def configure(self, body: "ConfigureIn") -> dict:
         with self.lock:
             try:
-                self.studio.set_engine(name)
+                self.studio.configure(domain=body.domain, **body.options)
             except (ValueError, KeyError) as e:
                 raise HTTPException(400, str(e))
         return self.state()
@@ -231,7 +241,7 @@ class StudioService:
 
 def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
-    app = FastAPI(title="SHAMS", version="0.1.0")
+    app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
 
     @app.get("/")
@@ -250,9 +260,9 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     def decide(body: DecideIn):
         return svc.decide(body)
 
-    @app.post("/api/engine")
-    def engine(body: EngineIn):
-        return svc.set_engine(body.engine)
+    @app.post("/api/configure")
+    def configure(body: ConfigureIn):
+        return svc.configure(body)
 
     @app.post("/api/run")
     def run():

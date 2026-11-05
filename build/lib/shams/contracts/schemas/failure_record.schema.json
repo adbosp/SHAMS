@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/failure_record.schema.json",
+  "title": "Failure Record",
+  "description": "Tạo khi QC FAIL hoặc task crash; đầu vào cho Repair Router (ADR-107).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "failure_id",
+    "task_id",
+    "attempt",
+    "source",
+    "failure_class",
+    "signature",
+    "severity",
+    "summary",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "failure_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "task_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "enum": [
+        "qc",
+        "crash",
+        "timeout",
+        "invalid_handoff",
+        "worker_failed"
+      ]
+    },
+    "failure_class": {
+      "enum": [
+        "compile_error",
+        "test_failure",
+        "runtime_exception",
+        "missing_output",
+        "schema_violation",
+        "asset_validation",
+        "visual_mismatch",
+        "performance",
+        "integration_contract",
+        "resource_oom",
+        "tool_unavailable",
+        "provider_error",
+        "unknown"
+      ]
+    },
+    "signature": {
+      "type": "string",
+      "description": "Chuỗi chuẩn hóa của lỗi (bỏ số dòng/đường dẫn) để phát hiện lặp lại"
+    },
+    "severity": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "repro_steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      }
+    },
+    "suspected_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "File/asset nghi ngờ"
+    },
+    "root_cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "by"
+      ],
+      "properties": {
+        "by": {
+          "enum": [
+            "classifier",
+            "analysis_agent",
+            "human"
+          ]
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "upstream_task_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        }
+      }
+    },
+    "repair_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "retry_same",
+            "retry_with_context",
+            "fix_in_place",
+            "split_task",
+            "switch_worker",
+            "escalate_external",
+            "fix_upstream",
+            "human_review"
+          ]
+        },
+        "target_task_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "target_capability": {
+          "$ref": "common.schema.json#/$defs/capability"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "previous_failure_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}

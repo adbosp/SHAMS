@@ -185,33 +185,25 @@
       "v1_capability_names": [
         "plan",
         "architect",
-        "code.unity_csharp",
-        "code.unreal_cpp",
         "debug_analysis",
         "integration",
         "semantic_review",
         "visual_review",
+        "code.python",
+        "code.web_typescript",
         "image.generate",
-        "image.ui_asset",
         "image.texture",
-        "mesh.image_to_3d",
         "mesh.text_to_3d",
         "mesh.process",
         "rig",
         "animation.generate",
-        "animation.retarget",
         "audio.sfx",
-        "audio.music",
-        "audio.voice",
-        "build.unity",
-        "build.unreal",
-        "test.unity",
-        "test.unreal",
-        "scene.capture",
+        "build.python",
+        "test.python",
         "validate.schema",
-        "validate.mesh",
         "vcs.git"
-      ]
+      ],
+      "note": "Domain Pack định nghĩa thêm capability riêng (ví dụ Game Pack: code.<engine>, build.<engine>)"
     }
   ]
 }

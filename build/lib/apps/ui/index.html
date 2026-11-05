@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHAMS</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --border:#e4e6eb; --text:#16181d; --muted:#6b7280; --faint:#9aa1ad;
+  --accent:#2f6fde; --accent-soft:#e8f0fd; --ok:#1e8e4e; --ok-soft:#e3f5ea; --warn:#b26a00; --warn-soft:#fdf1dc;
+  --bad:#c4352b; --bad-soft:#fbe7e5; --chip:#eef0f3; --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --panel:#171a20; --border:#272b33; --text:#e7e9ee; --muted:#9aa1ad; --faint:#6b7280;
+    --accent:#6b9cf5; --accent-soft:#1c2a44; --ok:#4cc584; --ok-soft:#163324; --warn:#e3a94a; --warn-soft:#3a2c12;
+    --bad:#f07a70; --bad-soft:#3d1c1a; --chip:#232730;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --panel:#171a20; --border:#272b33; --text:#e7e9ee; --muted:#9aa1ad; --faint:#6b7280;
+  --accent:#6b9cf5; --accent-soft:#1c2a44; --ok:#4cc584; --ok-soft:#163324; --warn:#e3a94a; --warn-soft:#3a2c12;
+  --bad:#f07a70; --bad-soft:#3d1c1a; --chip:#232730;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.app{max-width:1280px;margin:16px auto;background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  display:grid;grid-template-rows:auto 1fr auto;min-height:calc(100vh - 32px);overflow:hidden}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{margin:0;font-size:17px;letter-spacing:.08em;font-weight:700}
+.brand .full{color:var(--muted);font-size:12px;letter-spacing:0}
+.crumb{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px}
+.crumb b{font-weight:600}.crumb span{color:var(--faint);font-size:12px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.b-ok{background:var(--ok-soft);color:var(--ok)}.b-warn{background:var(--warn-soft);color:var(--warn)}
+.b-bad{background:var(--bad-soft);color:var(--bad)}.b-chip{background:var(--chip);color:var(--text);font-weight:500}
+.b-accent{background:var(--accent-soft);color:var(--accent)}
+.hright{display:flex;align-items:center;gap:10px}
+.iconbtn{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px}
+.iconbtn:hover{background:var(--chip);color:var(--text)}
+.main{display:grid;grid-template-columns:180px 1fr 230px;min-height:0}
+nav{border-right:1px solid var(--border);padding:16px 8px}
+.sect{font-size:11px;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:0 10px 8px}
+nav button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;color:var(--text);
+  padding:9px 10px;border-radius:8px;cursor:pointer;font:inherit;font-size:13px;text-align:left}
+nav button:hover{background:var(--chip)}
+nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+nav .count{margin-left:auto;font-size:11px;color:var(--muted)}
+.center{padding:20px 24px;min-width:0;display:flex;flex-direction:column;gap:14px;overflow:auto;max-height:calc(100vh - 220px)}
+.ctitle{display:flex;align-items:center;justify-content:space-between}
+.ctitle h2{margin:0;font-size:17px}
+.msg{padding:2px 0}
+.msg .who{font-weight:600;font-size:13px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.msg.user .body{font-size:15px}
+.msg .body{white-space:pre-wrap}
+.items{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.items li{display:flex;align-items:center;gap:8px;font-size:13px}
+.dot{width:14px;height:14px;flex:none;display:inline-block}
+.composer{margin-top:auto;display:flex;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px 10px 10px 14px;gap:8px;background:var(--panel)}
+.composer input{flex:1;border:0;outline:0;background:transparent;color:var(--text);font:inherit}
+.composer button{border:0;background:var(--text);color:var(--panel);width:28px;height:28px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
+.composer button:disabled{opacity:.4;cursor:default}
+aside{border-left:1px solid var(--border);padding:16px}
+aside .blk{padding:0 0 14px;margin:0 0 14px;border-bottom:1px solid var(--border)}
+aside .blk:last-child{border-bottom:0}
+.lbl{font-size:12px;color:var(--muted);margin-bottom:4px}
+.big{font-size:22px;font-weight:700}
+.val{font-weight:600}
+.bar{height:6px;background:var(--chip);border-radius:99px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .4s}
+footer{border-top:1px solid var(--border);padding:12px 20px}
+.fhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.fhead b{font-size:13px}
+.console{font-family:var(--mono);font-size:11.5px;color:var(--muted);max-height:96px;overflow:auto;line-height:1.55}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:7px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+td code{font-family:var(--mono);font-size:12px}
+.muted{color:var(--muted)}.small{font-size:12px}
+.lanes{display:grid;gap:10px}
+.card{border:1px solid var(--border);border-radius:10px;padding:12px}
+.card h3{margin:0 0 6px;font-size:14px}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.actions button{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px}
+.actions button:hover{background:var(--chip)}
+.dag{display:grid;gap:12px}
+.col{display:flex;gap:8px;flex-wrap:wrap}
+.node{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;display:flex;gap:6px;align-items:center}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+.engines{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:4px 0 18px}
+.eng{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:10px;padding:8px 12px;cursor:pointer;text-align:left;font:inherit;min-width:120px}
+.eng b{display:block;font-size:13px}.eng span{font-size:11px;color:var(--muted)}
+.eng[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.demo{font-size:11px;color:var(--warn)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite;transform-origin:50% 50%}
+@media (max-width:900px){
+  .app{margin:0;border-radius:0;border-left:0;border-right:0}
+  .main{grid-template-columns:1fr}
+  header{flex-wrap:wrap;gap:8px;padding:12px 16px} .brand .full{display:none}
+  .crumb span{display:none}
+  nav{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border);padding:8px}
+  nav .sect{display:none} nav button{width:auto;white-space:nowrap}
+  aside{border-left:0;border-top:1px solid var(--border)}
+  .center{max-height:none;padding:16px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <div class="brand">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <h1>SHAMS</h1><span class="full">Sequential Heterogeneous AI Manufacturing System</span>
+      </div>
+      <div class="crumb">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <b id="pname">—</b><span id="ppath">/ Projects</span>
+      </div>
+    </div>
+    <div class="hright">
+      <span id="demo" class="demo" hidden>Bản demo (không kết nối controller)</span>
+      <span id="wmode" class="badge b-ok">Local Workers</span>
+      <button class="iconbtn" id="theme" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="main">
+    <nav id="nav">
+      <div class="sect">WORKSPACE</div>
+    </nav>
+    <section class="center" id="center"></section>
+    <aside>
+      <div class="sect" style="padding:0 0 10px">STUDIO STATUS</div>
+      <div class="blk">
+        <div class="lbl">Progress</div>
+        <div class="big" id="prog">0/0</div>
+        <div class="bar"><i id="progbar" style="width:0"></i></div>
+      </div>
+      <div class="blk">
+        <div class="lbl">Active Worker</div>
+        <div class="val" id="active">—</div>
+        <div style="margin-top:6px" id="gpu"></div>
+        <div class="lbl" style="margin-top:10px" id="vramlbl">VRAM</div>
+        <div class="big" id="vram">—</div>
+      </div>
+      <div class="blk">
+        <div class="lbl">Next Worker</div>
+        <div class="val" id="next">—</div>
+      </div>
+      <div class="blk" id="reviewblk" hidden>
+        <div class="lbl">Chờ bạn duyệt</div>
+        <div id="reviewlist"></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <div class="fhead"><b>Execution Console</b><span id="conn" class="badge b-ok">Connected</span></div>
+    <div class="console" id="console"></div>
+  </footer>
+</div>
+
+<script>
+const VIEWS = [
+  ["chat","Chat",'<circle cx="12" cy="12" r="8"/>'],
+  ["workflow","Workflow",'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.5 6H14a3 3 0 0 1 3 3v6.5"/>'],
+  ["workers","AI Workers",'<rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01M12 3v4"/>'],
+  ["models","Models",'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>'],
+  ["artifacts","Artifacts",'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'],
+  ["qa","QA Results",'<path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/>'],
+];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let view = "chat", S = null, demo = false, sending = false;
+try { view = localStorage.getItem("shams.view") || "chat"; } catch (e) {}
+try { const t = localStorage.getItem("shams.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+$("theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const nxt = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = nxt;
+  try { localStorage.setItem("shams.theme", nxt); } catch (e) {}
+};
+
+function navRender(){
+  const nav = $("nav");
+  nav.querySelectorAll("button").forEach(b => b.remove());
+  for (const [id, label, icon] of VIEWS){
+    const b = document.createElement("button");
+    b.className = id === view ? "on" : "";
+    let count = "";
+    if (S && id === "workflow") count = S.tasks.length;
+    if (S && id === "artifacts") count = S.artifacts.length;
+    if (S && id === "qa") count = S.qc.length;
+    b.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>${label}${count!==""?`<span class="count">${count}</span>`:""}`;
+    b.onclick = () => { view = id; try{localStorage.setItem("shams.view", id)}catch(e){}; render(); };
+    nav.appendChild(b);
+  }
+}
+
+function stateIcon(state){
+  if (state === "ACCEPTED") return '<svg class="dot" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>';
+  if (["RUNNING","LEASED","QC_PENDING"].includes(state)) return '<svg class="dot spin" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
+  if (["REPAIR_REQUIRED","STALE"].includes(state)) return '<svg class="dot" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>';
+  if (["HUMAN_REVIEW","BLOCKED","FAILED"].includes(state)) return '<svg class="dot" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>';
+  return '<svg class="dot" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>';
+}
+function badgeFor(state){
+  const cls = state==="ACCEPTED"?"b-ok":["HUMAN_REVIEW","BLOCKED","FAILED"].includes(state)?"b-bad":
+    ["REPAIR_REQUIRED","STALE"].includes(state)?"b-warn":["RUNNING","LEASED","QC_PENDING"].includes(state)?"b-accent":"b-chip";
+  return `<span class="badge ${cls}">${esc(state)}</span>`;
+}
+
+function chatView(){
+  const modeLbl = {autonomous:"Autonomous",guided:"Guided",collaborative:"Collaborative"}[S.mode] || S.mode;
+  let h = `<div class="ctitle"><h2>Chat</h2><span class="badge b-chip">${esc(modeLbl)}</span></div>`;
+  if (!S.chat.length){
+    h += `<div class="empty">Mô tả dự án bạn muốn SHAMS sản xuất. SHAMS lập Task DAG, giao từng việc cho model AI phù hợp, kiểm thử độc lập và sửa lỗi theo vòng lặp.<br><span class="small">Ví dụ: "CLI Python quản lý ghi chú", "API backend bằng TypeScript" hoặc "Game giải đố 3D bằng Godot".</span></div>`;
+    h += `<div class="small muted" style="text-align:center;margin-bottom:6px">Lĩnh vực (Domain Pack, SHAMS tự nhận ra từ yêu cầu)</div><div class="engines">` +
+      (S.packs||[]).map(p => `<button type="button" class="eng" data-domain="${esc(p.id)}" aria-pressed="${p.id===S.project.domain}"><b>${esc(p.display)}</b><span>${esc(p.description||"")}</span></button>`).join("") + `</div>`;
+    const pk = (S.packs||[]).find(p => p.id===S.project.domain);
+    for (const [opt, choices] of Object.entries(pk ? pk.options||{} : {})){
+      h += `<div class="small muted" style="text-align:center;margin-bottom:6px">${esc(opt)}</div><div class="engines">` +
+        choices.map(c => `<button type="button" class="eng" data-opt="${esc(opt)}" data-val="${esc(c.id)}" aria-pressed="${c.id===(S.project.selected||{})[opt]}"><b>${esc(c.display)}</b><span>${esc(c.language||"")}</span></button>`).join("") + `</div>`;
+    }
+  }
+  const order = {RUNNING:0,LEASED:0,QC_PENDING:0,REPAIR_REQUIRED:1,HUMAN_REVIEW:1,BLOCKED:1,ACCEPTED:2,STALE:1,READY:3,PENDING:4};
+  for (const m of S.chat){
+    if (m.role === "user"){
+      h += `<div class="msg user"><div class="who">You</div><div class="body">${esc(m.text)}</div></div>`;
+    } else {
+      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body">${esc(m.text)}</div>`;
+      if (m.live && S.tasks.length){
+        const active = S.tasks.filter(t => !["PENDING","READY"].includes(t.state))
+          .sort((a,b) => (order[a.state]??5)-(order[b.state]??5)).slice(0,8);
+        h += `<ul class="items">` + active.map(t => `<li>${stateIcon(t.state)}${esc(t.title)} — <b>${esc(t.label)}</b>${t.attempt?` <span class="muted small">(lần ${t.attempt+1})</span>`:""}</li>`).join("") + `</ul>`;
+        const rest = S.tasks.length - active.length;
+        const waiting = S.tasks.filter(t => ["PENDING","READY"].includes(t.state)).length;
+        if (rest > 0) h += `<div class="small muted" style="margin-top:6px">+ ${rest} nhiệm vụ ${waiting === rest ? "đang chờ" : `khác${waiting ? ` (${waiting} đang chờ)` : ""}`}</div>`;
+      }
+      h += `</div>`;
+    }
+  }
+  h += `<form class="composer" id="composer"><input id="msg" placeholder="Nhập yêu cầu tiếp theo..." autocomplete="off"><button id="send" aria-label="Gửi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></form>`;
+  return h;
+}
+
+function workflowView(){
+  if (!S.tasks.length) return `<div class="ctitle"><h2>Workflow</h2></div><div class="empty">Chưa có kế hoạch.</div>`;
+  // layer tasks by dependency depth (Task DAG)
+  const by = Object.fromEntries(S.tasks.map(t => [t.task_id, t]));
+  const depth = {};
+  const d = id => depth[id] ?? (depth[id] = Math.max(0, ...(by[id]?.depends_on || []).filter(x=>by[x]).map(x => d(x)+1)));
+  S.tasks.forEach(t => d(t.task_id));
+  const layers = [];
+  S.tasks.forEach(t => (layers[depth[t.task_id]] ||= []).push(t));
+  let h = `<div class="ctitle"><h2>Workflow</h2><span class="small muted">Task DAG theo tầng phụ thuộc</span></div><div class="dag">`;
+  layers.forEach((L,i) => {
+    h += `<div><div class="lbl">Tầng ${i+1}</div><div class="col">` +
+      L.map(t => `<div class="node" title="${esc(t.task_id)}">${stateIcon(t.state)}${esc(t.title)}</div>`).join("") + `</div></div>`;
+  });
+  h += `</div><table style="margin-top:8px"><tr><th>Nhiệm vụ</th><th>Trạng thái</th><th>Worker</th><th>Lần</th></tr>` +
+    S.tasks.map(t => `<tr><td>${esc(t.title)}<div class="small muted"><code>${esc(t.task_id)}</code></div></td><td>${badgeFor(t.state)}</td><td>${esc(t.worker||"—")}</td><td>${t.attempt+1}</td></tr>`).join("") + `</table>`;
+  return h;
+}
+
+function workersView(){
+  let h = `<div class="ctitle"><h2>AI Workers</h2><span class="small muted">${S.nodes.length} node · ${S.workers.length} worker</span></div><div class="lanes">`;
+  for (const n of S.nodes){
+    const gpus = (n.gpus||[]).map(g => `GPU ${g.index}: ${(g.vram_mb/1024).toFixed(0)} GB`).join(", ") || "Không GPU";
+    const ws = S.workers.filter(w => w.node_id === n.node_id);
+    h += `<div class="card"><h3>${esc(n.node_id)} <span class="badge b-chip">${esc(n.kind)}</span></h3>
+      <div class="small muted">${esc(gpus)} · CPU slots: ${n.cpu_slots ?? 0} · ${esc(n.profile || "")}</div>
+      <table style="margin-top:8px"><tr><th>Worker</th><th>Model</th><th>Lane</th><th>Capabilities</th></tr>` +
+      (ws.map(w => `<tr><td>${esc(w.label)}<div class="small muted"><code>${esc(w.worker_id)}</code></div></td><td>${esc(w.model||"tool")}</td><td>${esc(w.lane)}</td><td class="small">${esc(w.capabilities.join(", "))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Không có worker</td></tr>`) +
+      `</table></div>`;
+  }
+  return h + `</div>`;
+}
+
+function modelsView(){
+  let h = `<div class="ctitle"><h2>Models</h2><span class="small muted">Model đang nạp theo lane GPU</span></div>`;
+  if (!S.models.length) h += `<div class="empty">Không có model nào đang nạp.${S.mock_mode?" (Chế độ mock)":""}</div>`;
+  else h += `<table><tr><th>Lane</th><th>Model</th><th>Worker</th><th>Nạp lúc</th></tr>` +
+    S.models.map(m => `<tr><td><code>${esc(m.lane)}</code></td><td>${esc(m.model)}</td><td>${esc(m.worker_id)}</td><td class="small">${esc((m.loaded_at||"").slice(11,19))}</td></tr>`).join("") + `</table>`;
+  const ev = S.console.filter(c => c.type.startsWith("model."));
+  h += `<div class="lbl" style="margin-top:12px">Lịch sử nạp/dỡ (${ev.filter(e=>e.type==="model.loaded").length} lần nạp)</div><div class="console" style="max-height:none">` +
+    (ev.map(e => `[${esc(e.ts)}] ${esc(e.text)}`).join("<br>") || "—") + `</div>`;
+  return h;
+}
+
+function artifactsView(){
+  let h = `<div class="ctitle"><h2>Artifacts</h2><span class="small muted">Lưu theo sha256, có version</span></div>`;
+  if (!S.artifacts.length) return h + `<div class="empty">Chưa có artifact.</div>`;
+  return h + `<table><tr><th>Logical ID</th><th>v</th><th>Trạng thái</th><th>Loại</th><th>sha256</th></tr>` +
+    S.artifacts.map(a => `<tr><td>${esc(a.logical_id)}<div class="small muted">${esc(a.produced_task_id)}</div></td><td>${a.version}</td><td>${badgeFor(a.state)}</td><td class="small">${esc(a.media_type)}</td><td><code>${esc(a.sha256.slice(0,12))}</code></td></tr>`).join("") + `</table>`;
+}
+
+function qaView(){
+  let h = `<div class="ctitle"><h2>QA Results</h2><span class="small muted">QC độc lập · 5 bậc · dừng sớm</span></div>`;
+  if (!S.qc.length) return h + `<div class="empty">Chưa có kết quả QC.</div>`;
+  const cls = v => v==="PASS"?"b-ok":v==="FAIL"?"b-bad":"b-warn";
+  return h + `<table><tr><th>Nhiệm vụ</th><th>Gate</th><th>Lần</th><th>Kết quả</th><th>Dừng ở bậc</th><th>Lúc</th></tr>` +
+    S.qc.map(q => `<tr><td><code>${esc(q.task_id)}</code></td><td class="small">${esc(q.gate)}</td><td>${q.attempt+1}</td><td><span class="badge ${cls(q.verdict)}">${esc(q.verdict)}</span></td><td>${q.stopped_at_stage ?? "—"}</td><td class="small">${esc((q.ts||"").slice(11,19))}</td></tr>`).join("") + `</table>`;
+}
+
+function render(){
+  if (!S) return;
+  navRender();
+  $("pname").textContent = S.project.name;
+  $("ppath").textContent = `/ Projects / ${S.project.setup}`;
+  $("wmode").textContent = S.mock_mode ? "Mock Workers" : "Local Workers";
+  $("wmode").className = "badge " + (S.mock_mode ? "b-warn" : "b-ok");
+  $("demo").hidden = !demo;
+  const p = S.progress;
+  $("prog").textContent = `${p.done}/${p.total}`;
+  $("progbar").style.width = p.total ? (100*p.done/p.total)+"%" : "0";
+  $("active").textContent = S.active ? S.active.label : (S.running ? "Đang chuyển…" : "—");
+  $("gpu").innerHTML = S.active ? (S.active.gpu ? '<span class="badge b-ok">GPU Active</span>' : '<span class="badge b-chip">CPU</span>') : "";
+  if (S.vram){
+    $("vramlbl").textContent = "VRAM" + (S.vram.simulated ? " (mô phỏng)" : "");
+    $("vram").textContent = `${(S.vram.used_mb/1024).toFixed(1)} / ${(S.vram.total_mb/1024).toFixed(0)} GB`;
+  } else { $("vramlbl").textContent = "VRAM"; $("vram").textContent = "Không GPU"; }
+  $("next").textContent = S.next_worker || "—";
+  $("reviewblk").hidden = !S.review.length;
+  $("reviewlist").innerHTML = S.review.map(t => `<div class="small" style="margin-bottom:8px"><b>${esc(t.title)}</b> ${badgeFor(t.state)}
+     <div class="actions">${t.state==="BLOCKED" ? `<button data-d="unblock" data-t="${esc(t.task_id)}">Mở khóa</button>` :
+     `<button data-d="retry" data-t="${esc(t.task_id)}">Thử lại</button><button data-d="accept" data-t="${esc(t.task_id)}">Chấp nhận</button><button data-d="fail" data-t="${esc(t.task_id)}">Dừng</button>`}</div></div>`).join("");
+  $("reviewlist").querySelectorAll("button").forEach(b => b.onclick = () => decide(b.dataset.t, b.dataset.d));
+  const con = $("console");
+  const atBottom = con.scrollTop + con.clientHeight >= con.scrollHeight - 4;
+  con.innerHTML = S.console.slice(-60).map(c => `[${esc(c.ts)}] ${esc(c.text)}`).join("<br>") || "—";
+  if (atBottom) con.scrollTop = con.scrollHeight;
+  $("conn").textContent = demo ? "Demo" : "Connected";
+  $("conn").className = "badge " + (demo ? "b-warn" : "b-ok");
+
+  const center = $("center");
+  const focused = document.activeElement && document.activeElement.id === "msg";
+  const draft = $("msg") ? $("msg").value : "";
+  center.innerHTML = {chat:chatView, workflow:workflowView, workers:workersView, models:modelsView, artifacts:artifactsView, qa:qaView}[view]();
+  if (view === "chat"){
+    const input = $("msg"); input.value = draft;
+    if (focused) input.focus();
+    $("send").disabled = sending;
+    $("composer").onsubmit = e => { e.preventDefault(); send(input.value); };
+    center.querySelectorAll(".eng").forEach(b => b.onclick = () => b.dataset.domain ? configure(b.dataset.domain, {}) : configure(S.project.domain, {[b.dataset.opt]: b.dataset.val}));
+  }
+}
+
+async function api(path, body){
+  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+  if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail);
+  return r.json();
+}
+async function poll(){
+  if (demo){ Demo.tick(); S = Demo.state(); render(); return; }
+  try { S = await api("/api/state"); render(); }
+  catch (e) { if (!S) { demo = true; Demo.init(); S = Demo.state(); render(); } else { $("conn").textContent = "Disconnected"; $("conn").className = "badge b-bad"; } }
+}
+async function configure(domain, options){
+  try { if (demo) Demo.configure(domain, options); else S = await api("/api/configure", {domain, options}); }
+  catch (e) { alert(e.message); }
+  poll();
+}
+async function send(text){
+  if (!text.trim() || sending) return;
+  sending = true;
+  try { if (demo) { Demo.chat(text); S = Demo.state(); } else S = await api("/api/chat", {text}); $("msg").value = ""; }
+  catch (e) { alert(e.message); }
+  sending = false; render();
+}
+async function decide(task_id, decision){
+  try { if (demo) Demo.decide(task_id, decision); else S = await api("/api/decide", {task_id, decision}); }
+  catch (e) { alert(e.message); }
+  poll();
+}
+
+/* ---- Demo mode: opened as a file without the controller. Simulates a pack template (software_basic or vertical_slice_3d). ---- */
+const Demo = (() => {
+  const PACKS = [
+    {id:"software", display:"Software", description:"Software development: apps, libraries, CLIs, APIs, websites", opt:"stack",
+     words:["app","ứng dụng","website","api","cli","library","thư viện","tool","service","backend","dashboard"],
+     choices:[{id:"python", display:"Python", language:"Python", words:["python","django","flask","fastapi"]},
+              {id:"typescript", display:"TypeScript (Node.js)", language:"TypeScript", words:["typescript","node","react","next.js","express"]}],
+     plan:[
+       ["task.project_scaffold","Khởi tạo project","code",[]],
+       ["task.core_module","Module lõi","code",["task.project_scaffold"]],
+       ["task.entrypoint","Điểm vào (CLI/API)","code",["task.project_scaffold"]],
+       ["task.integration","Tích hợp và test","code",["task.core_module","task.entrypoint"]],
+       ["task.package","Đóng gói","tool",["task.integration","task.entrypoint","task.project_scaffold"]],
+     ]},
+    {id:"game", display:"Game", description:"Game development: engine profiles, gameplay templates, engine automation", opt:"engine",
+     words:["game","trò chơi","gameplay","platformer","rpg","fps"],
+     choices:[{id:"unity", display:"Unity", language:"C#", words:["unity"]},
+              {id:"unreal", display:"Unreal Engine 5", language:"C++", words:["ue5","unreal"]},
+              {id:"godot", display:"Godot", language:"GDScript", words:["godot"]},
+              {id:"web", display:"Three.js (WebGPU)", language:"TypeScript", words:["three.js","threejs","webgpu","webgl"]}],
+     plan:[
+       ["task.project_scaffold","Khởi tạo project","code",[]],
+       ["task.player_controller","Điều khiển nhân vật chính 3D","code",["task.project_scaffold"]],
+       ["task.spawner","Hệ thống sinh đối tượng","code",["task.project_scaffold"]],
+       ["task.core_mechanic","Cơ chế gameplay cốt lõi","code",["task.player_controller","task.spawner"]],
+       ["task.hud","HUD trạng thái người chơi","code",["task.core_mechanic"]],
+       ["task.player_model","Mesh nhân vật chính","mesh",[]],
+       ["task.npc_model","Mesh đối tượng phụ / NPC","mesh",[]],
+       ["task.environment_texture","Texture môi trường","image",[]],
+       ["task.sfx_core","Âm thanh hành động chính","audio",[]],
+       ["task.integration_slice1","Tích hợp vertical slice","code",["task.player_controller","task.spawner","task.core_mechanic","task.hud","task.player_model","task.npc_model","task.environment_texture","task.sfx_core"]],
+       ["task.build_game","Build game","tool",["task.integration_slice1"]],
+     ]},
+  ];
+  let domain = "software", choice = {software:"python", game:"unity"};
+  const pack = () => PACKS.find(p => p.id === domain);
+  const cur = () => pack().choices.find(c => c.id === choice[domain]);
+  const score = (p, low) => p.words.filter(w => low.includes(w)).length + (p.choices.some(c => c.words.some(w => low.includes(w))) ? 2 : 0);
+  const LBL = {code:"Coding Worker", mesh:"3D Generator", image:"Image Generator", audio:"Audio Generator", tool:"Build & Test Tools"};
+  const MODEL = {code:"mock-coder", mesh:"mock-mesh", image:"mock-diffusion", audio:"mock-audio", tool:null};
+  let st, n = 0;
+  const ts = () => new Date().toTimeString().slice(0,8);
+  function init(){ st = {chat:[], tasks:[], console:[], loaded:null, cur:null, phase:0, qc:[], arts:[]}; }
+  function log(t, type="x"){ st.console.push({ts:ts(), text:t, type}); }
+  function chat(text){
+    st.chat.push({role:"user", text});
+    if (!st.tasks.length){
+      const low = text.toLowerCase();
+      const best = PACKS.map(p => [p, score(p, low) * (p.id==="game" ? 2 : 1)]).sort((a,b) => b[1]-a[1])[0];
+      if (best[1] > 0) domain = best[0].id;
+      const hit = pack().choices.find(c => c.words.some(w => low.includes(w)));
+      if (hit) choice[domain] = hit.id;
+      const PLAN = pack().plan;
+      st.tasks = PLAN.map(([id,title,fam,deps]) => ({task_id:id, title, fam, depends_on:deps, state:deps.length?"PENDING":"READY", attempt:0}));
+      st.chat.push({role:"director", live:true, text:`Đã phân tích yêu cầu và tạo ${PLAN.length} nhiệm vụ cho ${pack().display} · ${cur().display}. Đang triển khai.`});
+      log(`Plan created: ${PLAN.length} tasks`);
+    } else st.chat.push({role:"director", text:"Bản demo: yêu cầu bổ sung chưa được xử lý."});
+  }
+  function tick(){
+    if (++n % 2 || !st.tasks.length) return;
+    const T = st.tasks, ok = id => T.find(t=>t.task_id===id).state==="ACCEPTED";
+    T.forEach(t => { if (t.state==="PENDING" && t.depends_on.every(ok)) t.state = "READY"; });
+    if (st.cur){
+      const t = st.cur;
+      if (t.state === "RUNNING"){ t.state = "QC_PENDING"; log(`${t.task_id} handoff saved (attempt ${t.attempt})`); return; }
+      if (t.task_id==="task.spawner" && t.attempt===0){ t.state="READY"; t.attempt=1; st.qc.unshift({task_id:t.task_id,attempt:0,gate:"task_qc",verdict:"FAIL",stopped_at_stage:3,ts:new Date().toISOString()}); log(`QC FAIL ${t.task_id} (stage 3)`); log(`Repair scheduled for ${t.task_id}: fix_in_place`); st.cur=null; return; }
+      t.state = "ACCEPTED"; st.qc.unshift({task_id:t.task_id,attempt:t.attempt,gate:"task_qc",verdict:"PASS",ts:new Date().toISOString()});
+      st.arts.unshift({logical_id:t.task_id.replace("task.","out."),version:1,state:"ACCEPTED",media_type:"demo",sha256:Math.random().toString(16).slice(2).padEnd(12,"0"),produced_task_id:t.task_id});
+      log(`QC PASS ${t.task_id}`); st.cur = null; return;
+    }
+    const ready = T.filter(t => t.state==="READY");
+    if (!ready.length) return;
+    const pick = ready.find(t => MODEL[t.fam] && MODEL[t.fam]===st.loaded) || ready[0];
+    const m = MODEL[pick.fam];
+    if (m && m !== st.loaded){ if (st.loaded) log(`Unloaded ${st.loaded}`, "model.unloaded"); log(`Loading ${m} on gpu:node.mock_gpu:0`, "model.loaded"); st.loaded = m; }
+    pick.state = "RUNNING"; st.cur = pick; log(`Executing task ${pick.task_id}`);
+  }
+  function decide(){}
+  function configure(d, opts){ if (st.tasks.length) return; domain = d; const v = opts[pack().opt]; if (v) choice[domain] = v; }
+  function state(){
+    const T = st.tasks, lbl = {ACCEPTED:"PASS",QC_PENDING:"QC"};
+    const ready = T.filter(t=>t.state==="READY");
+    return {
+      app:"SHAMS", project:{name: st.chat[0]?.text?.slice(0,60) || "Dự án mới", domain, domain_display:pack().display,
+        setup:`${pack().display} · ${cur().display}`, selected:{[pack().opt]: choice[domain]}},
+      packs: PACKS.map(p => ({id:p.id, display:p.display, description:p.description,
+        options:{[p.opt]: p.choices.map(({id,display,language}) => ({id,display,language}))}})),
+      mode:"autonomous", mock_mode:true, running:true,
+      progress:{done:T.filter(t=>t.state==="ACCEPTED").length, total:T.length},
+      chat:st.chat, tasks:T.map(t=>({...t, label:lbl[t.state]||t.state, worker:LBL[t.fam], capability:t.fam})),
+      active: st.cur ? {label:LBL[st.cur.fam], gpu:!!MODEL[st.cur.fam]} : null,
+      vram: {used_mb: st.loaded ? 4000 : 0, total_mb: 8192, simulated:true},
+      next_worker: ready[0] ? LBL[ready[0].fam] : null,
+      nodes:[{node_id:"node.controller",kind:"local",cpu_slots:3,gpus:[],profile:"profile.cpu_only"},{node_id:"node.mock_gpu",kind:"local",cpu_slots:0,gpus:[{index:0,vram_mb:8192}],profile:"profile.mock"}],
+      workers:Object.entries(LBL).map(([f,l])=>({worker_id:"worker.mock_"+f,label:l,node_id:MODEL[f]?"node.mock_gpu":"node.controller",lane:MODEL[f]?"gpu":"cpu",model:MODEL[f],capabilities:[f]})),
+      models: st.loaded ? [{lane:"gpu:node.mock_gpu:0", model:st.loaded, worker_id:"worker.mock", loaded_at:""}] : [],
+      artifacts:st.arts, qc:st.qc, console:st.console.slice(-200), review:[],
+    };
+  }
+  return {init, chat, tick, state, decide, configure};
+})();
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

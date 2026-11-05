@@ -2,10 +2,10 @@
 import pytest
 
 from conftest import PID, dag, task_dict
-from studio.mock.worker import MockDefect, MockWorker
-from studio.orchestration.studio import Studio
-from studio.orchestration.task_runner import SimulatedCrash
-from studio.statemachine import S
+from shams.mock.worker import MockDefect, MockWorker
+from shams.orchestration.project import Studio
+from shams.orchestration.task_runner import SimulatedCrash
+from shams.statemachine import S
 
 
 def test_full_vertical_slice_runs_to_done(make_studio):
