@@ -163,17 +163,18 @@ class AssetCheckers:
                 return "FAIL", "tests failed: no test_*.py among the outputs"
             env = {**os.environ, "PYTHONPATH": td, "PYTHONDONTWRITEBYTECODE": "1"}
             try:
-                p = subprocess.run([self.python, "-m", "pytest", "-q", "-p", "no:cacheprovider", *tests], cwd=td,
+                p = subprocess.run([self.python, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider", *tests],
+                                   cwd=td,
                                    capture_output=True, text=True, timeout=self.timeout, env=env,
                                    encoding="utf-8", errors="replace")
             except subprocess.TimeoutExpired:
                 return "FAIL", "tests failed: pytest timed out"
-        tail = (p.stdout + p.stderr).strip().splitlines()[-12:]
+        tail = (p.stdout + p.stderr).strip().splitlines()[-40:]
         if p.returncode == 0:
             return "PASS", tail[-1] if tail else "pytest passed"
         if p.returncode == 5:
             return "FAIL", "tests failed: pytest collected no tests"
-        return "FAIL", "tests failed: " + "\n".join(tail)[-1200:]
+        return "FAIL", "tests failed: " + "\n".join(tail)[-1900:]
 
 
 # --------------------------------------------------------------------------- visual QC with a VL model
@@ -197,8 +198,12 @@ def make_visual_checker(provider: Any, model: str, exclusive: bool = True):
             for m in provider.ps():
                 if m["name"] != model:
                     provider.unload(m["name"])
-        r = provider.chat([{"role": "user", "content": VISUAL_PROMPT.format(criterion=criterion)}], model=model,
-                          images=[image_b64(p) for p in paths[:4]], format="json")
+        msgs = [{"role": "user", "content": VISUAL_PROMPT.format(criterion=criterion)}]
+        imgs = [image_b64(p) for p in paths[:4]]
+        r = provider.chat(msgs, model=model, images=imgs, format="json")
+        if not r.get("text", "").strip():
+            # some vision models answer only in their reasoning channel when thinking is forced off
+            r = provider.chat(msgs, model=model, images=imgs, format="json", think=True)
         try:
             v = extract_json(r["text"])
         except ValueError:

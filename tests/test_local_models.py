@@ -515,6 +515,41 @@ def test_selftest_reports_blocked_not_pass_when_nothing_is_installed(tmp_path):
     rep = selftest.run(s, tmp_path / "out", log=lambda m: None)
     st = {r["id"]: r["status"] for r in rep["tests"]}
     assert st["6a"] == "PASS"                                   # pure policy, runs everywhere
-    assert st["4"] == "SKIPPED" and rep["counts"]["FAIL"] == 0
+    assert st["4"] == "SKIPPED" and st["8b"] == "SKIPPED" and rep["counts"]["FAIL"] == 0
     assert all(st[t] == "BLOCKED" for t in ("1", "2", "3", "4b", "5a", "5b", "6b", "7", "8")), st
     assert (tmp_path / "out" / "report.md").read_text(encoding="utf-8").count("BLOCKED") >= 9
+
+
+def test_planner_turns_file_paths_into_ids():
+    raw = {"tasks": [
+        {"task_id": "a", "title": "a", "capability": "code.python", "depends_on": [],
+         "outputs": [{"name": "src/temp.py", "logical_id": "src/temp.py", "media_type": "text/x-python"}],
+         "acceptance_criteria": [{"description": "c", "kind": "compile"}]},
+        {"task_id": "b", "title": "b", "capability": "code.python", "depends_on": ["a"],
+         "inputs": [{"name": "t", "from_task": "a", "logical_id": "src/temp.py"}],
+         "outputs": [{"name": "tests/test_temp.py", "logical_id": "tests/test_temp.py", "media_type": "text/x-python"}],
+         "acceptance_criteria": [{"description": "c", "kind": "unit_test"}]}]}
+    dag = llm_planner.normalize(raw, project_id="pp", goal="g", domain=None)
+    from shams.planning.validator import validate_dag
+    assert not [i for i in validate_dag(dag) if i.level == "error"]
+    assert dag["tasks"][0]["outputs"][0] == {"name": "temp", "logical_id": "src.temp.py", "media_type": "text/x-python"}
+    assert dag["tasks"][1]["inputs"][0]["logical_id"] == "src.temp.py"
+
+
+def test_scene3d_rejects_javascript_before_running_blender(tmp_path, fake_blender):
+    replies = iter(["```python\nimport bpy\nfloorGeo = new THREE.PlaneGeometry(14, 14)\n```",
+                    "```python\nimport bpy\nbpy.ops.mesh.primitive_cube_add()\n```"])
+    prompts = []
+
+    class P:
+        def chat(self, messages, model, **kw):
+            prompts.append(messages[-1]["content"])
+            return {"text": next(replies)}
+    entry = {"worker": {"worker_id": "w", "model": "m"}, "provider_config": {"blender": fake_blender}}
+    w = blender_tools.Scene3DWorker(entry=entry, attempts_root=tmp_path, provider=P())
+    work = tmp_path / "w"
+    work.mkdir()
+    rep, script, _ = w.build({"task": {"title": "t", "acceptance_criteria": []}}, work,
+                             {"glb": str(work / "s.glb"), "render": str(work / "r.png")}, "procedural")
+    assert rep["ok"] and "not valid Blender Python" in prompts[1] and "new" in prompts[1]
+    assert w.log[0]["result"].startswith("This is not valid Blender Python")

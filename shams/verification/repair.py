@@ -61,7 +61,7 @@ class FailureClassifier:
             "schema_version": contracts.SCHEMA_VERSION, "project_id": task["project_id"],
             "failure_id": f"fail.{uuid.uuid4().hex[:12]}", "task_id": task["task_id"], "attempt": attempt,
             "source": source, "failure_class": fclass, "signature": sig,
-            "severity": SEVERITY.get(fclass, "medium"), "summary": detail[:500],
+            "severity": SEVERITY.get(fclass, "medium"), "summary": detail[:2000],      # the repair prompt needs the real error
             "evidence": evidence, "timestamp": contracts.now_iso(),
         }
         if strategy:

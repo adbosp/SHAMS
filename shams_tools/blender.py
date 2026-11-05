@@ -61,11 +61,52 @@ Rules:
 - Give every object a clear name. Use Principled BSDF materials with sensible base colours.
 - Prefer primitives, modifiers (bevel, array, mirror, solidify) and bmesh over huge vertex lists. Stay within the polygon budget.
 - Add a camera that frames the subject and at least one light.
+- This is Python for Blender (bpy), NOT JavaScript/three.js: no `new`, `const`, `let`, `THREE.`, semicolons or braces.
+Example of the expected style (a different subject):
+```python
+import bpy
+
+def material(name, rgba):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    m.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = rgba
+    return m
+
+bpy.ops.mesh.primitive_plane_add(size=6, location=(0, 0, 0))
+floor = bpy.context.active_object
+floor.name = "Floor"
+floor.data.materials.append(material("Concrete", (0.5, 0.5, 0.5, 1)))
+
+bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0.25))
+box = bpy.context.active_object
+box.name = "Crate"
+box.scale = (0.5, 0.5, 0.5)
+box.modifiers.new("Bevel", "BEVEL").width = 0.02
+box.data.materials.append(material("Wood", (0.45, 0.28, 0.12, 1)))
+
+bpy.ops.object.light_add(type="SUN", location=(3, -3, 5))
+bpy.context.active_object.data.energy = 3
+bpy.ops.object.camera_add(location=(2.5, -2.5, 1.8))
+cam = bpy.context.active_object
+cam.rotation_euler = (1.15, 0, 0.785)
+bpy.context.scene.camera = cam
+```
 Reply with exactly one ```python fenced block containing the whole script, then one line starting with SUMMARY: ."""
+
+NOT_PYTHON = re.compile(r"(?m)\bTHREE\.|^\s*(const|let|var)\s+\w+\s*=|=\s*new\s+[A-Z]|;\s*$|^\s*function\s+\w+\s*\(|"
+                        r"\bconsole\.log\b|=>")
 
 FORBIDDEN = re.compile(r"(?m)^\s*(?:import|from)\s+(os|sys|subprocess|shutil|socket|urllib|requests|pathlib|ctypes)\b|"
                        r"\b(__import__|exec|eval|open)\s*\(|bpy\.ops\.wm\.(save|quit|open)|bpy\.ops\.render\.|"
                        r"bpy\.ops\.export_scene\.")
+
+
+def _syntax_error(code: str) -> str | None:
+    try:
+        compile(code, "scene_script.py", "exec")
+        return None
+    except SyntaxError as e:
+        return f"SyntaxError line {e.lineno}: {e.msg}: {(e.text or '').strip()[:120]}"
 
 
 def extract_code(text: str) -> str | None:
@@ -105,11 +146,11 @@ class Scene3DWorker:
         self.model = entry["worker"].get("model") or ""
         self.attempts_root = Path(attempts_root)
         self.blender = find_blender(cfg.get("blender"))
-        self.max_fix_rounds = int(cfg.get("max_fix_rounds", 2))
+        self.max_fix_rounds = int(cfg.get("max_fix_rounds", 3))
         self.timeout = float(cfg.get("blender_timeout", 300))
         self.resolution = int(cfg.get("render_resolution", 512))
         self.engine = cfg.get("render_engine", "BLENDER_WORKBENCH")
-        self.chat_options = dict(cfg.get("chat_options", {}))
+        self.chat_options = {"options": {"temperature": 0.2}, **dict(cfg.get("chat_options", {}))}
         self.log: list[dict] = []
 
     def _messages(self, ctx: dict, route: str) -> list[dict]:
@@ -140,6 +181,12 @@ class Scene3DWorker:
             if not code:
                 problem = "Reply had no ```python block."
                 rep = {"ok": False, "error": problem}
+            elif NOT_PYTHON.search(code) or _syntax_error(code):
+                m = NOT_PYTHON.search(code)
+                problem = (f"This is not valid Blender Python: {('found ' + repr(m.group(0).strip())) if m else _syntax_error(code)}. "
+                           "Write plain Python with bpy (no three.js/JavaScript syntax).")
+                rep = {"ok": False, "error": problem}
+                script = code
             elif FORBIDDEN.search(code):
                 problem = f"Forbidden construct: {FORBIDDEN.search(code).group(0)!r}. Only bpy/bmesh/math/mathutils/random."
                 rep = {"ok": False, "error": problem}
@@ -160,7 +207,7 @@ class Scene3DWorker:
                 problem = rep.get("error", "unknown Blender error")
             self.log.append({"round": round_, "result": problem[-300:]})
             messages = messages + [{"role": "assistant", "content": raw},
-                                   {"role": "user", "content": "Blender reported this problem; send the full fixed "
+                                   {"role": "user", "content": "The script was checked (and run in Blender if valid) and has this problem; send the full fixed "
                                                                f"script.\n{problem[-2500:]}"}]
         return rep, script, usage
 

@@ -319,7 +319,12 @@ def t7_switching(c: Ctx) -> tuple[str, str]:
             if prev and prev != m:
                 c.ollama.unload(prev)
             r = c.ollama.chat([{"role": "user", "content": "Reply with the single word OK."}], model=m,
-                              options={"num_ctx": 4096, "num_predict": 8})
+                              options={"num_ctx": 4096, "num_predict": 64})
+            note = ""
+            if not r["text"].strip():
+                r = c.ollama.chat([{"role": "user", "content": "Reply with the single word OK."}], model=m,
+                                  think=True, options={"num_ctx": 4096, "num_predict": 1024})
+                note = " (answered only with thinking on)" if r["text"].strip() else " (NO ANSWER)"
             ps = c.ollama.ps()
         except providers.ProviderError as e:
             return FAIL, f"switch to {m} failed: {e}; steps so far: {steps}"
@@ -330,7 +335,9 @@ def t7_switching(c: Ctx) -> tuple[str, str]:
         others = [n for n in loaded if n != m]
         gpu_pct = round(100 * info["size_vram"] / info["size"]) if info["size"] else 0
         steps.append(f"{role}={m.split('/')[-1]} {gpu_pct}% GPU" + (f" (also loaded: {others})" if others else "")
-                     + f" '{r['text'].strip()[:10]}'")
+                     + f" '{r['text'].strip()[:10]}'{note}")
+        if not r["text"].strip():
+            return FAIL, f"{m} loaded but returned no answer: " + "; ".join(steps)
         if others:
             return FAIL, "previous model still loaded after unload: " + "; ".join(steps)
         prev = m
@@ -341,7 +348,9 @@ def t7_switching(c: Ctx) -> tuple[str, str]:
 
 
 def t8_pipeline(c: Ctx) -> tuple[str, str]:
-    """Real Shams run: 2 coder tasks (typed handoff), QC with pytest, stop after task 1, resume."""
+    """Real Shams run: 2 coder tasks (typed handoff), QC with pytest, stop after task 1, resume.
+    8 checks the machinery (restart does not redo accepted work, the next task gets the accepted artifact,
+    QC verdicts route the task); 8b checks that the local model actually finished the work."""
     from shams.orchestration.project import Shams
     from shams.statemachine import S
     if not c.model("coder"):
@@ -398,15 +407,23 @@ def t8_pipeline(c: Ctx) -> tuple[str, str]:
     finally:
         st.close()
     states = {k: v["state"] for k, v in tasks.items()}
-    if not summary["done"]:
-        return FAIL, f"pipeline not finished after restart: {states}"
     handoff_ok = any(i.get("logical_id") == "code.temp" and i.get("sha256") == acc.get("sha256")
                      for i in h.get("inputs", []))
     redone = leases_after != leases_before
-    detail = (f"states {states}; task 1 leases before/after restart {leases_before}/{leases_after}; QC events "
-              f"{len(qc)}; repairs {repairs}; task.cli received code.temp with the accepted hash: {handoff_ok}; "
-              f"model loads {summary.get('model_loads')}")
-    return (PASS if handoff_ok and not redone else FAIL), detail
+    qc_failed = sum(1 for r in qc if r["type"] == "qc.failed")
+    routed = states.get("task.cli") in ("ACCEPTED", "HUMAN_REVIEW")
+    c.data["pipeline"] = {"states": states, "done": summary["done"], "repairs": repairs}
+    detail = (f"task 1 leases before/after restart {leases_before}/{leases_after} (not redone: {not redone}); "
+              f"task.cli received code.temp with the accepted hash: {handoff_ok}; QC events {len(qc)} "
+              f"({qc_failed} failed); task.cli ended {states.get('task.cli')}")
+    return (PASS if handoff_ok and not redone and routed else FAIL), detail
+
+
+def t8b_pipeline_done(c: Ctx) -> tuple[str, str]:
+    p = c.data.get("pipeline")
+    if not p:
+        return SKIPPED, "needs test 8"
+    return (PASS if p["done"] else FAIL), f"states {p['states']}; repairs {p['repairs']}"
 
 
 TESTS: list[tuple[str, str, Callable[[Ctx], tuple[str, str]]]] = [
@@ -420,7 +437,8 @@ TESTS: list[tuple[str, str, Callable[[Ctx], tuple[str, str]]]] = [
     ("6a", "Stable Fast 3D is not called for basic scenes (policy)", t6a_sf3d_policy),
     ("6b", "Stable Fast 3D image-to-3D with a reference image (GLB/UV/texture)", t6b_sf3d_run),
     ("7", "Ollama model switching without OOM", t7_switching),
-    ("8", "Pipeline: handoff, QC, restart from checkpoint", t8_pipeline),
+    ("8", "Pipeline: restart from checkpoint, typed handoff, QC routing", t8_pipeline),
+    ("8b", "Pipeline: local coder finishes every task (QC accepted)", t8b_pipeline_done),
 ]
 
 

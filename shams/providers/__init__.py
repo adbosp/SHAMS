@@ -201,7 +201,7 @@ class Ollama(OpenAICompatible):
 
     # chat ------------------------------------------------------------------------------------
     def chat(self, messages: list[dict], *, model: str, images: list[str] | None = None,
-             format: Any = None, **opts: Any) -> dict:
+             format: Any = None, think: Any = "default", **opts: Any) -> dict:
         """Native /api/chat. ``images`` are base64 strings attached to the last user message."""
         if not self.native and not images and format is None:
             return super().chat(messages, model=model, **opts)
@@ -216,8 +216,9 @@ class Ollama(OpenAICompatible):
             options["num_ctx"] = self.num_ctx
         body: dict[str, Any] = {"model": model, "messages": msgs, "stream": False, "keep_alive": self.keep_alive,
                                 "options": options}
-        if self.think is not None:
-            body["think"] = self.think
+        think = self.think if think == "default" else think
+        if think is not None:
+            body["think"] = think
         if format is not None:
             body["format"] = format
         r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
