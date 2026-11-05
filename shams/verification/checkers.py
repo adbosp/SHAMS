@@ -111,6 +111,16 @@ class AssetCheckers:
                    f"{rep.get('lights')}, materials {len(rep.get('materials', []))}, non-manifold edges {nm}")
         return ("FAIL", "scene check: " + "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)
 
+    # ------------------------------------------------------------------ text
+    def _text(self, c: dict, outputs: list[dict]):
+        chk = c.get("check") or {}
+        sel = pick(outputs, chk, ("text/markdown", "text/plain", "application/json", "text/x-python"))
+        if not sel:
+            return "FAIL", "missing output: no text produced"
+        n = min(len(Path(o["file"]).read_text(encoding="utf-8", errors="replace").strip()) for o in sel)
+        need = int(chk.get("min_chars", 1))
+        return ("PASS", f"{n} chars") if n >= need else ("FAIL", f"text output has {n} chars < {need}")
+
     # ------------------------------------------------------------------ images
     def _image(self, c: dict, outputs: list[dict]):
         sel = pick(outputs, c.get("check") or {}, ("image/png",))

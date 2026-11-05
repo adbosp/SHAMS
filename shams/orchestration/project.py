@@ -74,6 +74,8 @@ class Shams:
         for k, v in (self.settings.get("env") or {}).items():       # non-secret env (ADR-118)
             os.environ.setdefault(k, str(v))
         self.mcp = MCPManager.from_settings(self.settings)
+        from shams.research import Research, ToolBox
+        self.tools = ToolBox(self.mcp, Research(self.settings.get("research")))
         self.hooks = HookRunner(self.settings.get("hooks"), self.dir, self.settings.get("env"))
         self.hooks.last_seq = self.db.q1("SELECT COALESCE(MAX(seq),0) FROM events")[0]
         self.artifacts = ArtifactRegistry(self.db, self.dir / "artifacts")
@@ -222,6 +224,82 @@ class Shams:
             raise ValueError("LLM plan invalid:\n" + "\n".join(result["issues"]))
         return self.plan_from_template(goal=goal, approved_by=approved_by)
 
+    # ------------------------------------------------------------------ Direct Mode (ADR-121)
+    def direct(self, preset_id: str, params: dict, *, by: str = "human", confirm_adult: bool = False) -> str:
+        """Queue one task for one chosen preset: no planner, same scheduler, GPU lease, workers,
+        artifact registry, QC and event log as Autonomous Mode. Returns the task id; run() executes it."""
+        import jsonschema
+        from shams import policy
+        from shams.models import ModelRegistry
+        reg = ModelRegistry(self.settings)
+        p = reg.preset(preset_id)
+        if p is None:
+            raise KeyError(f"unknown preset {preset_id!r}; see `shams presets`")
+        if "direct" not in p["execution_modes"]:
+            raise PermissionError(f"preset {preset_id} does not allow Direct Mode")
+        params = dict(params or {})
+        try:
+            jsonschema.validate(params, p["input_schema"])
+            props = (p["input_schema"].get("properties") or {})
+            # preset params the user may also set become defaults; the rest (model files...) stay in the worker config
+            params = {**{k: v for k, v in p.get("params", {}).items() if k in props}, **params}
+        except jsonschema.ValidationError as e:
+            raise ValueError(f"invalid parameters for {preset_id}: {e.message}") from None
+        allowed = bool((self.settings.get("general") or {}).get("allow_adult_content", False))
+        try:
+            params = policy.check(p, params, allowed=allowed, confirmed=confirm_adult)
+        except policy.PolicyError as e:
+            with self.db.tx():
+                self.db.append("policy.refused", "model", preset_id, by, payload={"preset": preset_id, "reason": str(e)[:300]})
+            raise
+        if p["status"] != "ok":
+            raise RuntimeError(f"preset {preset_id} is not available: {p['status']} {p['how']}")
+        if p["worker"]["id"] not in self.nodes.workers:          # settings changed after this project opened
+            self.nodes = build_registry(self.settings)
+            self.scheduler.nodes = self.nodes
+            self.repair.nodes = self.nodes
+            self.lifecycle.workers = self.nodes.workers
+        if p["content_policy"].get("adult"):
+            params["_adult_confirmed"] = True
+        n = self.db.q1("SELECT COUNT(*) FROM tasks WHERE task_id LIKE 'task.direct.%'")[0] + 1
+        tid = f"task.direct.{n:04d}"
+        kinds = {"text/markdown": ("metric", {"type": "text", "min_chars": 1}),
+                 "image/png": ("screenshot", {"type": "image", "min_width": 64}),
+                 "model/gltf-binary": ("schema", {"type": "glb"})}
+        crit = [{"id": f"ac.{tid[5:]}.{i}", "description": f"{o['name']} produced and valid", "kind": kinds[o["media_type"]][0],
+                 "check": {**kinds[o["media_type"]][1], "logical_id": f"direct.{n:04d}.{o['name']}"}}
+                for i, o in enumerate(p["outputs"]) if o["media_type"] in kinds]
+        prompt = str(params.get("prompt", ""))
+        task = {"schema_version": contracts.SCHEMA_VERSION, "project_id": self.db.project_id, "task_id": tid,
+                "title": f"[{preset_id}] {prompt[:80]}" or preset_id, "description": prompt,
+                "capability": p["direct_capability"], "depends_on": [], "inputs": [],
+                "outputs": [{"name": o["name"], "logical_id": f"direct.{n:04d}.{o['name']}", "media_type": o["media_type"]}
+                            for o in p["outputs"]],
+                "acceptance_criteria": crit or [{"id": f"ac.{tid[5:]}.exists", "description": "output exists",
+                                                 "kind": "exists"}],
+                "params": params, "preset": preset_id, "max_attempts": int(p.get("max_attempts", 1) or 1),
+                "budget": {"max_wall_seconds": 3600}, "priority": 90, "created_by": "human"}
+        dag = {"schema_version": contracts.SCHEMA_VERSION, "project_id": self.db.project_id,
+               "plan_id": f"plan.{tid}", "plan_version": 1, "goal": prompt[:500], "template": "direct", "tasks": [task]}
+        self.load_plan(dag, approved_by=by)
+        with self.db.tx():
+            self.db.append("direct.queued", "task", tid, by, payload={"preset": preset_id, "model": p["model"],
+                                                                       "provider": p["provider"]})
+        return tid
+
+    def run_task(self, task_id: str, max_steps: int = 200) -> dict:
+        """Step until one task reaches a final or waiting state (Direct Mode)."""
+        final = {S.ACCEPTED, S.FAILED, S.CANCELED, S.HUMAN_REVIEW, S.BLOCKED}
+        for _ in range(max_steps):
+            if S(self.db.task(task_id)["state"]) in final:
+                break
+            if not self.step():
+                break
+        t = self.db.task(task_id)
+        return {"task_id": task_id, "state": t["state"], "outputs": [a for a in (self.artifacts.accepted(o["logical_id"])
+                                                                               for o in t["outputs"]) if a],
+                "handoff": self.db.handoff(task_id)}
+
     def close(self) -> None:
         self.mcp.close()
         self.db.close()
@@ -279,7 +357,7 @@ class Shams:
         if impl is None:
             from shams import workers
             impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path,
-                                  mcp=self.mcp, max_tool_rounds=int(self.settings["general"].get("max_tool_rounds", 8)))
+                                  mcp=self.tools, max_tool_rounds=int(self.settings["general"].get("max_tool_rounds", 8)))
             self._impls[worker.worker_id] = impl
         return impl
 

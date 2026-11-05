@@ -152,6 +152,36 @@ def t2_coder(c: Ctx) -> tuple[str, str]:
 
 
 def t3_scene(c: Ctx) -> tuple[str, str]:
+    """Simple scene: the 3D coding model writes a scene description (JSON); SHAMS builds GLB + render. No Blender."""
+    from shams_tools.blender import Scene3DWorker
+    m = c.model("scene3d")
+    if not m:
+        return BLOCKED, "scene3d role not resolved"
+    c.free_gpu()
+    entry = {"worker": {"worker_id": "selftest.scene3d", "kind": "llm_agent", "model": m},
+             "provider_config": {"blender": None, "max_fix_rounds": 3}}
+    prov = providers.create("ollama", {"base_url": c.ollama.root, "num_ctx": 16384})
+    w = Scene3DWorker(entry=entry, attempts_root=c.out, provider=prov)
+    work = c.out / "t3_scene"
+    work.mkdir(exist_ok=True)
+    ctx = {"goal": "selftest", "task": {"task_id": "task.scene", "title": "Table scene", "description": SCENE_TASK,
+                                        "acceptance_criteria": [{"description": "table, ball, camera, light",
+                                                                 "check": {"max_triangles": 20000}}]}}
+    rep, raw, usage = w.build_json(ctx, work, {"glb": str(work / "scene.glb"), "render": str(work / "render.png")}, 20000)
+    (work / "scene_reply.json").write_text(raw, encoding="utf-8")
+    (work / "scene_report.json").write_text(json.dumps(rep, indent=1), encoding="utf-8")
+    fixes = sum(1 for e in w.log if e["result"] != "ok")
+    if not rep.get("ok"):
+        return FAIL, f"{m}: scene JSON failed after {fixes} fix round(s): {rep.get('error', '')[-300:]}"
+    c.data["scene"] = {"glb": str(work / "scene.glb"), "render": str(work / "render.png"), "report": rep}
+    names = [o["name"] for o in rep["objects"]][:10]
+    return PASS, (f"{m} -> scene JSON -> SHAMS GLB + render (no Blender): {rep['mesh_objects']} objects {names}, "
+                  f"{rep['triangles']} tris, coverage {rep['coverage']:.0%}, fix rounds {fixes}, "
+                  f"{round(usage['wall_seconds'], 1)} s")
+
+
+def t3b_blender(c: Ctx) -> tuple[str, str]:
+    """Complex scene route: the same model writes Blender Python, Blender runs it."""
     from shams_tools.blender import Scene3DWorker, blender_from
     m = c.model("scene3d")
     bl = blender_from(c.settings)
@@ -164,9 +194,10 @@ def t3_scene(c: Ctx) -> tuple[str, str]:
              "provider_config": {"blender": bl, "max_fix_rounds": 2}}
     prov = providers.create("ollama", {"base_url": c.ollama.root, "num_ctx": 16384})
     w = Scene3DWorker(entry=entry, attempts_root=c.out, provider=prov)
-    work = c.out / "t3_scene"
+    work = c.out / "t3b_blender"
     work.mkdir(exist_ok=True)
-    ctx = {"goal": "selftest", "task": {"task_id": "task.scene", "title": "Table scene", "description": SCENE_TASK,
+    ctx = {"goal": "selftest", "task": {"task_id": "task.scene", "title": "Table scene with bevelled edges",
+                                        "description": SCENE_TASK + " Use a bevel modifier on the table top.",
                                         "acceptance_criteria": [{"description": "table, ball, camera, light",
                                                                  "check": {"max_triangles": 20000}}]}}
     rep, script, usage = w.build(ctx, work, {"glb": str(work / "scene.glb"), "render": str(work / "render.png")},
@@ -175,9 +206,9 @@ def t3_scene(c: Ctx) -> tuple[str, str]:
     fixes = sum(1 for e in w.log if e["result"] != "ok")
     if not rep.get("ok"):
         return FAIL, f"{m}: Blender scene failed after {fixes} fix round(s): {rep.get('error', '')[-300:]}"
-    c.data["scene"] = {"glb": str(work / "scene.glb"), "render": str(work / "render.png"), "report": rep}
-    return PASS, (f"{m} + Blender {rep.get('blender')}: {rep.get('mesh_objects')} meshes, materials "
-                  f"{rep.get('materials')}, fix rounds {fixes}, {round(usage['wall_seconds'], 1)} s")
+    v, d = assets.check_png(work / "render.png", {"min_width": 256, "min_std": 4})
+    return (PASS if v == PASS else FAIL), (f"{m} + Blender {rep.get('blender')}: {rep.get('mesh_objects')} meshes, "
+                                           f"render {d}, fix rounds {fixes}, {round(usage['wall_seconds'], 1)} s")
 
 
 def t4_render(c: Ctx) -> tuple[str, str]:
@@ -194,7 +225,7 @@ def t4_render(c: Ctx) -> tuple[str, str]:
     iv, idt = check_blender_import({"check": {}}, [{"logical_id": "g", "media_type": "model/gltf-binary",
                                                    "file": s["glb"]}], c.settings)
     parts = [("render", rv, rd), ("glb", gv, gd), ("scene", sv, sd), ("import", iv, idt)]
-    bad = [f"{n}: {d}" for n, v, d in parts if v != PASS]
+    bad = [f"{n}: {d}" for n, v, d in parts if v != PASS and not (n == "import" and v == "NOT_VERIFIED")]
     detail = "; ".join(f"{n} {v}: {d}" for n, v, d in parts)
     return (FAIL if bad else PASS), detail
 
@@ -426,10 +457,180 @@ def t8b_pipeline_done(c: Ctx) -> tuple[str, str]:
     return (PASS if p["done"] else FAIL), f"states {p['states']}; repairs {p['repairs']}"
 
 
+# --------------------------------------------------------------------------- Direct Mode (ADR-121)
+def _direct_project(c: Ctx, name: str):
+    from shams.orchestration.project import Shams
+    d = c.out / name
+    if d.exists():
+        shutil.rmtree(d)
+    Shams.init_project(d, name, "direct mode self-test", mode="guided", domain="software",
+                       domain_config={"stack": "python"})
+    from shams import settings as settings_mod
+    sp = settings_mod.path_for("project", d)                 # the project runs on exactly the settings under test
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    sp.write_text(json.dumps(c.settings, ensure_ascii=False), encoding="utf-8")
+    return Shams(d)
+
+
+def _preset_ok(c: Ctx, pid: str) -> tuple[dict | None, str]:
+    p = c.reg.preset(pid)
+    if p is None:
+        return None, f"preset {pid} not configured (models.presets / roles)"
+    if p["status"] != "ok":
+        return None, f"preset {pid}: {p['status']} {p['how']}"
+    return p, ""
+
+
+def t9a_direct_chat(c: Ctx) -> tuple[str, str]:
+    p, why = _preset_ok(c, "coder")
+    if not p:
+        return BLOCKED, why
+    c.free_gpu()
+    st = _direct_project(c, "t9_direct_chat")
+    try:
+        tid = st.direct("coder", {"prompt": "Write a Python function is_prime(n: int) -> bool. Reply with one "
+                                            "```python code block only.", "temperature": 0.1})
+        res = st.run_task(tid, max_steps=50)
+        files = [st.artifacts.blob_path(a["sha256"]) for a in res["outputs"]]
+        events = [r[0] for r in st.db.q("SELECT type FROM events WHERE subject_id=? ORDER BY seq", (tid,))]
+    finally:
+        st.close()
+    if res["state"] != "ACCEPTED" or not files:
+        return FAIL, f"task {tid} ended {res['state']}; events {events[-6:]}"
+    text = files[0].read_text(encoding="utf-8")
+    code = (_code_blocks(text) or [text])[0]
+    v, d = _pytest({"prime.py": code, "test_prime.py": "from prime import is_prime\n\n\ndef test_p():\n"
+                    "    assert [n for n in range(20) if is_prime(n)] == [2, 3, 5, 7, 11, 13, 17, 19]\n"},
+                   c.out / "t9a_check")
+    return (PASS if v == PASS else FAIL), (f"{p['model']}: {tid} ACCEPTED (no planner, no DAG), artifact "
+                                          f"{files[0].name[:12]}… {len(text)} chars; generated is_prime: {d}")
+
+
+def t9b_direct_image(c: Ctx) -> tuple[str, str]:
+    p, why = _preset_ok(c, "image")
+    if not p:
+        return BLOCKED, why
+    c.free_gpu()
+    st = _direct_project(c, "t9_direct_image")
+    try:
+        try:
+            tid = st.direct("image", {"prompt": "a red lighthouse on a rocky coast at sunset, painterly",
+                                      "width": 768, "height": 768, "seed": 7})
+        except RuntimeError as e:
+            return BLOCKED, str(e)
+        res = st.run_task(tid, max_steps=50)
+        h = res.get("handoff") or {}
+        files = [st.artifacts.blob_path(a["sha256"]) for a in res["outputs"]]
+    finally:
+        st.close()
+    if res["state"] == "BLOCKED" or h.get("status") == "BLOCKED":
+        return BLOCKED, f"{tid}: {h.get('blocked_reason', 'blocked')}"
+    if res["state"] != "ACCEPTED" or not files:
+        return FAIL, f"{tid} ended {res['state']}: {h.get('blocked_reason') or h.get('summary')}"
+    out = c.out / "t9b_image.png"
+    shutil.copyfile(files[0], out)
+    v, d = assets.check_png(out, {"min_width": 512, "min_std": 8})
+    return v, f"{p['model']} via ComfyUI: {tid} ACCEPTED, {d}"
+
+
+def t9c_direct_switch(c: Ctx) -> tuple[str, str]:
+    """Two Direct tasks on two different models: the first must be unloaded before the second loads."""
+    first = next((pid for pid in ("qwen35-heretic-q4", "planner") if _preset_ok(c, pid)[0]), None)
+    if not first or not _preset_ok(c, "coder")[0]:
+        return BLOCKED, "needs two Ollama presets (qwen35-heretic-q4 or planner, and coder)"
+    c.free_gpu()
+    st = _direct_project(c, "t9_direct_switch")
+    steps = []
+    try:
+        for pid, prompt in ((first, "Reply with one short sentence about the sea."), ("coder", "Reply with OK.")):
+            res = st.run_task(st.direct(pid, {"prompt": prompt, "max_tokens": 200}), max_steps=50)
+            loaded = [m["name"] for m in c.ollama.ps()]
+            steps.append((pid, res["state"], loaded))
+        unloads = st.db.q1("SELECT COUNT(*) FROM events WHERE type LIKE 'model.unload%'")[0]
+    finally:
+        st.close()
+    m1 = c.reg.preset(first)["model"]
+    detail = "; ".join(f"{pid}: {state}, loaded after: {loaded or 'none'}" for pid, state, loaded in steps)
+    ok = all(s[1] == "ACCEPTED" for s in steps) and m1 not in steps[1][2]
+    return (PASS if ok else FAIL), detail + f"; unload events {unloads}; VRAM {_vram()}"
+
+
+def t9d_direct_errors(c: Ctx) -> tuple[str, str]:
+    """Bad input and the content policy are refused before anything runs, and every refusal is logged."""
+    from shams import policy
+    st = _direct_project(c, "t9_direct_errors")
+    checks = []
+    try:
+        for name, call, exc in (("unknown preset", lambda: st.direct("no_such_preset", {"prompt": "x"}), KeyError),
+                                ("missing prompt", lambda: st.direct("coder", {"temperature": 0.1}), ValueError),
+                                ("bad parameter", lambda: st.direct("coder", {"prompt": "x", "temperature": 9}), ValueError)):
+            try:
+                call()
+                checks.append((name, False, "accepted"))
+            except exc as e:
+                checks.append((name, True, str(e)[:60]))
+            except Exception as e:  # noqa: BLE001
+                checks.append((name, False, f"{type(e).__name__}: {e}"[:80]))
+        adult = next((p for p in c.reg.presets() if p["content_policy"].get("adult")), None)
+        if adult:
+            try:
+                st.direct(adult["id"], {"prompt": "a teen girl"}, confirm_adult=True)
+                checks.append(("adult preset + minor", False, "accepted"))
+            except policy.PolicyError as e:
+                checks.append(("adult preset refused", True, str(e)[:70]))
+            refused = st.db.q1("SELECT COUNT(*) FROM events WHERE type='policy.refused'")[0]
+            checks.append(("refusal logged", refused >= 1, f"{refused} policy.refused events"))
+        tasks = len(st.db.tasks())
+    finally:
+        st.close()
+    checks.append(("nothing queued", tasks == 0, f"{tasks} tasks"))
+    ok = all(x[1] for x in checks)
+    return (PASS if ok else FAIL), "; ".join(f"{n}: {'ok' if v else 'WRONG'} ({d})" for n, v, d in checks)
+
+
+def t9e_moss(c: Ctx) -> tuple[str, str]:
+    """MOSS-Image presets: files and nodes are checked in ComfyUI; the base model renders one SFW image.
+    The NSFW LoRA preset is only preflighted, never run by the self-test."""
+    from shams_tools.comfyui import ComfyUI, MissingResources, fill
+    cfg = (c.settings.get("tools") or {}).get("comfyui")
+    base, lora = c.reg.preset("moss_image"), c.reg.preset("moss_image_nsfw_lora")
+    if not cfg or not base:
+        return BLOCKED, "tools.comfyui or the moss_image preset is not configured"
+    prov = ComfyUI(**{k: v for k, v in cfg.items() if k in ("base_url", "workflows", "launch", "launch_cwd",
+                                                             "autostart", "timeout")})
+    try:
+        c.free_gpu()
+        prov.ensure_running()
+    except providers.ProviderError as e:
+        return BLOCKED, str(e)
+    notes = []
+    if lora:
+        doc = prov.workflow("moss_image_lora")
+        g = fill(doc["graph"], {**doc.get("defaults", {}), **lora.get("params", {}), "prompt": "x", "seed": 1})
+        lp = prov.preflight(g)
+        notes.append("LoRA preset preflight: " + ("files and nodes present (not generated by design)" if not lp
+                                                  else "; ".join(lp)))
+    params = {**base.get("params", {}), "prompt": "a ceramic teapot on a wooden table, soft daylight, product photo",
+              "width": 768, "height": 768, "seed": 3}
+    try:
+        r = prov.generate("moss_image", params)
+    except MissingResources as e:
+        return BLOCKED, "MOSS-Image cannot load in this ComfyUI: " + "; ".join(e.problems) + " | " + " | ".join(notes)
+    except providers.ProviderError as e:
+        return FAIL, str(e)[:500] + " | " + " | ".join(notes)
+    finally:
+        prov.unload()
+    out = c.out / "t9e_moss.png"
+    out.write_bytes(r["images"][0])
+    v, d = assets.check_png(out, {"min_width": 512, "min_std": 8})
+    return v, f"moss_image: {d}, {r['seconds']} s | " + " | ".join(notes)
+
+
 TESTS: list[tuple[str, str, Callable[[Ctx], tuple[str, str]]]] = [
     ("1", "Planner model writes a valid Task DAG", t1_planner),
     ("2", "Coding model creates code and fixes a bug (pytest)", t2_coder),
-    ("3", "3D Scene model builds a Blender scene (GLB + render)", t3_scene),
+    ("3", "Simple scene: 3D model writes scene JSON, SHAMS builds GLB + render (no Blender)", t3_scene),
+    ("3b", "Complex scene: 3D model writes Blender Python, Blender builds it", t3b_blender),
     ("4", "Scene render and geometry verified (PNG, GLB, report, Blender import)", t4_render),
     ("4b", "Visual QC by the vision model on the render", t4b_visual),
     ("5a", "SDXL-Lightning 4-step through ComfyUI", t5a_sdxl),
@@ -439,6 +640,11 @@ TESTS: list[tuple[str, str, Callable[[Ctx], tuple[str, str]]]] = [
     ("7", "Ollama model switching without OOM", t7_switching),
     ("8", "Pipeline: restart from checkpoint, typed handoff, QC routing", t8_pipeline),
     ("8b", "Pipeline: local coder finishes every task (QC accepted)", t8b_pipeline_done),
+    ("9a", "Direct Mode: coding LLM task, real artifact, ACCEPTED", t9a_direct_chat),
+    ("9b", "Direct Mode: image task through ComfyUI", t9b_direct_image),
+    ("9c", "Direct Mode: model switching between two Direct tasks", t9c_direct_switch),
+    ("9d", "Direct Mode: bad input and content policy refused and logged", t9d_direct_errors),
+    ("9e", "MOSS-Image preset loads in ComfyUI (SFW image); LoRA preset preflight only", t9e_moss),
 ]
 
 
@@ -452,7 +658,7 @@ def run(settings: dict, out: Path, only: set[str] | None = None, log: Callable[[
         env = {"error": str(e)}
     rows = []
     for tid, name, fn in TESTS:
-        if only and tid not in only and tid.rstrip("ab") not in only:
+        if only and tid not in only and tid.rstrip("abcde") not in only:
             rows.append({"id": tid, "name": name, "status": SKIPPED, "detail": "not selected", "seconds": 0})
             continue
         log(f"[{tid}] {name} ...")

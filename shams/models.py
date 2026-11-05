@@ -320,11 +320,150 @@ class ModelRegistry:
 
 
 def merge_role_workers(settings: dict, registry: ModelRegistry | None = None) -> list[dict]:
-    """settings workers + generated role workers (a user worker with the same id wins)."""
+    """settings workers + generated role and preset workers (a user worker with the same id wins)."""
     from shams import settings as settings_mod
     user = settings_mod.resolve_workers(settings)
-    if not (settings.get("models") or {}).get("roles"):
+    m = settings.get("models") or {}
+    if not m.get("roles") and not m.get("presets"):
         return user
     reg = registry or ModelRegistry(settings)
     have = {w.get("id") for w in user}
-    return user + [w for w in reg.workers() if w["id"] not in have]
+    gen = reg.workers() + [p["worker"] for p in reg.presets() if p.get("worker")]
+    return user + [w for w in gen if w["id"] not in have]
+
+
+# --------------------------------------------------------------------------- presets (Direct Mode, ADR-121)
+CHAT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["prompt"], "properties": {
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 100000},
+    "system": {"type": "string", "maxLength": 20000},
+    "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+    "max_tokens": {"type": "integer", "minimum": 1, "maximum": 65536},
+    "num_ctx": {"type": "integer", "minimum": 512, "maximum": 262144},
+    "think": {"type": "boolean"},
+    "research": {"type": "boolean", "description": "allow read-only web research tools"}}}
+IMAGE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["prompt"], "properties": {
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "negative": {"type": "string", "maxLength": 4000},
+    "width": {"type": "integer", "minimum": 256, "maximum": 2048, "multipleOf": 16},
+    "height": {"type": "integer", "minimum": 256, "maximum": 2048, "multipleOf": 16},
+    "steps": {"type": "integer", "minimum": 1, "maximum": 100},
+    "cfg": {"type": "number", "minimum": 0, "maximum": 30},
+    "seed": {"type": "integer", "minimum": -1},
+    "lora_strength": {"type": "number", "minimum": 0, "maximum": 2}}}
+SCENE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["prompt"], "properties": {
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "builder": {"type": "string", "pattern": "^[a-z0-9_]{1,32}$",
+                "description": "auto (default), or a builder offered by the scene worker"}}}
+KIND_IO = {
+    "chat": (CHAT_SCHEMA, [{"name": "response", "media_type": "text/markdown"}]),
+    "image": (IMAGE_SCHEMA, [{"name": "image", "media_type": "image/png"}]),
+    "scene3d": (SCENE_SCHEMA, [{"name": "scene", "media_type": "model/gltf-binary"},
+                               {"name": "render", "media_type": "image/png"},
+                               {"name": "scene_report", "media_type": "application/json"}]),
+}
+ROLE_PRESET_KIND = {"planner": "chat", "coder": "chat", "visual_qc": "chat", "scene3d": "scene3d", "image": "image"}
+DIRECT_PREFIX = "worker.direct."
+
+
+def preset_slug(pid: str) -> str:
+    return re.sub(r"[^a-z0-9_]+", "_", pid.lower()).strip("_") or "preset"
+
+
+def direct_capability(pid: str) -> str:
+    return "direct." + preset_slug(pid)
+
+
+def _preset_entries(cfg: dict) -> list[tuple[str, dict]]:
+    raw = cfg.get("presets") or {}
+    if isinstance(raw, list):
+        return [(str(p.get("id")), dict(p)) for p in raw if isinstance(p, dict) and p.get("id")]
+    return [(str(k), dict(v or {})) for k, v in raw.items()]
+
+
+def _presets(self) -> list[dict]:
+    """Every model / preset the user can pick in Direct Mode, with its contract:
+    capability, provider, resources, input schema, outputs, execution settings, content policy, status.
+    Resolved roles become presets automatically; ``models.presets`` adds more (registry only, never code)."""
+    out: list[dict] = []
+    aliases = dict(self.cfg.get("aliases") or {})
+    allow_adult = bool((self.settings.get("general") or {}).get("allow_adult_content", False))
+    for b in self.bindings():
+        kind = ROLE_PRESET_KIND.get(b.role)
+        if kind is None:
+            continue
+        out.append(self._make_preset(b.role, {"label": ROLE_SPECS[b.role]["label"], "kind": kind,
+                                              "capabilities": role_capabilities(b.role, b.config),
+                                              "execution_modes": ["direct", "autonomous"],
+                                              "autonomous_default": False, "source": "role"}, b, allow_adult))
+    for pid, pc in _preset_entries(self.cfg):
+        provider = pc.get("provider") or pc.get("backend") or "ollama"
+        kind = pc.get("kind") or getattr(BACKENDS.get(provider), "default_kind", "chat")
+        if provider == "ollama":
+            b = self._bind_ollama(pid, pc, {"needs": ["completion"] if kind == "chat" else []}, aliases)
+        elif provider in BACKENDS:
+            b = BACKENDS[provider].bind(self, pid, pc)
+        else:
+            b = RoleBinding(pid, pc.get("model"), None, "unknown_backend", how=f"no provider {provider!r}",
+                            backend=provider, config=pc)
+        out.append(self._make_preset(pid, {**pc, "kind": kind, "source": "preset"}, b, allow_adult))
+    return out
+
+
+def _make_preset(self, pid: str, pc: dict, b: RoleBinding, allow_adult: bool) -> dict:
+    kind = pc.get("kind", "chat")
+    schema, outputs = KIND_IO.get(kind, KIND_IO["chat"])
+    policy = dict(pc.get("content_policy") or {})
+    modes = list(pc.get("execution_modes") or ["direct"])
+    auto_default = bool(pc.get("autonomous_default", False)) and not policy.get("adult")
+    status = b.status
+    if b.ok and policy.get("adult") and not allow_adult:
+        status = "disabled_adult"          # opt-in: general.allow_adult_content
+    p = {"id": pid, "label": pc.get("label") or pid, "description": pc.get("description", ""), "kind": kind,
+         "provider": b.backend or pc.get("provider"), "wanted": b.wanted, "model": b.model_id, "status": status,
+         "how": b.how, "capabilities": list(pc.get("capabilities") or []), "direct_capability": direct_capability(pid),
+         "execution_modes": modes, "autonomous_default": auto_default, "source": pc.get("source", "preset"),
+         "input_schema": pc.get("input_schema") or schema, "outputs": pc.get("outputs") or outputs,
+         "params": dict(pc.get("params") or {}), "content_policy": policy,
+         "resources": {"lane": pc.get("lane", "gpu"), "vram_mb": None}}
+    if status != "ok" or "direct" not in modes:
+        return p
+    caps = [p["direct_capability"]] + (p["capabilities"] if auto_default and "autonomous" in modes else [])
+    w: dict[str, Any] = {"id": DIRECT_PREFIX + preset_slug(pid), "node": self.cfg.get("node", "node.local"),
+                         "lane": p["resources"]["lane"], "capabilities": caps}
+    o = self.cfg.get("ollama") or {}
+    if b.backend == "ollama":
+        num_ctx = int(pc.get("num_ctx") or ROLE_SPECS.get(pid, {}).get("num_ctx") or 8192)
+        w.update(kind="llm_agent", provider="ollama", model=b.model_id,
+                 vram_mb=int(pc.get("vram_mb") or estimate_vram_mb(b.info.get("size_mb", 0), num_ctx)))
+        cfg = {k: v for k, v in {"base_url": o.get("base_url"), "keep_alive": pc.get("keep_alive", o.get("keep_alive")),
+                                 "num_ctx": num_ctx}.items() if v}
+        cfg["impl"] = "scene3d" if kind == "scene3d" else "direct_chat"
+    elif b.backend in BACKENDS:
+        extra = BACKENDS[b.backend].worker(self, b)
+        cfg = dict(extra.pop("config", {}))
+        w.update({k: v for k, v in extra.items() if k not in ("id", "capabilities")})
+        if pc.get("vram_mb"):
+            w["vram_mb"] = int(pc["vram_mb"])
+    else:
+        return p
+    cfg["preset"] = pid
+    if policy:
+        cfg["content_policy"] = {**policy, "allowed": allow_adult or not policy.get("adult")}
+    if pc.get("research") is not None:
+        cfg["research"] = bool(pc["research"])
+    w["config"] = cfg
+    if kind == "scene3d":
+        for hook in ROLE_HOOKS.get("scene3d", []):
+            hook(self, w)
+    p["resources"]["vram_mb"] = w.get("vram_mb")
+    p["worker"] = w
+    return p
+
+
+def _preset(self, pid: str) -> dict | None:
+    return next((p for p in self.presets() if p["id"] == pid), None)
+
+
+ModelRegistry.presets = _presets
+ModelRegistry._make_preset = _make_preset
+ModelRegistry.preset = _preset

@@ -470,6 +470,7 @@ def test_scene3d_worker_fixes_forbidden_and_broken_scripts(tmp_path, fake_blende
              "provider_config": {"blender": fake_blender, "max_fix_rounds": 2}}
     w = blender_tools.Scene3DWorker(entry=entry, attempts_root=tmp_path / "att", provider=P())
     task = {"task_id": "task.scene", "title": "Table scene", "description": "a table with a ball",
+            "params": {"builder": "blender"},
             "acceptance_criteria": [{"id": "ac.glb", "description": "valid", "kind": "schema", "check": {"type": "glb"}}],
             "outputs": [{"name": "scene", "logical_id": "mesh.scene", "media_type": "model/gltf-binary"},
                         {"name": "render", "logical_id": "image.render", "media_type": "image/png"},
@@ -482,7 +483,8 @@ def test_scene3d_worker_fixes_forbidden_and_broken_scripts(tmp_path, fake_blende
     assert assets.check_glb(by["model/gltf-binary"])[0] == "PASS"
     assert assets.check_png(by["image/png"])[0] == "PASS"
     assert "primitive_cube_add" in Path(by["text/x-python"]).read_text()
-    assert h["decisions"][0]["decision"] == "3D route: procedural"
+    assert h["decisions"][0]["decision"] == "scene builder: blender"
+    assert h["decisions"][1]["decision"] == "3D route: procedural"
     ok = AssetCheckers()._scene_report({"check": {"min_objects": 2, "require_camera": True}},
                                        [{"logical_id": "d", "media_type": "application/json", "file": by["application/json"]}])
     assert ok[0] == "PASS"
@@ -492,7 +494,7 @@ def test_scene3d_worker_blocks_without_blender(tmp_path, monkeypatch):
     monkeypatch.setattr(blender_tools, "find_blender", lambda configured=None: None)
     w = blender_tools.Scene3DWorker(entry={"worker": {"worker_id": "w"}, "provider_config": {}},
                                     attempts_root=tmp_path, provider=None)
-    task = {"task_id": "task.s", "title": "s", "acceptance_criteria": [],
+    task = {"task_id": "task.s", "title": "terrain with a boolean-cut cave", "acceptance_criteria": [],
             "outputs": [{"name": "s", "logical_id": "mesh.s", "media_type": "model/gltf-binary"}]}
     _, h = w.run({"project_id": "p", "attempt": 1, "inputs": [], "task": task}, {"worker_id": "w", "kind": "llm_agent"})
     assert h["status"] == "BLOCKED" and "Blender" in h["blocked_reason"]
@@ -514,9 +516,10 @@ def test_selftest_reports_blocked_not_pass_when_nothing_is_installed(tmp_path):
     models._CACHE.clear()
     rep = selftest.run(s, tmp_path / "out", log=lambda m: None)
     st = {r["id"]: r["status"] for r in rep["tests"]}
-    assert st["6a"] == "PASS"                                   # pure policy, runs everywhere
+    assert st["6a"] == "PASS" and st["9d"] == "PASS"            # pure policy / input checks, run everywhere
     assert st["4"] == "SKIPPED" and st["8b"] == "SKIPPED" and rep["counts"]["FAIL"] == 0
-    assert all(st[t] == "BLOCKED" for t in ("1", "2", "3", "4b", "5a", "5b", "6b", "7", "8")), st
+    assert all(st[t] == "BLOCKED" for t in ("1", "2", "3", "3b", "4b", "5a", "5b", "6b", "7", "8", "9a", "9b", "9c",
+                                            "9e")), st
     assert (tmp_path / "out" / "report.md").read_text(encoding="utf-8").count("BLOCKED") >= 9
 
 
@@ -553,3 +556,59 @@ def test_scene3d_rejects_javascript_before_running_blender(tmp_path, fake_blende
                              {"glb": str(work / "s.glb"), "render": str(work / "r.png")}, "procedural")
     assert rep["ok"] and "not valid Blender Python" in prompts[1] and "new" in prompts[1]
     assert w.log[0]["result"].startswith("This is not valid Blender Python")
+
+
+SCENE = {"objects": [{"name": "ground", "shape": "plane", "size": [6, 6], "color": "grass"},
+                     {"name": "table_top", "shape": "box", "size": [1.2, 0.1, 0.8], "position": [0, 0.75, 0], "color": "#8b5a2b"},
+                     {"name": "ball", "shape": "sphere", "radius": 0.15, "position": [0.2, 0.95, 0], "color": "red"}],
+         "lights": [{"type": "sun", "direction": [-0.4, -1, -0.3]}]}
+
+
+def test_simple_scene_uses_json_builder_without_blender(tmp_path, monkeypatch):
+    monkeypatch.setattr(blender_tools, "find_blender", lambda configured=None: None)
+    replies = iter(['{"objects": [{"shape": "pyramid"}]}', "Here: " + json.dumps(SCENE)])
+    seen = []
+
+    class P:
+        name = "ollama"
+
+        def chat(self, messages, model, **kw):
+            seen.append((messages[-1]["content"], kw.get("format")))
+            return {"text": next(replies), "tokens_in": 10, "tokens_out": 20}
+    entry = {"worker": {"worker_id": "w", "model": "3d-coder"}, "provider_config": {"max_fix_rounds": 2}}
+    w = blender_tools.Scene3DWorker(entry=entry, attempts_root=tmp_path / "att", provider=P())
+    task = {"task_id": "task.scene", "title": "Table with a ball", "description": "a wooden table with a red ball",
+            "acceptance_criteria": [{"id": "ac.g", "description": "valid", "kind": "schema", "check": {"type": "glb"}}],
+            "outputs": [{"name": "scene", "logical_id": "mesh.scene", "media_type": "model/gltf-binary"},
+                        {"name": "render", "logical_id": "image.render", "media_type": "image/png"},
+                        {"name": "report", "logical_id": "data.scene", "media_type": "application/json"}]}
+    files, h = w.run({"project_id": "p", "attempt": 1, "inputs": [], "task": task}, {"worker_id": "w", "kind": "llm_agent"})
+    assert h["status"] == "READY_FOR_QC", h
+    assert seen[0][1] == "json" and "pyramid" in seen[1][0]                   # JSON mode + fix round with the error
+    by = {f["media_type"]: f["abs"] for f in files}
+    assert assets.check_glb(by["model/gltf-binary"], {"require_uv": True, "require_material": True})[0] == "PASS"
+    assert assets.check_png(by["image/png"])[0] == "PASS"
+    rep = json.loads(Path(by["application/json"]).read_text())
+    assert rep["builder"] == "scene_json" and rep["mesh_objects"] == 3 and rep["coverage"] > 0.05
+    assert h["decisions"][0]["decision"] == "scene builder: json"
+    assert AssetCheckers()._scene_report({"check": {"min_objects": 3, "require_camera": True, "require_light": True}},
+                                         [{"logical_id": "d", "media_type": "application/json",
+                                           "file": by["application/json"]}])[0] == "PASS"
+
+
+def test_scene_json_validation_messages_are_actionable(tmp_path):
+    from shams_tools import scene_json
+    for bad, msg in (({"objects": []}, "non-empty"), ({"objects": [{"shape": "box", "size": [1, 0, 1]}]}, "> 0"),
+                     ({"objects": [{"shape": "box", "position": [1, "a", 2]}]}, "position"),
+                     ({"objects": [{"shape": "box", "color": "#zz"}]}, "colour"),
+                     ({"objects": [{"shape": "box"}], "camera": {"position": [0, 0, 50], "target": [0, 0, 100]}}, "camera")):
+        with pytest.raises(scene_json.SceneError, match=msg):
+            scene_json.build_scene(bad, None, tmp_path / "r.png")
+    rep = scene_json.build_scene(SCENE, tmp_path / "s.glb", None, max_triangles=100000)
+    assert rep["mesh_objects"] == 3 and assets.parse_glb(tmp_path / "s.glb")["materials"] == 3
+    with pytest.raises(scene_json.SceneError, match="budget"):
+        scene_json.build_scene(SCENE, None, None, max_triangles=50)
+    from shams_tools.routing import scene_builder
+    assert scene_builder({"title": "a red cube on a table"}, blender_available=True)[0] == "json"
+    assert scene_builder({"title": "rigged character with animation"}, blender_available=True)[0] == "blender"
+    assert scene_builder({"title": "x", "params": {"builder": "blender"}}, blender_available=True)[0] == "blender"

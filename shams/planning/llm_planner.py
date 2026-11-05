@@ -77,7 +77,16 @@ def normalize(raw: dict, *, project_id: str, goal: str, domain: str | None, plan
         t["task_id"] = idmap.get(t.get("task_id"), _slug(t.get("title", "task"), "task"))
         t["title"] = str(t.get("title") or t["task_id"])[:200]
         t["capability"] = re.sub(r"[^a-z0-9_.]", "_", str(t.get("capability", "")).lower()).strip(".")
-        t["depends_on"] = list(dict.fromkeys(idmap.get(d, _slug(d, "task")) for d in t.get("depends_on") or []))
+        deps = []
+        for d in t.get("depends_on") or []:
+            if isinstance(d, dict):                 # models sometimes put input objects here
+                d = d.get("from_task") or d.get("task_id")
+            if d:
+                deps.append(idmap.get(d, _slug(d, "task")))
+        for i in t.get("inputs") or []:             # an input from another task implies the dependency
+            if isinstance(i, dict) and i.get("from_task"):
+                deps.append(idmap.get(i["from_task"], _slug(i["from_task"], "task")))
+        t["depends_on"] = [d for d in dict.fromkeys(deps) if d != t["task_id"]]
         t["inputs"] = [{"name": str(i.get("name") or i.get("logical_id")), "logical_id": logical_id(i.get("logical_id")),
                         **({"from_task": idmap.get(i["from_task"], _slug(i["from_task"], "task"))}
                            if i.get("from_task") else {})}

@@ -22,7 +22,8 @@ from shams import providers
 from shams.verification import assets
 from shams.verification.checkers import pick
 from shams.workers import base_handoff, output_plan
-from shams_tools.routing import choose_3d_route
+from shams_tools import scene_json
+from shams_tools.routing import choose_3d_route, scene_builder
 
 HARNESS = Path(__file__).resolve().parent / "blender_harness.py"
 
@@ -211,26 +212,85 @@ class Scene3DWorker:
                                                                f"script.\n{problem[-2500:]}"}]
         return rep, script, usage
 
+    # ------------------------------------------------------------------ simple scenes: JSON, no Blender
+    def _json_messages(self, ctx: dict, budget: int) -> list[dict]:
+        task = ctx["task"]
+        params = task.get("params") or {}
+        payload = {"goal": ctx.get("goal", ""), "task": task["title"],
+                   "description": params.get("prompt") or task.get("description", ""),
+                   "acceptance_criteria": [c["description"] for c in task["acceptance_criteria"]],
+                   "polygon_budget": budget, "prior_failures": ctx.get("prior_failures", [])}
+        return [{"role": "system", "content": scene_json.SCENE_JSON_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
+
+    def build_json(self, ctx: dict, work: Path, want: dict[str, str | None], budget: int) -> tuple[dict, str, dict]:
+        """Model writes a scene description -> SHAMS validates, builds GLB, renders -> fix loop."""
+        messages = self._json_messages(ctx, budget)
+        usage = {"tokens_in": 0, "tokens_out": 0, "wall_seconds": 0.0}
+        opts = dict(self.chat_options)
+        if getattr(self.provider, "name", "") == "ollama":
+            opts["format"] = "json"
+        rep, raw = {"ok": False, "error": "no attempt"}, ""
+        for round_ in range(self.max_fix_rounds + 1):
+            r = providers.timed_chat(self.provider, messages, self.model, **opts)
+            raw = r.get("text", "")
+            for k in ("tokens_in", "tokens_out", "wall_seconds"):
+                usage[k] += r.get(k, 0)
+            try:
+                rep = scene_json.build_scene(raw, want.get("glb"), want.get("render"), resolution=self.resolution,
+                                             max_triangles=budget)
+                rep["scene_description"] = scene_json.extract_json(raw)
+                self.log.append({"round": round_, "result": "ok"})
+                return rep, raw, usage
+            except scene_json.SceneError as e:
+                problem = str(e)
+            rep = {"ok": False, "error": problem}
+            self.log.append({"round": round_, "result": problem[-300:]})
+            messages = messages + [{"role": "assistant", "content": raw[:6000]},
+                                   {"role": "user", "content": f"SHAMS could not build this scene: {problem}\n"
+                                                               "Send the full corrected JSON object."}]
+        return rep, raw, usage
+
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
         adir, plan = output_plan(ctx, self.attempts_root)
         adir.mkdir(parents=True, exist_ok=True)
-        if not self.blender:
+        builder, bwhy = scene_builder(ctx["task"], blender_available=bool(self.blender))
+        if builder == "blender" and not self.blender:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", "Blender not found",
-                                    blocked_reason="tool unavailable: Blender program not found; set tools.blender.path")
+                                    blocked_reason="tool unavailable: Blender program not found (needed for a complex "
+                                                   f"scene: {bwhy}); set tools.blender.path")
         route, why = choose_3d_route(ctx["task"], ctx.get("inputs", []), sf3d_available=False)
         if route == "reuse":
             route = "procedural"          # adapting upstream meshes is a later step; build procedurally
         by_mt = {o["media_type"]: o for o in plan}
-        work = adir / "_blender"
+        work = adir / ("_scene" if builder == "json" else "_blender")
         work.mkdir(exist_ok=True)
         want = {"glb": str(work / "scene.glb") if "model/gltf-binary" in by_mt else None,
                 "render": str(work / "render.png")}
-        rep, script, usage = self.build(ctx, work, want, route)
-        decisions = [{"decision": f"3D route: {route}", "reason": why},
-                     {"decision": "procedural geometry via Blender Python", "reason": "coding model, not a mesh generator"}]
+        budget = next((c.get("check", {}).get("max_triangles") for c in ctx["task"]["acceptance_criteria"]
+                       if c.get("check", {}).get("max_triangles")), 50000)
+        decisions = [{"decision": f"scene builder: {builder}", "reason": bwhy}, {"decision": f"3D route: {route}", "reason": why}]
+        if builder == "json":
+            rep, script, usage = self.build_json(ctx, work, want, int(budget))
+            decisions.append({"decision": "scene described as JSON, GLB + render built by SHAMS",
+                              "reason": "simple scene; Blender is reserved for complex scenes"})
+            if not rep.get("ok") and self.blender:
+                decisions += [{"decision": f"json fix round {e['round']}", "reason": e["result"]} for e in self.log
+                              if e["result"] != "ok"]
+                decisions.append({"decision": "fall back to Blender", "reason": "JSON scene failed after fix rounds"})
+                self.log = []
+                builder, work = "blender", adir / "_blender"
+                work.mkdir(exist_ok=True)
+                want = {"glb": str(work / "scene.glb") if want["glb"] else None, "render": str(work / "render.png")}
+                rep, script, u2 = self.build(ctx, work, want, route)
+                usage = {k: usage[k] + u2[k] for k in usage}
+        else:
+            rep, script, usage = self.build(ctx, work, want, route)
+            decisions.append({"decision": "procedural geometry via Blender Python", "reason": "complex scene"})
         decisions += [{"decision": f"fix round {e['round']}", "reason": e["result"]} for e in self.log if e["result"] != "ok"]
         if not rep.get("ok"):
-            return [], base_handoff(ctx, worker_ref, "FAILED", "Blender scene failed", usage=usage, decisions=decisions,
+            return [], base_handoff(ctx, worker_ref, "FAILED", f"3D scene failed ({builder})", usage=usage,
+                                    decisions=decisions,
                                     known_issues=[{"issue": rep.get("error", "")[-800:], "severity": "high"}],
                                     blocked_reason=rep.get("error", "")[-500:])
         files = []
@@ -241,14 +301,15 @@ class Scene3DWorker:
             mt = o["media_type"]
             if mt in produced and produced[mt] and Path(produced[mt]).exists():
                 shutil.copyfile(produced[mt], dst)
-            elif mt in ("text/x-python", "text/plain"):
+            elif mt in ("text/x-python", "text/plain") and builder == "blender":
                 dst.write_text(script, encoding="utf-8")
             elif mt == "application/json":
                 dst.write_text(json.dumps(rep, indent=1), encoding="utf-8")
             else:
                 continue
             files.append(o)
-        summary = (f"Built {rep.get('mesh_objects')} mesh objects with Blender {rep.get('blender')} "
+        tool = f"Blender {rep.get('blender')}" if builder == "blender" else "SHAMS scene JSON builder"
+        summary = (f"Built {rep.get('mesh_objects')} mesh objects with {tool} "
                    f"({route}); materials: {', '.join(rep.get('materials', [])[:6]) or 'none'}")
         return files, base_handoff(ctx, worker_ref, "READY_FOR_QC", summary, usage=usage, decisions=decisions)
 

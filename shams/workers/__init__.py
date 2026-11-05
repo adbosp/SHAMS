@@ -106,6 +106,7 @@ class LLMWorker:
         self.chat_options = dict(cfg.get("chat_options", {}))
         self.mcp = mcp                                  # shams.mcp.MCPManager (ADR-118)
         self.mcp_servers = cfg.get("mcp")               # ["github", ...] | "all" | None
+        self.research = cfg.get("research")             # None = follow settings.research.enabled
         self.max_tool_rounds = int(cfg.get("max_tool_rounds", max_tool_rounds))
         self.tool_log: list[dict] = []
 
@@ -147,7 +148,8 @@ class LLMWorker:
                                     blocked_reason=f"{worker_ref['worker_id']} only writes text; route "
                                                    f"{binary} to a generator (command/plugin) worker")
         messages = self.prompt(ctx, plan)
-        if self.mcp is not None and self.mcp_servers and getattr(self.provider, "supports_tools", False):
+        research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False
+        if self.mcp is not None and (self.mcp_servers or research) and getattr(self.provider, "supports_tools", False):
             r = self._chat_with_tools(messages)
         else:
             r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
@@ -182,6 +184,8 @@ class LLMWorker:
         """Agent loop: the model may call MCP tools (subject to Permissions) before its final JSON reply."""
         t0 = time.monotonic()
         catalog = self.mcp.tools(self.mcp_servers)
+        if self.research is False:
+            catalog = [t for t in catalog if t.get("server") != "research"]
         msgs = list(messages)
         msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\nYou may call the provided tools to inspect or change "
                    "external systems before replying. When done, reply with the JSON object only."}
@@ -275,6 +279,10 @@ def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | 
     cfg = dict(entry.get("provider_config", {}))
     impl = cfg.pop("impl", None)
     kw = {"entry": entry, "attempts_root": attempts_root, "read_blob": read_blob}
+    if impl == "direct_chat":
+        from shams.workers.direct import DirectChatWorker
+        return DirectChatWorker(provider=providers.create(w["provider"], _provider_cfg(cfg)), mcp=mcp,
+                                max_tool_rounds=max_tool_rounds, **kw)
     if impl:
         eps = plugins.entry_points("shams.workers")
         factory = _REGISTERED.get(impl) or (eps[impl].load() if impl in eps else plugins.load_object(impl))
@@ -292,7 +300,8 @@ def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | 
     raise ValueError(f"{w['worker_id']}: no implementation for kind {w['kind']!r}")
 
 
-_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds",
+_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds", "research",
+                "preset", "content_policy",
                 # tool workers (ADR-120); extensions add theirs with worker_only_keys()
                 "max_fix_rounds", "render_resolution", "render_engine", "workflow", "params", "force"}
 

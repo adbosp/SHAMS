@@ -105,6 +105,12 @@ class ProjectIn(BaseModel):
     mock: bool | None = None
 
 
+class DirectIn(BaseModel):
+    preset: str
+    params: dict = {}
+    confirm_adult: bool = False
+
+
 class OpenIn(BaseModel):
     id: str
 
@@ -147,6 +153,8 @@ class StudioService:
     def projects(self) -> list[dict]:
         out = []
         for pj in self.workspace.glob("*/project.json"):
+            if pj.parent.name.startswith("_"):             # _direct, _selftest: internal folders
+                continue
             try:
                 cfg = json.loads(pj.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -494,10 +502,112 @@ class StudioService:
             mgr.close()
 
 
+class DirectService:
+    """Direct Mode (ADR-121): one prompt on one chosen preset. Tasks live in ``<workspace>/_direct`` and run on
+    the same scheduler, GPU lease, workers, artifact registry, QC and event log as planned projects."""
+
+    def __init__(self, workspace: Path):
+        self.dir = Path(workspace) / "_direct"
+        self.lock = threading.RLock()
+        self.studio: Studio | None = None
+        self.threads: dict[str, threading.Thread] = {}
+
+    def _open(self) -> Studio:
+        with self.lock:
+            if self.studio is None:
+                if not (self.dir / "project.json").exists():
+                    Studio.init_project(self.dir, "direct", "Direct Mode tasks", mode="guided", domain="software",
+                                        domain_config={"stack": "python"})
+                self.studio = Studio(self.dir)
+            return self.studio
+
+    def close(self) -> None:
+        with self.lock:
+            if self.studio:
+                self.studio.close()
+            self.studio = None
+
+    def presets(self) -> dict:
+        from shams import policy
+        from shams.models import ModelRegistry
+        s = settings_mod.load(None)
+        out = []
+        for p in ModelRegistry(s).presets():
+            w = p.pop("worker", None)
+            p["worker_id"] = w["id"] if w else None
+            out.append(p)
+        return {"presets": out, "confirm_text": policy.CONFIRM_TEXT,
+                "allow_adult_content": bool(s["general"].get("allow_adult_content", False))}
+
+    def run(self, body: DirectIn) -> dict:
+        from shams import policy
+        st = self._open()
+        with self.lock:
+            try:
+                st.settings = settings_mod.load(self.dir)          # pick up presets added since the app started
+                tid = st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult)
+            except policy.PolicyError as e:
+                raise HTTPException(403, str(e))
+            except KeyError as e:
+                raise HTTPException(404, str(e).strip("'\""))
+            except (ValueError, PermissionError, RuntimeError) as e:
+                raise HTTPException(400, str(e))
+
+        def go():
+            with self.lock:
+                st.run_task(tid)
+        t = threading.Thread(target=go, daemon=True)
+        self.threads[tid] = t
+        t.start()
+        return self.task(tid)
+
+    def tasks(self, limit: int = 30) -> list[dict]:
+        st = self._open()
+        rows = [t for t in st.db.tasks() if t["task_id"].startswith("task.direct.")]
+        return [self._view(st, t, events=False) for t in rows[::-1][:limit]]
+
+    def task(self, tid: str) -> dict:
+        st = self._open()
+        try:
+            t = st.db.task(tid)
+        except KeyError:
+            raise HTTPException(404, f"no direct task {tid}") from None
+        return self._view(st, t, events=True)
+
+    def _view(self, st: Studio, t: dict, events: bool) -> dict:
+        tid = t["task_id"]
+        arts = [a for a in (st.artifacts.accepted(o["logical_id"]) for o in t["outputs"]) if a]
+        h = st.db.handoff(tid) or {}
+        v = {"task_id": tid, "state": t["state"], "preset": t.get("preset"), "title": t["title"],
+             "params": {k: val for k, val in (t.get("params") or {}).items() if not k.startswith("_")},
+             "running": tid in self.threads and self.threads[tid].is_alive(),
+             "summary": h.get("summary"), "error": h.get("blocked_reason"), "usage": h.get("usage"),
+             "outputs": [{"logical_id": a["logical_id"], "media_type": a["media_type"], "sha256": a["sha256"],
+                          "url": f"/api/direct/artifact/{a['sha256']}"} for a in arts]}
+        if events:
+            v["events"] = [{"seq": r["seq"], "type": r["type"], "at": r["ts"],
+                            "subject": r["subject_id"]}
+                           for r in st.db.q("SELECT * FROM events WHERE subject_id=? OR (type LIKE 'model.%' AND seq > "
+                                            "(SELECT COALESCE(MIN(seq),0) FROM events WHERE subject_id=?)) ORDER BY seq",
+                                            (tid, tid))][-60:]
+        return v
+
+    def artifact(self, sha: str) -> FileResponse:
+        if not re.fullmatch(r"[0-9a-f]{64}", sha):
+            raise HTTPException(400, "bad id")
+        st = self._open()
+        row = st.db.q1("SELECT media_type FROM artifacts WHERE sha256=? LIMIT 1", (sha,))
+        if row is None:
+            raise HTTPException(404, "not found")
+        return FileResponse(st.artifacts.blob_path(sha), media_type=row[0])
+
+
 def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
     app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
+    direct = DirectService(svc.workspace)
+    app.state.direct = direct
 
     @app.get("/")
     def index():
@@ -579,6 +689,26 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     @app.get("/api/mcp")
     def mcp(name: str | None = None):
         return svc.mcp_status(name)
+
+    @app.get("/api/direct/presets")
+    def direct_presets():
+        return direct.presets()
+
+    @app.post("/api/direct/run")
+    def direct_run(body: DirectIn):
+        return direct.run(body)
+
+    @app.get("/api/direct/tasks")
+    def direct_tasks():
+        return {"tasks": direct.tasks()}
+
+    @app.get("/api/direct/tasks/{task_id}")
+    def direct_task(task_id: str):
+        return direct.task(task_id)
+
+    @app.get("/api/direct/artifact/{sha}")
+    def direct_artifact(sha: str):
+        return direct.artifact(sha)
 
     return app
 

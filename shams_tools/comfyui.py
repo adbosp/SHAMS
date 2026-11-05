@@ -153,22 +153,42 @@ class ComfyUI:
             doc = {"graph": doc, "defaults": {}}
         return doc
 
+    @staticmethod
+    def _combo(spec: Any) -> list[str] | None:
+        if not isinstance(spec, list) or not spec:
+            return None
+        first = spec[0]
+        if isinstance(first, list):
+            return [str(x) for x in first]
+        if first == "COMBO" and len(spec) > 1 and isinstance(spec[1], dict):
+            return [str(x) for x in spec[1].get("options", [])]
+        return None
+
     def preflight(self, graph: dict) -> list[str]:
-        """Problems that would make the prompt fail: missing node types or model files."""
-        problems, seen = [], {}
+        """Problems that would make the prompt fail: missing node types, model files, or choice values the
+        installed ComfyUI does not know (e.g. a text-encoder type added in a newer version)."""
+        problems, infos = [], {}
         for nid, node in graph.items():
             cls = node.get("class_type")
-            if cls not in seen:
-                seen[cls] = bool(self.object_info(cls))
-            if not seen[cls]:
-                problems.append(f"node {nid}: node type {cls!r} is not installed in ComfyUI")
+            if cls not in infos:
+                infos[cls] = self.object_info(cls)
+            info = infos[cls]
+            if not info:
+                problems.append(f"node {nid}: node type {cls!r} is not installed in ComfyUI (update ComfyUI "
+                                f"or add the custom node)")
                 continue
-            if cls in LOADER_FIELDS:
-                fld, sub = LOADER_FIELDS[cls]
-                want = node.get("inputs", {}).get(fld)
-                opts = self.options(cls, fld) or []
-                if isinstance(want, str) and want not in opts:
-                    problems.append(f"node {nid}: model file {want!r} not found in models/{sub}")
+            specs = {**info.get("input", {}).get("required", {}), **info.get("input", {}).get("optional", {})}
+            for fld, val in (node.get("inputs") or {}).items():
+                if not isinstance(val, str):
+                    continue
+                opts = self._combo(specs.get(fld))
+                if opts is None or val in opts:
+                    continue
+                if cls in LOADER_FIELDS and LOADER_FIELDS[cls][0] == fld:
+                    problems.append(f"node {nid}: model file {val!r} not found in models/{LOADER_FIELDS[cls][1]}")
+                else:
+                    problems.append(f"node {nid}: {cls}.{fld} = {val!r} is not supported by this ComfyUI "
+                                    f"(choices: {', '.join(opts[:8])}{'...' if len(opts) > 8 else ''})")
         return problems
 
     # ------------------------------------------------------------------ execution
@@ -261,19 +281,34 @@ class ComfyUIImageWorker:
         self.params = dict(cfg.get("params") or {})
         self.attempts_root = Path(attempts_root)
         self.model = entry["worker"].get("model") or self.workflow
+        self.content_policy = dict(cfg.get("content_policy") or {})
+        self.preset = cfg.get("preset")
 
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
+        from shams import policy
         _, plan = output_plan(ctx, self.attempts_root)
         task = ctx["task"]
-        prompt = task.get("description") or task["title"]
-        if ctx.get("goal"):
+        tparams = dict(task.get("params") or {})
+        prompt = tparams.pop("prompt", None) or task.get("description") or task["title"]
+        if ctx.get("goal") and not task.get("preset"):
             prompt = f"{prompt}. Context: {ctx['goal']}"
+        params = {**self.params, **tparams, "prompt": prompt}
+        if self.content_policy.get("adult"):          # checked again here: defence in depth
+            try:
+                params = policy.check({"id": self.preset, "kind": "image", "content_policy": self.content_policy},
+                                      params, allowed=bool(self.content_policy.get("allowed")),
+                                      confirmed=bool(tparams.get("_adult_confirmed") or
+                                                     (task.get("params") or {}).get("_adult_confirmed")))
+            except policy.PolicyError as e:
+                return [], base_handoff(ctx, worker_ref, "BLOCKED", "content policy",
+                                        blocked_reason=f"policy: {e}"[:500])
+        params.pop("_adult_confirmed", None)
         imgs = [o for o in plan if o["media_type"] in ("image/png", "image/jpeg")]
         if not imgs:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", "no image output declared",
                                     blocked_reason="comfyui worker only writes image/png outputs")
         try:
-            r = self.provider.generate(self.workflow, {**self.params, "prompt": prompt})
+            r = self.provider.generate(self.workflow, params)
         except MissingResources as e:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", "ComfyUI resources missing",
                                     blocked_reason="tool unavailable: " + "; ".join(e.problems)[:500])

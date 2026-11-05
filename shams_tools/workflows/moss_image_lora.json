@@ -1,0 +1,144 @@
+{
+ "description": "MOSS-Image (SFT) + a LoRA (models/loras), ComfyUI API format. Same base files as moss_image.",
+ "defaults": {
+  "unet": "moss_image_sft_int8_convrot.safetensors",
+  "weight_dtype": "default",
+  "text_encoder": "qwen3.5_9b_int8_convrot.safetensors",
+  "vae": "flux2-vae.safetensors",
+  "prompt": "",
+  "negative": "",
+  "width": 1024,
+  "height": 1024,
+  "steps": 30,
+  "cfg": 3.0,
+  "shift": 5.0,
+  "seed": -1,
+  "sampler": "euler",
+  "scheduler": "sgm_uniform",
+  "prefix": "shams_moss_lora",
+  "lora": "MOSS-Image-NSFW-Uncensored-LoRA-ComfyUI.safetensors",
+  "lora_strength": 1.0
+ },
+ "graph": {
+  "1": {
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "{{unet}}",
+    "weight_dtype": "{{weight_dtype}}"
+   }
+  },
+  "2": {
+   "class_type": "CLIPLoader",
+   "inputs": {
+    "clip_name": "{{text_encoder}}",
+    "type": "moss_image",
+    "device": "default"
+   }
+  },
+  "3": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": "{{vae}}"
+   }
+  },
+  "4": {
+   "class_type": "ModelSamplingSD3",
+   "inputs": {
+    "shift": "{{shift}}",
+    "model": [
+     "11",
+     0
+    ]
+   }
+  },
+  "5": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "text": "{{prompt}}",
+    "clip": [
+     "2",
+     0
+    ]
+   }
+  },
+  "6": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "text": "{{negative}}",
+    "clip": [
+     "2",
+     0
+    ]
+   }
+  },
+  "7": {
+   "class_type": "EmptyFlux2LatentImage",
+   "inputs": {
+    "width": "{{width}}",
+    "height": "{{height}}",
+    "batch_size": 1
+   }
+  },
+  "8": {
+   "class_type": "KSampler",
+   "inputs": {
+    "seed": "{{seed}}",
+    "steps": "{{steps}}",
+    "cfg": "{{cfg}}",
+    "sampler_name": "{{sampler}}",
+    "scheduler": "{{scheduler}}",
+    "denoise": 1.0,
+    "model": [
+     "4",
+     0
+    ],
+    "positive": [
+     "5",
+     0
+    ],
+    "negative": [
+     "6",
+     0
+    ],
+    "latent_image": [
+     "7",
+     0
+    ]
+   }
+  },
+  "9": {
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "8",
+     0
+    ],
+    "vae": [
+     "3",
+     0
+    ]
+   }
+  },
+  "10": {
+   "class_type": "SaveImage",
+   "inputs": {
+    "filename_prefix": "{{prefix}}",
+    "images": [
+     "9",
+     0
+    ]
+   }
+  },
+  "11": {
+   "class_type": "LoraLoaderModelOnly",
+   "inputs": {
+    "lora_name": "{{lora}}",
+    "strength_model": "{{lora_strength}}",
+    "model": [
+     "1",
+     0
+    ]
+   }
+  }
+ }
+}

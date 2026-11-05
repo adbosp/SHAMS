@@ -149,6 +149,14 @@
     },
     "parent_task_id": {
       "$ref": "common.schema.json#/$defs/id"
+    },
+    "params": {
+      "type": "object",
+      "description": "Execution parameters for the worker (Direct Mode: prompt, seed, steps, ...), validated against the preset's input_schema"
+    },
+    "preset": {
+      "type": "string",
+      "description": "Model Registry preset that must run this task (Direct Mode or an explicitly configured workflow)"
     }
   }
 }

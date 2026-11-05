@@ -32,3 +32,23 @@ def choose_3d_route(task: dict, inputs: list[dict], *, sf3d_available: bool) -> 
     return "procedural", "procedural geometry in Blender"
 
 
+
+
+BLENDER_HINTS = re.compile(
+    r"(?i)\b(complex|phức tạp|modifier|boolean|bevel|subdivi\w*|sculpt\w*|rig\w*|armature|animat\w*|keyframe|"
+    r"terrain|landscape|địa hình|physics|particle\w*|cloth|hair|fluid|curve|bezier|spline|text mesh|"
+    r"geometry nodes|displace\w*|procedural (?:city|building|terrain|texture)|high[- ]poly|interior with|"
+    r"architectur\w*|vehicle|car|spaceship|tàu vũ trụ|xe)\b")
+
+
+def scene_builder(task: dict, *, blender_available: bool) -> tuple[str, str]:
+    """Who builds a scene: "json" (the 3D coding model writes a scene description, SHAMS builds GLB + render)
+    or "blender" (the model writes Blender Python). Blender only for complex scenes (user rule, ADR-121)."""
+    want = str((task.get("params") or {}).get("builder") or "").lower()
+    if want in ("json", "blender"):  # "auto" or empty: decide from the text
+        return want, f"builder={want} requested"
+    text = f"{task.get('title', '')} {task.get('description', '')}"
+    m = BLENDER_HINTS.search(text) or COMPLEX_HINTS.search(text)
+    if m:
+        return "blender", f"complex scene ({m.group(0)!r})"
+    return "json", "simple scene: primitives described as JSON, no Blender needed"

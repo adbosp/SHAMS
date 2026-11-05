@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Direct Mode and presets** (ADR-121)
+- Direct Mode: pick a model or preset, enter a prompt, run one task without planner or DAG. It runs on the same scheduler, GPU lease, model switching, workers, artifact registry, QC and event log. App view "Direct Mode", API `/api/direct/*`, CLI `shams presets` and `shams direct`.
+- Presets in the Model Registry (`models.presets`, plus every resolved role): capability, provider, resources, input/output schema, execution modes. Direct-only presets are never picked by Autonomous Mode.
+- Content policy for adult-only presets: opt-in setting, per-run confirmation, refusal of minors / non-consent / real people, logged refusals. Adult presets can never be autonomous.
+- MOSS-Image ComfyUI workflows (base and LoRA). Preflight now checks every choice value, not only model files.
+- Read-only web research tools for models (public web only, untrusted-content marking, URL log).
+- Simple 3D scenes: the 3D model writes scene JSON and SHAMS builds the GLB and a render without Blender. Blender is used for complex scenes.
+
 **Local models by role** (ADR-120)
 - Model Registry: roles planner, coder, scene3d, visual_qc, embedding, image, image_to_3d. Preferred model names are mapped onto the IDs Ollama really has; one worker per role is generated. `shams models` shows the mapping.
 - Ollama: native chat (thinking off, `num_ctx`, JSON mode, images), embeddings, `/api/ps` resource reporting, unload that waits until VRAM is free.

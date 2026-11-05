@@ -85,6 +85,9 @@ td code{font-family:var(--mono);font-size:12px}
 .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .actions button{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px}
 .actions button:hover{background:var(--chip)}
+.actions .btn.primary,.actions .btn.primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.actions .btn.primary:hover{opacity:.9}
+.actions .btn.primary:disabled{opacity:.45;cursor:default}
 .dag{display:grid;gap:12px}
 .col{display:flex;gap:8px;flex-wrap:wrap}
 .node{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;display:flex;gap:6px;align-items:center}
@@ -249,7 +252,7 @@ $("theme").onclick = () => {
   try { localStorage.setItem("shams.theme", nxt); } catch (e) {}
 };
 
-function go(v){ view = v; try{localStorage.setItem("shams.view", v)}catch(e){}; if (v === "settings") loadSettings(); else render(true); }
+function go(v){ view = v; try{localStorage.setItem("shams.view", v)}catch(e){}; if (v === "settings") loadSettings(); else if (v === "direct") loadDirect(); else render(true); }
 
 function navRender(){
   const nav = $("nav");
@@ -259,6 +262,7 @@ function navRender(){
     const c = v[0]==="workflow" ? S.tasks.length : v[0]==="artifacts" ? S.artifacts.length : v[0]==="qa" ? S.qc.length : "";
     h += btn(v[0], v[1], v[2], c);
   }
+  h += `<div class="sect" style="margin-top:14px">CHẠY TRỰC TIẾP</div>` + btn("direct","Direct Mode",'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>');
   h += `<div class="sect" style="margin-top:14px">WORKSPACE</div>`;
   for (const p of S.projects.slice(0, 12)){
     const on = p.id === S.project.id;
@@ -378,6 +382,96 @@ function qaView(){
 }
 
 
+/* ------------------------------------------------------------------ Direct Mode (ADR-121) */
+let DIR = null, dsel = null, dtask = null, dtimer = null;
+try { dsel = localStorage.getItem("shams.dpreset"); } catch (e) {}
+const KIND_LBL = {chat:"Văn bản / code", image:"Ảnh", scene3d:"Cảnh 3D", image_to_3d:"Ảnh → 3D"};
+async function loadDirect(){
+  try { DIR = await api("/api/direct/presets"); DIR.tasks = (await api("/api/direct/tasks")).tasks; }
+  catch (e) { alert(e.message); return; }
+  if (!DIR.presets.find(p => p.id === dsel)) dsel = (DIR.presets.find(p => p.status === "ok") || DIR.presets[0] || {}).id;
+  render(true);
+}
+function dField(k, sch, v){
+  const lbl = `${esc(k)}${sch.description ? ` <span class="muted">· ${esc(sch.description)}</span>` : ""}`;
+  if (sch.type === "boolean") return `<label>${lbl}<select class="f" data-k="${esc(k)}" data-t="boolean"><option value="">mặc định</option><option value="true" ${v===true?"selected":""}>bật</option><option value="false" ${v===false?"selected":""}>tắt</option></select></label>`;
+  if (sch.enum) return `<label>${lbl}<select class="f" data-k="${esc(k)}" data-t="string"><option value=""></option>${sch.enum.map(o => `<option ${o===v?"selected":""}>${esc(o)}</option>`).join("")}</select></label>`;
+  const num = sch.type === "number" || sch.type === "integer";
+  if (k === "system" || k === "negative") return `<label style="grid-column:1/-1">${lbl}<textarea class="f" style="min-height:52px" data-k="${esc(k)}" data-t="string">${esc(v ?? "")}</textarea></label>`;
+  return `<label>${lbl}<input class="f" data-k="${esc(k)}" data-t="${num ? sch.type : "string"}" ${num ? `type="number" step="${sch.type==="integer"?1:"any"}"` : ""} ${sch.minimum!=null?`min="${sch.minimum}"`:""} ${sch.maximum!=null?`max="${sch.maximum}"`:""} value="${esc(v ?? "")}"></label>`;
+}
+function dOutputs(t){
+  if (!t) return "";
+  const head = `<div class="small" style="margin-bottom:6px"><code>${esc(t.task_id)}</code> · ${esc(t.preset)} · ${badgeFor(t.state)} ${t.running ? '<span class="badge b-chip">đang chạy…</span>' : ""}</div>`;
+  let h = head;
+  if (t.error) h += `<div class="small" style="color:var(--bad);margin-bottom:6px">${esc(t.error)}</div>`;
+  for (const o of t.outputs || []){
+    if (o.media_type.startsWith("image/")) h += `<a href="${o.url}" target="_blank"><img src="${o.url}" style="max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--border)" alt="${esc(o.logical_id)}"></a>`;
+    else if (o.media_type.startsWith("text/") || o.media_type === "application/json") h += `<pre class="console" style="max-height:480px;white-space:pre-wrap" data-src="${o.url}">…</pre>`;
+    else h += `<div><a href="${o.url}" download="${esc(o.logical_id)}">Tải ${esc(o.logical_id)} (${esc(o.media_type)})</a></div>`;
+  }
+  if (t.usage) h += `<div class="small muted" style="margin-top:6px">${t.usage.tokens_in ?? 0} token vào · ${t.usage.tokens_out ?? 0} token ra · ${t.usage.wall_seconds ?? "?"} s</div>`;
+  if (t.events) h += `<details style="margin-top:6px"><summary class="small muted">Tiến trình (${t.events.length} sự kiện)</summary><div class="console" style="max-height:220px">${t.events.map(e => `[${esc((e.at||"").slice(11,19))}] ${esc(e.type)} ${esc(e.subject)}`).join("<br>")}</div></details>`;
+  return h;
+}
+async function dFill(){
+  for (const el of document.querySelectorAll("[data-src]")){
+    try { const r = await fetch(el.dataset.src); el.textContent = await r.text(); } catch (e) { el.textContent = "(không đọc được)"; }
+  }
+}
+async function dWatch(tid){
+  clearTimeout(dtimer);
+  try { dtask = await api(`/api/direct/tasks/${encodeURIComponent(tid)}`); } catch (e) { return; }
+  const box = $("d_result");
+  if (!box) return;
+  box.innerHTML = dOutputs(dtask); dFill();
+  const final = ["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(dtask.state) && !dtask.running;
+  if (!final) dtimer = setTimeout(() => dWatch(tid), 1000);
+  else { DIR.tasks = (await api("/api/direct/tasks")).tasks; const l = $("d_hist"); if (l) l.innerHTML = dHist(); dBindHist(); $("d_run").disabled = false; }
+}
+function dHist(){
+  return (DIR.tasks || []).map(t => `<button class="btn sm" data-tid="${esc(t.task_id)}" style="margin:0 6px 6px 0">${esc(t.task_id.slice(12))} · ${esc(t.preset)} · ${esc(t.state)}</button>`).join("") || '<span class="small muted">Chưa có.</span>';
+}
+function dBindHist(){ document.querySelectorAll("[data-tid]").forEach(b => b.onclick = () => dWatch(b.dataset.tid)); }
+function renderDirect(){
+  const c = $("center");
+  if (!DIR) { c.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
+  const p = DIR.presets.find(x => x.id === dsel);
+  let h = `<div class="ctitle"><h2>Direct Mode</h2><span class="small muted">Chọn model/preset, nhập prompt, chạy ngay — không Planner, không DAG</span></div>`;
+  const groups = {};
+  for (const x of DIR.presets) (groups[x.kind] = groups[x.kind] || []).push(x);
+  h += `<div class="formgrid" style="grid-template-columns:1fr"><label>Model / preset<select class="f" id="d_preset">${Object.entries(groups).map(([k, xs]) => `<optgroup label="${esc(KIND_LBL[k] || k)}">${xs.map(x => `<option value="${esc(x.id)}" ${x.id===dsel?"selected":""}>${esc(x.label)}${x.content_policy.adult?" (18+)":""} — ${esc(x.model || x.wanted || "")}${x.status!=="ok"?` · ${esc(x.status)}`:""}</option>`).join("")}</optgroup>`).join("")}</select></label></div>`;
+  if (!p) { c.innerHTML = h + '<div class="empty">Chưa có preset nào. Thêm models.roles hoặc models.presets trong settings.</div>'; return; }
+  h += `<div class="small muted" style="margin:6px 0 10px">${esc(p.provider)} · <code>${esc(p.model || p.wanted || "")}</code> · ${p.resources.vram_mb ? `~${gb(p.resources.vram_mb)} VRAM · ` : ""}lane ${esc(p.resources.lane)} · chế độ: ${esc(p.execution_modes.join(", "))}${p.autonomous_default?" · dùng trong Autonomous":""}${p.status!=="ok"?` · <b style="color:var(--bad)">${esc(p.status)}</b> ${esc(p.how)}`:""}</div>`;
+  const props = (p.input_schema || {}).properties || {};
+  h += `<label class="small muted">Prompt<textarea class="f" id="d_prompt" style="min-height:110px;font-family:inherit;font-size:13px" placeholder="Nhập yêu cầu…"></textarea></label>`;
+  const keys = Object.keys(props).filter(k => k !== "prompt");
+  if (keys.length) h += `<details style="margin-top:8px" open><summary class="small muted">Tham số</summary><div class="formgrid" style="margin-top:6px">${keys.map(k => dField(k, props[k], p.params[k])).join("")}</div></details>`;
+  if (p.content_policy.adult){
+    h += DIR.allow_adult_content
+      ? `<div class="blk" style="margin-top:10px;border:1px solid var(--warn);border-radius:8px;padding:8px"><b>Preset chỉ dành cho người lớn.</b> Không bao giờ được dùng tự động. Prompt về trẻ vị thành niên, không đồng thuận, lạm dụng hoặc người thật có thể nhận diện sẽ bị từ chối.<label style="display:flex;gap:8px;margin-top:6px"><input type="checkbox" id="d_adult"><span class="small">${esc(DIR.confirm_text)}</span></label></div>`
+      : `<div class="small" style="margin-top:10px;color:var(--bad)">Preset 18+ đang tắt. Bật bằng <code>general.allow_adult_content: true</code> trong settings nếu bạn muốn dùng.</div>`;
+  }
+  h += `<div class="actions" style="margin-top:10px"><button class="btn primary" id="d_run" ${p.status!=="ok"?"disabled":""}>Chạy</button><span class="small muted" id="d_msg"></span></div>`;
+  h += `<div id="d_result" style="margin-top:12px">${dOutputs(dtask)}</div>`;
+  h += `<div class="lbl" style="margin-top:14px">Lần chạy gần đây</div><div id="d_hist">${dHist()}</div>`;
+  c.innerHTML = h; dFill(); dBindHist();
+  $("d_preset").onchange = e => { dsel = e.target.value; try{localStorage.setItem("shams.dpreset", dsel)}catch(_){}; renderDirect(); };
+  $("d_run").onclick = async () => {
+    const params = {prompt: $("d_prompt").value.trim()};
+    if (!params.prompt) { $("d_msg").textContent = "Nhập prompt trước."; return; }
+    for (const el of c.querySelectorAll("[data-k]")){
+      const v = el.value.trim(); if (v === "") continue;
+      params[el.dataset.k] = el.dataset.t === "boolean" ? v === "true" : el.dataset.t === "integer" ? parseInt(v, 10) : el.dataset.t === "number" ? parseFloat(v) : v;
+    }
+    const adult = $("d_adult");
+    if (p.content_policy.adult && !(adult && adult.checked)) { $("d_msg").textContent = "Cần xác nhận điều khoản 18+ ở trên."; return; }
+    $("d_run").disabled = true; $("d_msg").textContent = "";
+    try { const t = await api("/api/direct/run", {preset: p.id, params, confirm_adult: !!(adult && adult.checked)}); dWatch(t.task_id); }
+    catch (e) { $("d_msg").textContent = e.message; $("d_run").disabled = false; }
+  };
+}
+
 /* ------------------------------------------------------------------ main render */
 function render(force){
   if (!S) return;
@@ -418,6 +512,7 @@ function render(force){
   $("conn").textContent = "Connected"; $("conn").className = "badge b-ok";
 
   if (view === "settings") { if (force) renderSettings(); return; }   // forms are not redrawn by polling
+  if (view === "direct") { if (force) renderDirect(); return; }
   const center = $("center");
   const focused = document.activeElement && document.activeElement.id === "msg";
   const draft = $("msg") ? $("msg").value : "";
@@ -689,7 +784,7 @@ const BIND = {
   files(){ $("raw_save").onclick = () => { let data; try { data = JSON.parse($("raw").value || "{}"); } catch (e) { flash = {ok:false, text:"JSON không hợp lệ: " + e.message}; return renderSettings(); } saveScope(data); }; },
 };
 
-poll().then(() => { if (view === "settings") loadSettings(); });
+poll().then(() => { if (view === "settings") loadSettings(); else if (view === "direct") loadDirect(); });
 setInterval(poll, 1000);
 </script>
 </body>

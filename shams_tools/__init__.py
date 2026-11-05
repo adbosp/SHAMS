@@ -16,6 +16,7 @@ _DONE = False
 
 
 class _ComfyBackend:
+    default_kind = "image"
     def bind(self, reg, role: str, cfg: dict):
         from shams.models import RoleBinding
         c = (reg.tools.get("comfyui") or {})

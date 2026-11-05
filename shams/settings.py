@@ -44,7 +44,7 @@ MOCK_MODES = ("auto", "on", "off")
 
 DEFAULTS: dict[str, Any] = {
     "general": {"language": "vi", "default_mode": "guided", "default_domain": None, "mock": "auto",
-                "open_browser": True, "max_tool_rounds": 8},
+                "open_browser": True, "max_tool_rounds": 8, "allow_adult_content": False},
     "permissions": {"mode": "default", "allow": [], "deny": []},
     "connections": {},
     "nodes": [],
@@ -55,6 +55,7 @@ DEFAULTS: dict[str, Any] = {
     "models": {"ollama": {"base_url": "http://127.0.0.1:11434", "keep_alive": "10m"}, "auto_workers": True,
                "node": "node.local", "roles": {}, "aliases": {}},
     "tools": {},
+    "research": {"enabled": False},
 }
 
 SECRET_KEY = re.compile(r"(?i)(^|_)(api_?key|token|secret|password|passwd|authorization)$")
@@ -211,6 +212,13 @@ def validate(s: dict) -> list[str]:
         if role not in ROLE_SPECS and not (isinstance(r, dict) and r.get("backend") and r.get("capabilities")):
             errs.append(f"models.roles.{role}: unknown role; known: {sorted(ROLE_SPECS)} "
                         f"(a custom role needs backend and capabilities)")
+    from shams.models import _preset_entries
+    for pid, pr in _preset_entries(s.get("models") or {}):
+        cp = pr.get("content_policy") or {}
+        if cp.get("adult") and pr.get("autonomous_default"):
+            errs.append(f"models.presets.{pid}: an adult-only preset cannot be autonomous_default")
+        if cp.get("adult") and "autonomous" in (pr.get("execution_modes") or []):
+            errs.append(f"models.presets.{pid}: an adult-only preset can only run in direct mode")
     for pat, hooks in (s.get("hooks") or {}).items():
         for h in hooks if isinstance(hooks, list) else [hooks]:
             if not isinstance(h, dict) or not h.get("command"):

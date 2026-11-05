@@ -201,6 +201,19 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Embedding mới có provider (`Ollama.embed`), chưa nối vào truy hồi ngữ cảnh.
 - Nhiều GPU hoặc API: scheduler sẵn có chạy song song theo lane; một GPU: tuần tự.
 
+### ADR-121 — Direct Mode, preset theo registry, chính sách nội dung, research web
+**Vấn đề:** Người dùng muốn chọn thẳng một model/preset, nhập prompt và chạy, không cần Planner hay DAG; thêm model ảnh MOSS-Image (có LoRA chỉ dành cho người lớn) và model chat chỉ dùng trực tiếp; cho model dùng Internet để research; cảnh 3D đơn giản không cần Blender.
+**Quyết định:**
+- **Preset là một mục trong Model Registry** (`models.presets`, và mỗi vai trò đã giải được cũng là một preset). Mỗi preset có: `kind`, `provider`, model thật, `status`, `capabilities`, `execution_modes` (`direct`, `autonomous`), `autonomous_default`, `input_schema`, `outputs`, `params`, `content_policy`, tài nguyên (lane, VRAM). Worker của preset chỉ có capability `direct.<id>`; chỉ khi `autonomous_default` và `autonomous` có trong `execution_modes` thì mới thêm capability thường, nên Planner không bao giờ tự chọn preset chỉ-direct.
+- **Direct Mode dùng chung toàn bộ runtime**: `Shams.direct(preset, params)` kiểm tra schema, chính sách, trạng thái rồi tạo **một** task (plan `plan.task.direct.NNNN`, template `direct`) và để scheduler, GPU lease, model lifecycle (nạp/dỡ), worker, Artifact Registry, QC và event log xử lý như mọi task. `run_task()` chạy tới trạng thái cuối. Không có đường chạy riêng.
+- **Chính sách nội dung** (`shams.policy`): preset có `content_policy.adult` không bao giờ được Autonomous Mode chọn (settings bị từ chối nếu khai báo `autonomous_default` hoặc chế độ `autonomous`), cần `general.allow_adult_content: true` **và** xác nhận mỗi lần chạy; prompt về trẻ vị thành niên, không đồng thuận/lạm dụng, người thật có thể nhận diện bị từ chối (Anh + Việt); luôn thêm negative prompt chống trẻ vị thành niên. Mọi lần từ chối ghi `policy.refused`. Bộ lọc giảm rủi ro, không phải bảo đảm.
+- **Research web** (`shams.research`): hai tool chỉ đọc `research__web_search`, `research__web_fetch` cho model có tool calling; chặn địa chỉ local/private (kể cả sau redirect) nên model không chạm được Ollama/ComfyUI/LAN; giới hạn dung lượng, danh sách cho phép/cấm, ghi log URL; nội dung web được đánh dấu là dữ liệu không tin cậy. Bật bằng `research.enabled`.
+- **Cảnh 3D đơn giản không cần Blender**: model 3D viết mô tả cảnh JSON (primitive, vị trí, xoay, màu, camera, đèn); `shams_tools.scene_json` kiểm tra, dựng GLB (POSITION/NORMAL/UV, vật liệu PBR, camera, KHR_lights_punctual) và render z-buffer bằng Python để làm bằng chứng QC. Blender chỉ dùng cho cảnh phức tạp (modifier, boolean, sculpt, rig, terrain...) hoặc khi JSON thất bại sau các vòng sửa.
+- **MOSS-Image** qua workflow ComfyUI (`moss_image`, `moss_image_lora`); preflight kiểm tra cả node, file model và giá trị lựa chọn (vd. kiểu text encoder `moss_image` mà ComfyUI cũ chưa có).
+**Hệ quả:**
+- Thêm model/preset chỉ cần settings; UI (Direct Mode), API (`/api/direct/*`), CLI (`shams presets`, `shams direct`) đọc từ registry.
+- `shams selftest` có thêm 3 (cảnh JSON), 3b (Blender), 9a–9e (Direct chat, ảnh, chuyển model, lỗi/chính sách, MOSS). Self-test không bao giờ chạy preset 18+, chỉ preflight.
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

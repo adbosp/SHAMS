@@ -102,7 +102,67 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--only", help="comma-separated test ids, e.g. 1,3,4b")
     a.add_argument("--out", help="report folder (default: <workspace>/_selftest/<time>)")
     a.add_argument("--workspace", help="default: $SHAMS_WORKSPACE or ~/SHAMS")
+    a = sub.add_parser("presets", help="models / presets you can run directly (Direct Mode)")
+    a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
+    a = sub.add_parser("direct", help="run one prompt on one chosen preset, without planner or DAG")
+    a.add_argument("prompt"); a.add_argument("--preset", required=True)
+    a.add_argument("--param", action="append", default=[], help="k=v (JSON values allowed), repeatable")
+    a.add_argument("--dir", help="project folder (default: <workspace>/direct, created if missing)")
+    a.add_argument("--confirm-adult", action="store_true",
+                   help="adult-only presets: I am 18+ and the content involves only fictional consenting adults")
+    a.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
+
+    if args.cmd == "presets":
+        from shams import settings as settings_mod
+        from shams.models import ModelRegistry
+        ps = ModelRegistry(settings_mod.load(args.dir)).presets()
+        if args.json:
+            print(json.dumps(ps, ensure_ascii=False, indent=2))
+            return 0
+        for x in ps:
+            flags = ",".join(x["execution_modes"]) + (" 18+" if x["content_policy"].get("adult") else "")
+            print(f"  {x['id']:<24} {x['kind']:<8} {str(x['provider']):<14} {str(x['model'] or x['wanted'])[:44]:<44} "
+                  f"{x['status']:<14} [{flags}]")
+        return 0
+    if args.cmd == "direct":
+        import os
+        from shams import policy
+        ws = Path(os.environ.get("SHAMS_WORKSPACE") or Path.home() / "SHAMS")
+        d = Path(args.dir) if args.dir else ws / "direct"
+        if not (d / "project.json").exists():
+            Studio.init_project(d, "direct", "Direct Mode tasks", mode="guided", domain="software",
+                                domain_config={"stack": "python"})
+        params = {"prompt": args.prompt}
+        for k, v in _opts(args.param).items():
+            try:
+                params[k] = json.loads(v)
+            except json.JSONDecodeError:
+                params[k] = v
+        st = Studio(d)
+        try:
+            if args.confirm_adult:
+                print("Confirmed: " + policy.CONFIRM_TEXT, file=sys.stderr)
+            tid = st.direct(args.preset, params, by="cli", confirm_adult=args.confirm_adult)
+            print(f"{tid} queued on {args.preset} ...", file=sys.stderr, flush=True)
+            res = st.run_task(tid)
+            files = [{"logical_id": a["logical_id"], "media_type": a["media_type"],
+                      "file": str(st.artifacts.blob_path(a["sha256"]))} for a in res["outputs"]]
+        except (KeyError, ValueError, PermissionError, RuntimeError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        finally:
+            st.close()
+        if args.json:
+            print(json.dumps({**res, "files": files}, ensure_ascii=False, indent=2, default=str))
+        else:
+            h = res.get("handoff") or {}
+            print(f"{tid}: {res['state']}  {h.get('blocked_reason') or ''}")
+            for f in files:
+                if f["media_type"].startswith("text/"):
+                    print(Path(f["file"]).read_text(encoding="utf-8"))
+                print(f"  {f['logical_id']}  {f['media_type']}  {f['file']}")
+        return 0 if res["state"] == "ACCEPTED" else 1
 
     if args.cmd == "models":
         from shams import settings as settings_mod
