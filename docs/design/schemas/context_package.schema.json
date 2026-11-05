@@ -108,7 +108,9 @@
         "name": {
           "enum": [
             "unity",
-            "unreal"
+            "unreal",
+            "godot",
+            "web"
           ]
         },
         "version": {

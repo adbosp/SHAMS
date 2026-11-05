@@ -71,6 +71,9 @@ class Studio:
         d.mkdir(parents=True, exist_ok=True)
         cfg = {"project_id": project_id, "goal": goal, "mode": mode, "mock_mode": mock_mode,
                "engine": engine or {"name": "unity", "version": "6000.0"}, "created_at": contracts.now_iso()}
+        from studio import engines
+        prof = engines.get(cfg["engine"]["name"])
+        cfg["engine"] = {"name": prof.name, "version": cfg["engine"].get("version") or prof.default_version}
         (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         db = EventStore(d / "studio.sqlite", project_id)
         with db.tx() as c:
@@ -79,6 +82,20 @@ class Studio:
             db.append("project.created", "project", project_id, "human", payload={"mode": mode, "mock": mock_mode})
         db.close()
         return d
+
+    def set_engine(self, name: str) -> None:
+        """Switch the project's engine before a plan exists (ADR-115)."""
+        from studio import engines
+        if self.db.tasks():
+            raise ValueError("engine can only change before the first plan is loaded")
+        prof = engines.get(name)
+        self.project["engine"] = {"name": prof.name, "version": prof.default_version}
+        self.context.engine = self.project["engine"]
+        (self.dir / "project.json").write_text(json.dumps(self.project, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self.db.tx() as c:
+            c.execute("UPDATE projects SET engine=?, engine_version=? WHERE project_id=?",
+                      (prof.name, prof.default_version, self.db.project_id))
+            self.db.append("project.engine_set", "project", self.db.project_id, "human", payload={"engine": prof.name})
 
     def close(self) -> None:
         self.db.close()

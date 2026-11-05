@@ -18,7 +18,7 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 | ADR-004 | ComfyUI cho image; adapter riêng cho 3D/audio/motion | Accepted | — |
 | ADR-005 | SQLite + LangGraph checkpointer + Git + artifact registry | Accepted (làm rõ ở ADR-104, ADR-105) | > 1 máy chạy worker |
 | ADR-006 | Python + FastAPI backend; Tauri + React + TS desktop (Phase 4) | Accepted | — |
-| ADR-007 | Unity trước, Unreal sau qua engine adapter | Accepted | — |
+| ADR-007 | Unity trước, Unreal sau qua engine adapter | Accepted (mở rộng ở ADR-115: Unity, Unreal, Godot, Web qua Engine Profile) | — |
 | ADR-008 | Local-first; external API là fallback có budget và cần bật | Accepted (mở rộng ở ADR-114: "local" = node do người dùng sở hữu, không nhất thiết cùng máy controller) | — |
 | ADR-009 | Pin version LangGraph/Deep Agents, bọc adapter, chỉ fork khi không có extension API | Accepted | — |
 | ADR-010 | Không có bằng chứng thì không PASS; thiếu tool thì `NOT_VERIFIED` | Accepted | — |
@@ -94,6 +94,20 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - RTX 3060 12 GB chỉ còn là **hồ sơ tham chiếu** (`profile.rtx3060_12gb`) để đặt mặc định và benchmark, không phải yêu cầu.
 - Hệ thống phải chạy được end-to-end **khi chưa gắn model nào**: chế độ `mock` dùng worker giả (trả artifact mẫu + handoff hợp lệ) để kiểm thử orchestrator, state machine, QC, repair, crash/resume.
 **Hệ quả:** ADR-109 áp dụng theo node (engine có đồ họa lấy lease GPU *trên node đó*). Spike S1/S3 chuyển thành việc của lúc gắn model đầu tiên, không chặn việc xây controller.
+
+### ADR-115 — Đa engine qua Engine Profile + Engine Adapter (mở rộng ADR-007)
+**Vấn đề:** ADR-007 chọn "Unity trước, Unreal sau qua engine adapter", nhưng template, capability, đường dẫn và contract trong Phase 1a đều viết cứng cho Unity. Người dùng cần tạo game cho Unity, Unreal Engine 5, Godot và web (Three.js + WebGPU).
+**Quyết định:**
+- Template DAG viết **một lần, trung lập engine** (`vertical_slice_3d`), dùng token `${code}`, `${scripts}`, `${script_contract}`, `${build}`… Khi lập kế hoạch, template được **instantiate cho một Engine Profile**; `dag.template` ghi `vertical_slice_3d@<engine>`.
+- **Engine Profile** (`studio/engines`) khai báo: ngôn ngữ, capability code/test/build, media type và contract cho script/test/scene/mesh/build, cây thư mục (scripts, tests, scenes, models, textures, audio, builds), build target.
+  - `unity`: C#, `Assets/**`, Unity Test Framework, build Windows.
+  - `unreal`: C++, `Source/Game`, `Content/**`, Automation Test, RunUAT BuildCookRun Win64; asset nhập qua FBX/glTF, không sinh `.uasset` trực tiếp.
+  - `godot`: GDScript, `scripts/`, GUT, `--export-release`.
+  - `web`: TypeScript + Three.js `WebGPURenderer` (tự lùi WebGL2), Vite build, Vitest, smoke test + screenshot bằng Playwright.
+- **Engine Adapter** dựng argv cho compile / test / build / capture của từng engine. Chạy thật và parse log là việc của Spike S2 (mở rộng cho cả 4 engine); trong Phase 1a các bậc QC 2–4 vẫn dùng mock checker.
+- Engine chọn lúc tạo project (`shams init --engine`), hoặc đổi trước khi có plan (`shams plan --engine`, UI chọn engine, hoặc nhận diện từ câu chat: "UE5", "Godot", "Three.js/WebGPU"…). **Không đổi engine sau khi đã có plan** (artifact đã sinh không chuyển engine được); muốn đổi thì tạo project mới.
+- Asset chung (texture, audio, mesh glTF) dùng chung contract; chỉ script/scene/test/build là riêng theo engine.
+**Hệ quả:** Worker code cần capability theo ngôn ngữ (C#, C++, GDScript, TS); Benchmark Lab đo riêng từng capability. Unity vẫn là engine mặc định. Template cũ `unity_3d_vertical_slice` giữ làm alias.
 
 ## Phần C — Còn mở (quyết định bằng spike)
 

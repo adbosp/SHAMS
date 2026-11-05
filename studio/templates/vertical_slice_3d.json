@@ -3,8 +3,8 @@
   "project_id": "template",
   "plan_id": "plan.template",
   "plan_version": 1,
-  "template": "unity_3d_vertical_slice",
-  "goal": "Game cá mập 3D: bơi, ăn cá nhỏ, lớn lên, HUD, build Windows",
+  "template": "vertical_slice_3d",
+  "goal": "Game 3D: nhân vật bơi/di chuyển, ăn mồi, lớn lên, HUD, bản build chơi được",
   "vertical_slice_first": true,
   "milestones": [
     {
@@ -21,24 +21,24 @@
         "task.ocean_texture",
         "task.sfx_eat",
         "task.integration_slice1",
-        "task.build_windows"
+        "task.build_game"
       ]
     }
   ],
   "tasks": [
     {
       "task_id": "task.project_scaffold",
-      "title": "Khởi tạo Unity project + cấu trúc thư mục",
-      "description": "Khởi tạo Unity project + cấu trúc thư mục",
-      "capability": "code.unity_csharp",
+      "title": "Khởi tạo ${engine_display} project + cấu trúc thư mục",
+      "description": "Khởi tạo ${engine_display} project + cấu trúc thư mục",
+      "capability": "${code}",
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
           "name": "ProjectBootstrap",
-          "logical_id": "unity.project_scaffold",
-          "media_type": "text/x-csharp",
-          "contract": "unity.csharp_script"
+          "logical_id": "project.scaffold",
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -55,14 +55,14 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scripts/Core/**"
+        "${scripts}/Core/**"
       ]
     },
     {
       "task_id": "task.shark_movement",
       "title": "Điều khiển cá mập bơi 3D",
       "description": "Điều khiển cá mập bơi 3D",
-      "capability": "code.unity_csharp",
+      "capability": "${code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -70,21 +70,21 @@
         {
           "name": "scaffold",
           "from_task": "task.project_scaffold",
-          "logical_id": "unity.project_scaffold"
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
         {
           "name": "SharkController",
           "logical_id": "code.shark_controller",
-          "media_type": "text/x-csharp",
-          "contract": "unity.csharp_script"
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
         },
         {
           "name": "SharkMovementTests",
           "logical_id": "test.shark_movement",
-          "media_type": "text/x-csharp",
-          "contract": "unity.test_script"
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -115,14 +115,14 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scripts/Shark/**"
+        "${scripts}/Shark/**"
       ]
     },
     {
       "task_id": "task.prey_spawner",
       "title": "Spawner cá mồi trong vùng nước",
       "description": "Spawner cá mồi trong vùng nước",
-      "capability": "code.unity_csharp",
+      "capability": "${code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -130,15 +130,15 @@
         {
           "name": "scaffold",
           "from_task": "task.project_scaffold",
-          "logical_id": "unity.project_scaffold"
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
         {
           "name": "PreySpawner",
           "logical_id": "code.prey_spawner",
-          "media_type": "text/x-csharp",
-          "contract": "unity.csharp_script"
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -163,14 +163,14 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scripts/Prey/**"
+        "${scripts}/Prey/**"
       ]
     },
     {
       "task_id": "task.eat_growth",
       "title": "Cơ chế ăn và lớn lên",
       "description": "Cơ chế ăn và lớn lên",
-      "capability": "code.unity_csharp",
+      "capability": "${code}",
       "depends_on": [
         "task.shark_movement",
         "task.prey_spawner"
@@ -191,8 +191,8 @@
         {
           "name": "EatAndGrow",
           "logical_id": "code.eat_growth",
-          "media_type": "text/x-csharp",
-          "contract": "unity.csharp_script"
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -217,14 +217,14 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scripts/Gameplay/**"
+        "${scripts}/Gameplay/**"
       ]
     },
     {
       "task_id": "task.hud",
       "title": "HUD điểm và kích thước",
       "description": "HUD điểm và kích thước",
-      "capability": "code.unity_csharp",
+      "capability": "${code}",
       "depends_on": [
         "task.eat_growth"
       ],
@@ -239,8 +239,8 @@
         {
           "name": "HudController",
           "logical_id": "code.hud",
-          "media_type": "text/x-csharp",
-          "contract": "unity.csharp_script"
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -271,7 +271,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scripts/UI/**"
+        "${scripts}/UI/**"
       ]
     },
     {
@@ -285,8 +285,8 @@
         {
           "name": "shark",
           "logical_id": "asset.shark.mesh",
-          "media_type": "model/gltf-binary",
-          "contract": "mesh.fbx_game_ready"
+          "media_type": "${mesh_mt}",
+          "contract": "${mesh_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -312,7 +312,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Models/Shark/**"
+        "${models}/Shark/**"
       ]
     },
     {
@@ -326,8 +326,8 @@
         {
           "name": "prey",
           "logical_id": "asset.prey.mesh",
-          "media_type": "model/gltf-binary",
-          "contract": "mesh.fbx_game_ready"
+          "media_type": "${mesh_mt}",
+          "contract": "${mesh_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -347,7 +347,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Models/Prey/**"
+        "${models}/Prey/**"
       ]
     },
     {
@@ -379,7 +379,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Textures/**"
+        "${textures}/**"
       ]
     },
     {
@@ -411,7 +411,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Audio/**"
+        "${audio}/**"
       ]
     },
     {
@@ -474,9 +474,9 @@
       "outputs": [
         {
           "name": "Slice1",
-          "logical_id": "unity.scene.slice1",
-          "media_type": "application/vnd.unity.scene",
-          "contract": "unity.scene"
+          "logical_id": "scene.slice1",
+          "media_type": "${scene_mt}",
+          "contract": "${scene_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -509,14 +509,14 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Assets/Scenes/**"
+        "${scenes}/**"
       ]
     },
     {
-      "task_id": "task.build_windows",
-      "title": "Build Windows + smoke test",
-      "description": "Build Windows + smoke test",
-      "capability": "build.unity",
+      "task_id": "task.build_game",
+      "title": "Build ${build_target} + smoke test",
+      "description": "Build ${build_target} + smoke test",
+      "capability": "${build}",
       "depends_on": [
         "task.integration_slice1"
       ],
@@ -524,15 +524,15 @@
         {
           "name": "scene",
           "from_task": "task.integration_slice1",
-          "logical_id": "unity.scene.slice1"
+          "logical_id": "scene.slice1"
         }
       ],
       "outputs": [
         {
-          "name": "ShamsShark",
-          "logical_id": "build.windows",
-          "media_type": "application/x-msdownload",
-          "contract": "build.windows"
+          "name": "Game",
+          "logical_id": "build.game",
+          "media_type": "${build_mt}",
+          "contract": "${build_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -564,7 +564,7 @@
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "Builds/**"
+        "${builds}/**"
       ]
     }
   ]

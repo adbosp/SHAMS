@@ -22,7 +22,8 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Human review qua CLI (ADR-112), 3 chế độ (ADR-113) | ✅ |
 | Side-effect ledger (ADR-111) | ✅ |
 | Worker thật (Deep Agents + Ollama/llama.cpp), Analysis Agent LLM | ⏳ Phase 1b |
-| Checker Unity thật (batchmode compile/test/build, screenshot) | ⏳ Spike S2 |
+| Đa engine: Unity, Unreal Engine 5, Godot, Three.js/WebGPU (ADR-115), template trung lập engine | ✅ (mock) |
+| Checker engine thật (compile/test/build/screenshot cho 4 engine; lệnh đã dựng sẵn) | ⏳ Spike S2 |
 | Git worktree theo attempt (ADR-105) | ⏳ |
 | Giao diện chính (`shams ui`): Chat, Workflow, AI Workers, Models, Artifacts, QA, Console | ✅ |
 | SSE thay polling, Node Agent cho máy remote, desktop Tauri | ⏳ Phase 2/4 |
@@ -34,8 +35,9 @@ python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activ
 pip install -e ".[dev]"
 pytest -q
 
-shams init projects/shark --project-id shark_mvp --goal "Game cá mập 3D" --mock
-shams plan projects/shark --template unity_3d_vertical_slice --approve <tên-bạn>
+shams engines                                     # unity | unreal (ue5) | godot | web (three.js/WebGPU)
+shams init projects/shark --project-id shark_mvp --goal "Game cá mập 3D" --engine godot --mock
+shams plan projects/shark --approve <tên-bạn>
 shams run projects/shark --defect task.prey_spawner:ac.spawner_tests:9   # tiêm lỗi để xem repair loop
 shams review projects/shark
 shams decide projects/shark task.prey_spawner retry
@@ -47,7 +49,7 @@ shams events projects/shark --task task.prey_spawner
 
 ```bash
 pip install -e ".[ui]"
-shams ui projects/demo          # mở http://127.0.0.1:8765, gõ ý tưởng game vào Studio Chat
+shams ui projects/demo          # mở http://127.0.0.1:8765, chọn engine hoặc ghi trong câu chat ("... bằng UE5")
 ```
 
 Mở trực tiếp `apps/ui/index.html` (không chạy server) sẽ vào **chế độ demo** với dữ liệu mô phỏng.
@@ -66,8 +68,9 @@ studio/
   orchestration/  Task Runner Graph (LangGraph), Studio facade
   verification/   QC Runner, Failure Classifier, Repair Router
   planning/       Plan Validator, DAG templates
+  engines/        Engine Profile + Engine Adapter (Unity, Unreal, Godot, Web)
   mock/           Mock Worker + mock checkers
-  templates/      unity_3d_vertical_slice.json (MVP cá mập)
+  templates/      vertical_slice_3d.json (MVP cá mập, trung lập engine)
 apps/cli/         `shams` CLI
 apps/api/         FastAPI: /api/state, /api/chat, /api/decide
 apps/ui/          Giao diện chính (một file HTML, không cần build)
@@ -76,5 +79,5 @@ docs/design/      Bộ thiết kế v1.1
 
 ## Bước tiếp theo
 
-1. Spike S2: checker Unity thật qua CLI batchmode.
+1. Spike S2: checker engine thật (bắt đầu với engine bạn dùng trước).
 2. Phase 1b: gắn Compute Node đầu tiên, worker Deep Agents + Ollama, chạy Spike S1/S3.

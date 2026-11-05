@@ -145,5 +145,5 @@ def test_side_effect_ledger_is_idempotent(make_studio):
     st = make_studio()
     calls = []
     for _ in range(3):
-        st.db.side_effect("publish:build:a0", "task.build_windows", 0, "publish", lambda: calls.append(1) or {"ok": 1})
+        st.db.side_effect("publish:build:a0", "task.build_game", 0, "publish", lambda: calls.append(1) or {"ok": 1})
     assert calls == [1]
