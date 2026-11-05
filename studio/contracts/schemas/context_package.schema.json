@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/context_package.schema.json",
+  "title": "Context Package",
+  "description": "Gói ngữ cảnh do Context Compiler tạo cho một attempt; worker không nhận hội thoại cũ.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "task_id",
+    "attempt",
+    "goal",
+    "task",
+    "inputs",
+    "tools_allowed",
+    "token_budget"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "task_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "attempt": {
+      "type": "integer"
+    },
+    "goal": {
+      "type": "string",
+      "description": "Mục tiêu dự án đã duyệt, rút gọn"
+    },
+    "task": {
+      "$ref": "task.schema.json"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      }
+    },
+    "upstream_summaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "context_summary"
+        ],
+        "properties": {
+          "task_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "context_summary": {
+            "type": "string"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "relevant_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "inclusion"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          },
+          "inclusion": {
+            "enum": [
+              "full",
+              "excerpt",
+              "signature_only",
+              "path_only"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "unity",
+            "unreal"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "render_pipeline": {
+          "type": "string"
+        }
+      }
+    },
+    "known_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prior_failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "failure_id",
+          "summary"
+        ],
+        "properties": {
+          "failure_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tried_fix": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tools_allowed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "workspace_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "output_contract": {
+      "type": "string",
+      "description": "Yêu cầu worker kết thúc bằng handoff hợp lệ handoff.schema.json"
+    },
+    "token_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limit",
+        "estimated"
+      ],
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "estimated": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/event.schema.json",
+  "title": "Event",
+  "description": "Bản ghi append-only; nguồn sự thật (ADR-104).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seq",
+    "event_id",
+    "project_id",
+    "type",
+    "subject",
+    "actor",
+    "timestamp"
+  ],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_id": {
+      "$ref": "common.schema.json#/$defs/uuid"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z_]+\\.[a-z_]+$",
+      "examples": [
+        "task.created",
+        "task.leased",
+        "task.submitted",
+        "qc.passed",
+        "qc.failed",
+        "repair.scheduled",
+        "task.invalidated",
+        "human.decided",
+        "model.loaded",
+        "model.unloaded",
+        "lease.granted",
+        "lease.released",
+        "side_effect.started",
+        "side_effect.completed"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "task",
+            "artifact",
+            "lease",
+            "model",
+            "side_effect",
+            "plan",
+            "project"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "actor": {
+      "$ref": "common.schema.json#/$defs/worker_ref"
+    },
+    "from_state": {
+      "type": "string"
+    },
+    "to_state": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}

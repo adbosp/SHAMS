@@ -1,0 +1,571 @@
+{
+  "schema_version": "1.0",
+  "project_id": "template",
+  "plan_id": "plan.template",
+  "plan_version": 1,
+  "template": "unity_3d_vertical_slice",
+  "goal": "Game cá mập 3D: bơi, ăn cá nhỏ, lớn lên, HUD, build Windows",
+  "vertical_slice_first": true,
+  "milestones": [
+    {
+      "id": "ms.slice1",
+      "title": "Vertical slice chơi được",
+      "task_ids": [
+        "task.project_scaffold",
+        "task.shark_movement",
+        "task.prey_spawner",
+        "task.eat_growth",
+        "task.hud",
+        "task.shark_model",
+        "task.prey_model",
+        "task.ocean_texture",
+        "task.sfx_eat",
+        "task.integration_slice1",
+        "task.build_windows"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "task.project_scaffold",
+      "title": "Khởi tạo Unity project + cấu trúc thư mục",
+      "description": "Khởi tạo Unity project + cấu trúc thư mục",
+      "capability": "code.unity_csharp",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "ProjectBootstrap",
+          "logical_id": "unity.project_scaffold",
+          "media_type": "text/x-csharp",
+          "contract": "unity.csharp_script"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.scaffold_compiles",
+          "description": "Project compile không lỗi",
+          "kind": "compile"
+        }
+      ],
+      "priority": 80,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scripts/Core/**"
+      ]
+    },
+    {
+      "task_id": "task.shark_movement",
+      "title": "Điều khiển cá mập bơi 3D",
+      "description": "Điều khiển cá mập bơi 3D",
+      "capability": "code.unity_csharp",
+      "depends_on": [
+        "task.project_scaffold"
+      ],
+      "inputs": [
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "unity.project_scaffold"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SharkController",
+          "logical_id": "code.shark_controller",
+          "media_type": "text/x-csharp",
+          "contract": "unity.csharp_script"
+        },
+        {
+          "name": "SharkMovementTests",
+          "logical_id": "test.shark_movement",
+          "media_type": "text/x-csharp",
+          "contract": "unity.test_script"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.movement_compiles",
+          "description": "Compile không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.movement_tests",
+          "description": "PlayMode test di chuyển pass",
+          "kind": "unit_test",
+          "check": {
+            "test_filter": "SharkMovementTests"
+          }
+        },
+        {
+          "id": "ac.swim_screenshot",
+          "description": "Screenshot cá mập ở 2 vị trí",
+          "kind": "screenshot",
+          "required": false
+        }
+      ],
+      "priority": 70,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scripts/Shark/**"
+      ]
+    },
+    {
+      "task_id": "task.prey_spawner",
+      "title": "Spawner cá mồi trong vùng nước",
+      "description": "Spawner cá mồi trong vùng nước",
+      "capability": "code.unity_csharp",
+      "depends_on": [
+        "task.project_scaffold"
+      ],
+      "inputs": [
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "unity.project_scaffold"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "PreySpawner",
+          "logical_id": "code.prey_spawner",
+          "media_type": "text/x-csharp",
+          "contract": "unity.csharp_script"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.spawner_compiles",
+          "description": "Compile không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.spawner_tests",
+          "description": "Test số lượng + bounds",
+          "kind": "unit_test",
+          "check": {
+            "test_filter": "PreySpawnerTests"
+          }
+        }
+      ],
+      "priority": 60,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scripts/Prey/**"
+      ]
+    },
+    {
+      "task_id": "task.eat_growth",
+      "title": "Cơ chế ăn và lớn lên",
+      "description": "Cơ chế ăn và lớn lên",
+      "capability": "code.unity_csharp",
+      "depends_on": [
+        "task.shark_movement",
+        "task.prey_spawner"
+      ],
+      "inputs": [
+        {
+          "name": "shark",
+          "from_task": "task.shark_movement",
+          "logical_id": "code.shark_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.prey_spawner",
+          "logical_id": "code.prey_spawner"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "EatAndGrow",
+          "logical_id": "code.eat_growth",
+          "media_type": "text/x-csharp",
+          "contract": "unity.csharp_script"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.eat_compiles",
+          "description": "Compile không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.eat_tests",
+          "description": "Test va chạm miệng–mồi, size tăng",
+          "kind": "unit_test",
+          "check": {
+            "test_filter": "EatGrowTests"
+          }
+        }
+      ],
+      "priority": 60,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scripts/Gameplay/**"
+      ]
+    },
+    {
+      "task_id": "task.hud",
+      "title": "HUD điểm và kích thước",
+      "description": "HUD điểm và kích thước",
+      "capability": "code.unity_csharp",
+      "depends_on": [
+        "task.eat_growth"
+      ],
+      "inputs": [
+        {
+          "name": "eat",
+          "from_task": "task.eat_growth",
+          "logical_id": "code.eat_growth"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "HudController",
+          "logical_id": "code.hud",
+          "media_type": "text/x-csharp",
+          "contract": "unity.csharp_script"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.hud_compiles",
+          "description": "Compile không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.hud_tests",
+          "description": "Text cập nhật khi ăn",
+          "kind": "unit_test",
+          "check": {
+            "test_filter": "HudTests"
+          }
+        },
+        {
+          "id": "ac.hud_screenshot",
+          "description": "Screenshot HUD",
+          "kind": "screenshot",
+          "required": false
+        }
+      ],
+      "priority": 50,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scripts/UI/**"
+      ]
+    },
+    {
+      "task_id": "task.shark_model",
+      "title": "Mesh cá mập game-ready",
+      "description": "Mesh cá mập game-ready",
+      "capability": "mesh.text_to_3d",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "shark",
+          "logical_id": "asset.shark.mesh",
+          "media_type": "model/gltf-binary",
+          "contract": "mesh.fbx_game_ready"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.shark_mesh_valid",
+          "description": "Poly ≤ 20k, có UV, scale đúng",
+          "kind": "schema",
+          "check": {
+            "max_tris": 20000
+          }
+        },
+        {
+          "id": "ac.shark_look",
+          "description": "Nhìn ra cá mập",
+          "kind": "visual",
+          "required": false
+        }
+      ],
+      "priority": 40,
+      "budget": {
+        "max_wall_seconds": 1800,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Models/Shark/**"
+      ]
+    },
+    {
+      "task_id": "task.prey_model",
+      "title": "Mesh cá mồi",
+      "description": "Mesh cá mồi",
+      "capability": "mesh.text_to_3d",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "prey",
+          "logical_id": "asset.prey.mesh",
+          "media_type": "model/gltf-binary",
+          "contract": "mesh.fbx_game_ready"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.prey_mesh_valid",
+          "description": "Poly ≤ 3k, có UV",
+          "kind": "schema",
+          "check": {
+            "max_tris": 3000
+          }
+        }
+      ],
+      "priority": 40,
+      "budget": {
+        "max_wall_seconds": 1800,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Models/Prey/**"
+      ]
+    },
+    {
+      "task_id": "task.ocean_texture",
+      "title": "Texture nền đại dương",
+      "description": "Texture nền đại dương",
+      "capability": "image.texture",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "ocean",
+          "logical_id": "asset.ocean.texture",
+          "media_type": "image/png",
+          "contract": "image.texture"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.texture_valid",
+          "description": "PNG lũy thừa 2, ≤ 2048",
+          "kind": "schema"
+        }
+      ],
+      "priority": 30,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Textures/**"
+      ]
+    },
+    {
+      "task_id": "task.sfx_eat",
+      "title": "Âm thanh ăn mồi",
+      "description": "Âm thanh ăn mồi",
+      "capability": "audio.sfx",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "eat",
+          "logical_id": "asset.sfx.eat",
+          "media_type": "audio/wav",
+          "contract": "audio.sfx"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.sfx_valid",
+          "description": "WAV 48 kHz, peak ≤ −1 dBFS",
+          "kind": "schema"
+        }
+      ],
+      "priority": 30,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Audio/**"
+      ]
+    },
+    {
+      "task_id": "task.integration_slice1",
+      "title": "Tích hợp vertical slice 1",
+      "description": "Tích hợp vertical slice 1",
+      "capability": "integration",
+      "depends_on": [
+        "task.shark_movement",
+        "task.prey_spawner",
+        "task.eat_growth",
+        "task.hud",
+        "task.shark_model",
+        "task.prey_model",
+        "task.ocean_texture",
+        "task.sfx_eat"
+      ],
+      "inputs": [
+        {
+          "name": "shark",
+          "from_task": "task.shark_movement",
+          "logical_id": "code.shark_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.prey_spawner",
+          "logical_id": "code.prey_spawner"
+        },
+        {
+          "name": "eat",
+          "from_task": "task.eat_growth",
+          "logical_id": "code.eat_growth"
+        },
+        {
+          "name": "hud",
+          "from_task": "task.hud",
+          "logical_id": "code.hud"
+        },
+        {
+          "name": "shark_mesh",
+          "from_task": "task.shark_model",
+          "logical_id": "asset.shark.mesh"
+        },
+        {
+          "name": "prey_mesh",
+          "from_task": "task.prey_model",
+          "logical_id": "asset.prey.mesh"
+        },
+        {
+          "name": "ocean",
+          "from_task": "task.ocean_texture",
+          "logical_id": "asset.ocean.texture"
+        },
+        {
+          "name": "sfx",
+          "from_task": "task.sfx_eat",
+          "logical_id": "asset.sfx.eat"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Slice1",
+          "logical_id": "unity.scene.slice1",
+          "media_type": "application/vnd.unity.scene",
+          "contract": "unity.scene"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.slice_compiles",
+          "description": "Compile không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.slice_integration",
+          "description": "Integration PlayMode test",
+          "kind": "integration_test"
+        },
+        {
+          "id": "ac.slice_runtime",
+          "description": "Chạy 30 s không exception",
+          "kind": "runtime_log"
+        },
+        {
+          "id": "ac.slice_screenshot",
+          "description": "Screenshot vòng chơi",
+          "kind": "screenshot",
+          "required": false
+        }
+      ],
+      "priority": 60,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Assets/Scenes/**"
+      ]
+    },
+    {
+      "task_id": "task.build_windows",
+      "title": "Build Windows + smoke test",
+      "description": "Build Windows + smoke test",
+      "capability": "build.unity",
+      "depends_on": [
+        "task.integration_slice1"
+      ],
+      "inputs": [
+        {
+          "name": "scene",
+          "from_task": "task.integration_slice1",
+          "logical_id": "unity.scene.slice1"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ShamsShark",
+          "logical_id": "build.windows",
+          "media_type": "application/x-msdownload",
+          "contract": "build.windows"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.build_ok",
+          "description": "Build thành công",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.smoke",
+          "description": "Chạy 30 s, log sạch",
+          "kind": "runtime_log"
+        },
+        {
+          "id": "ac.fps",
+          "description": "FPS ≥ 30",
+          "kind": "metric",
+          "check": {
+            "metric": "fps",
+            "op": ">=",
+            "value": 30
+          }
+        }
+      ],
+      "priority": 60,
+      "budget": {
+        "max_wall_seconds": 900,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "Builds/**"
+      ]
+    }
+  ]
+}
