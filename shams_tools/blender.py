@@ -241,6 +241,7 @@ class Scene3DWorker:
                 rep = scene_json.build_scene(raw, want.get("glb"), want.get("render"), resolution=self.resolution,
                                              max_triangles=budget, check_support=not last)
                 rep["scene_description"] = scene_json.extract_json(raw)
+                rep["fix_rounds"] = [e for e in self.log]          # what each earlier round got wrong
                 self.log.append({"round": round_, "result": "ok"})
                 return rep, raw, usage
             except scene_json.SceneError as e:
