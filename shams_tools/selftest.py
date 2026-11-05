@@ -175,6 +175,8 @@ def t3_scene(c: Ctx) -> tuple[str, str]:
         return FAIL, f"{m}: scene JSON failed after {fixes} fix round(s): {rep.get('error', '')[-300:]}"
     c.data["scene"] = {"glb": str(work / "scene.glb"), "render": str(work / "render.png"), "report": rep}
     names = [o["name"] for o in rep["objects"]][:10]
+    if rep.get("warnings"):
+        return FAIL, f"{m}: scene built but still physically wrong after {fixes} fix round(s): " + "; ".join(rep["warnings"])
     return PASS, (f"{m} -> scene JSON -> SHAMS GLB + render (no Blender): {rep['mesh_objects']} objects {names}, "
                   f"{rep['triangles']} tris, coverage {rep['coverage']:.0%}, fix rounds {fixes}, "
                   f"{round(usage['wall_seconds'], 1)} s")
@@ -213,8 +215,19 @@ def t3b_blender(c: Ctx) -> tuple[str, str]:
     if not rep.get("ok"):
         return FAIL, f"{m}: Blender scene failed after {fixes} fix round(s): {rep.get('error', '')[-300:]}"
     v, d = assets.check_png(work / "render.png", {"min_width": 256, "min_std": 4})
+    vis = ""
+    vm = c.model("visual_qc")
+    if v == PASS and vm:                                    # the shape must be right, not only the file
+        c.free_gpu()
+        vprov = providers.create("ollama", {"base_url": c.ollama.root, "num_ctx": 8192})
+        vv, vd = make_visual_checker(vprov, vm)([str(work / "render.png")],
+                                                "The render shows a wooden table with legs and a red ball on top of it.",
+                                                {"min_score": 6})
+        vis = f"; visual QC {vv}: {vd}"
+        if vv == FAIL:
+            v = FAIL
     return (PASS if v == PASS else FAIL), (f"{m} + Blender {rep.get('blender')}: {rep.get('mesh_objects')} meshes, "
-                                           f"render {d}, fix rounds {fixes}, {round(usage['wall_seconds'], 1)} s")
+                                           f"render {d}, fix rounds {fixes}, {round(usage['wall_seconds'], 1)} s{vis}")
 
 
 def t4_render(c: Ctx) -> tuple[str, str]:

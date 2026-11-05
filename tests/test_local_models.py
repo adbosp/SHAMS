@@ -654,3 +654,18 @@ def test_scene3d_can_use_a_stronger_model_for_blender(ollama):
     w = blender_tools.Scene3DWorker(entry={"worker": {"worker_id": "w", "model": "small"},
                                            "provider_config": {"blender_model": "big"}}, attempts_root=Path("."))
     assert (w.model, w.blender_model) == ("small", "big")
+
+
+def test_scene_json_flags_small_gaps_but_not_intended_floating():
+    from shams_tools import scene_json
+    legs = [{"name": f"leg{i}", "shape": "box", "size": [0.06, 0.78, 0.06], "position": [x, 0.39, z]}
+            for i, (x, z) in enumerate([(0.5, 0.3), (-0.5, 0.3), (0.5, -0.3), (-0.5, -0.3)])]
+    s = {"objects": [{"name": "floor", "shape": "plane", "size": [8, 8]}, *legs,
+                     {"name": "top", "shape": "box", "size": [1.2, 0.06, 0.8], "position": [0, 0.84, 0]},
+                     {"name": "lamp", "shape": "sphere", "radius": 0.1, "position": [0, 2.5, 0]}]}
+    with pytest.raises(scene_json.SceneError, match=r"top floats 3 cm above .*y = 0.81"):
+        scene_json.build_scene(s, None, None)
+    rep = scene_json.build_scene(s, None, None, check_support=False)
+    assert len(rep["warnings"]) == 1 and "lamp" not in rep["warnings"][0]
+    s["objects"][5]["position"][1] = 0.81
+    assert scene_json.build_scene(s, None, None)["warnings"] == []

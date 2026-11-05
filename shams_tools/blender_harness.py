@@ -96,6 +96,11 @@ def main():
             if scene.render.engine == "BLENDER_WORKBENCH":
                 scene.display.shading.light = "STUDIO"
                 scene.display.shading.color_type = "MATERIAL"
+                # Workbench shows material.diffuse_color, not the node colour: copy Base Color across
+                for mat in bpy.data.materials:
+                    bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes and mat.node_tree else None
+                    if bsdf is not None and "Base Color" in bsdf.inputs:
+                        mat.diffuse_color = tuple(bsdf.inputs["Base Color"].default_value)
             res = int(spec.get("resolution", 512))
             scene.render.resolution_x = scene.render.resolution_y = res
             scene.render.resolution_percentage = 100

@@ -321,6 +321,15 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
             continue
         if h < 1e-6:
             continue
+        # floating: bottom above the ground, nothing under its footprint reaches it
+        if ground is not None and alo[1] > ground + tol:
+            under = [bhi[1] for b, blo, bhi in boxes if b is not a and bhi[1] <= alo[1] + tol
+                     and blo[0] < ahi[0] and bhi[0] > alo[0] and blo[2] < ahi[2] and bhi[2] > alo[2]]
+            below = max(under, default=ground)
+            if tol < alo[1] - below < 0.15:          # a small gap is a mistake; a big one is meant (lamp, bird)
+                out.append(f"{a['name']} floats {round((alo[1] - below) * 100)} cm above what is under it "
+                           f"(top at y={round(below, 3)}); lower it to y = {round(cy - (alo[1] - below), 3)} "
+                           f"or make its supports taller")
         for b, blo, bhi in boxes:
             if b is a or b["shape"] not in ("box", "cylinder") or area(alo, ahi) >= area(blo, bhi):
                 continue
@@ -503,6 +512,7 @@ def build_scene(text_or_scene: str | dict, glb: Path | str | None, png: Path | s
                            "cameras": 1, "camera_added": bool(built["camera"].get("auto")), "lights": len(built["lights"]),
                            "triangles": tris, "bbox": built["bbox"],
                            "notes": [f"{o['name']}: {o['note']}" for o in scene["objects"] if o.get("note")],
+                           "warnings": sinking,      # left after the last fix round (check_support=False)
                            "objects": [{"name": m["object"]["name"], "type": "MESH", "shape": m["object"]["shape"],
                                         "location": m["object"]["position"], "vertices": len(m["P"]),
                                         "faces": len(m["I"]) // 3, "triangles": len(m["I"]) // 3, "non_manifold_edges": 0,
