@@ -190,7 +190,8 @@ def png_info(path: str | Path) -> dict:
                 count += 1
     mean = vals_sum / max(count, 1)
     std = math.sqrt(max(vals_sq / max(count, 1) - mean * mean, 0))
-    # mean neighbour difference / std: ~1.1 for per-pixel random noise, well under 0.5 for photos and renders
+    # mean neighbour difference / std: ~1.1 for per-pixel noise, ~0.34 for a broken diffusion decode (VAE colour
+    # noise), 0.01-0.08 for real photos and renders measured on ROPY-PC
     rough = (adj_sum / adj_n) / std if adj_n and std > 0 else 0.0
     info.update(mean=round(mean, 2), std=round(std, 2), distinct_colours=len(colours), roughness=round(rough, 3))
     return info
@@ -211,7 +212,7 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
             errs.append(f"image is blank/flat (std {i['std']})")
         if i["distinct_colours"] < int(c.get("min_colours", 8)):
             errs.append(f"only {i['distinct_colours']} colours")
-        if i["roughness"] > float(c.get("max_roughness", 0.7)):
+        if i["roughness"] > float(c.get("max_roughness", 0.25)):
             errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
                                                f"{i['roughness']}" if "std" in i else "")
