@@ -6,6 +6,7 @@ Defects can be injected per task to exercise QC FAIL -> classify -> repair -> PA
 from __future__ import annotations
 
 import fnmatch
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class MockWorker:
     attempts_root: Path
     defects: dict[str, MockDefect] = field(default_factory=dict)
     calls: list[tuple[str, int]] = field(default_factory=list)
+    delay_s: float = 0.0             # simulated work time (UI demos)
 
     @staticmethod
     def rel_path(task: dict, out: dict) -> str:
@@ -53,6 +55,8 @@ class MockWorker:
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
         task, attempt = ctx["task"], ctx["attempt"]
         self.calls.append((task["task_id"], attempt))
+        if self.delay_s:
+            time.sleep(self.delay_s)
         d = self.defects.get(task["task_id"])
         defective = d is not None and attempt < d.fail_attempts
         adir = self.attempts_root / task["task_id"] / f"a{attempt}"

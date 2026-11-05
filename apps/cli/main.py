@@ -8,6 +8,7 @@
   shams decide <dir> <task_id> accept|retry|fail|cancel|unblock [--note ...]
   shams events <dir> [--task <id>] [--since N]
   shams templates
+  shams ui <dir> [--port 8765] [--mock-delay 0.8]   # main UI at http://127.0.0.1:8765
 """
 from __future__ import annotations
 
@@ -55,7 +56,20 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("decision", choices=["accept", "retry", "fail", "cancel", "unblock"]); a.add_argument("--note", default="")
     a = sub.add_parser("events"); a.add_argument("dir"); a.add_argument("--task"); a.add_argument("--since", type=int, default=0)
     sub.add_parser("templates")
+    a = sub.add_parser("ui", help="open the SHAMS main UI (local web server)"); a.add_argument("dir")
+    a.add_argument("--host", default="127.0.0.1"); a.add_argument("--port", type=int, default=8765)
+    a.add_argument("--mock-delay", type=float, default=0.8, help="seconds of simulated work per mock task")
     args = p.parse_args(argv)
+
+    if args.cmd == "ui":
+        try:
+            from apps.api.server import serve
+        except ImportError:
+            print('error: install the UI extra first: pip install -e ".[ui]"', file=sys.stderr)
+            return 2
+        print(f"SHAMS UI: http://{args.host}:{args.port}  (Ctrl+C to stop)")
+        serve(args.dir, args.host, args.port, args.mock_delay)
+        return 0
 
     if args.cmd == "templates":
         print("\n".join(list_templates()))

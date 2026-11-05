@@ -24,7 +24,8 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Worker thật (Deep Agents + Ollama/llama.cpp), Analysis Agent LLM | ⏳ Phase 1b |
 | Checker Unity thật (batchmode compile/test/build, screenshot) | ⏳ Spike S2 |
 | Git worktree theo attempt (ADR-105) | ⏳ |
-| FastAPI + SSE, Node Agent cho máy remote | ⏳ Phase 2 |
+| Giao diện chính (`shams ui`): Chat, Workflow, AI Workers, Models, Artifacts, QA, Console | ✅ |
+| SSE thay polling, Node Agent cho máy remote, desktop Tauri | ⏳ Phase 2/4 |
 
 ## Chạy thử (mock, không cần GPU)
 
@@ -41,6 +42,15 @@ shams decide projects/shark task.prey_spawner retry
 shams run projects/shark
 shams events projects/shark --task task.prey_spawner
 ```
+
+## Giao diện chính
+
+```bash
+pip install -e ".[ui]"
+shams ui projects/demo          # mở http://127.0.0.1:8765, gõ ý tưởng game vào Studio Chat
+```
+
+Mở trực tiếp `apps/ui/index.html` (không chạy server) sẽ vào **chế độ demo** với dữ liệu mô phỏng.
 
 ## Cấu trúc
 
@@ -59,6 +69,8 @@ studio/
   mock/           Mock Worker + mock checkers
   templates/      unity_3d_vertical_slice.json (MVP cá mập)
 apps/cli/         `shams` CLI
+apps/api/         FastAPI: /api/state, /api/chat, /api/decide
+apps/ui/          Giao diện chính (một file HTML, không cần build)
 docs/design/      Bộ thiết kế v1.1
 ```
 
