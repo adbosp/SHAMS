@@ -23,13 +23,14 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["studio*", "apps*"]
+include = ["shams*", "shams_packs*", "apps*"]
 
 [tool.setuptools.package-data]
-"studio.contracts" = ["schemas/*.json"]
-"studio.templates" = ["*.json"]
-"studio.examples" = ["*.toml"]
+"shams.contracts" = ["schemas/*.json"]
+"shams.templates" = ["*.json"]
+"shams.examples" = ["*.toml"]
 "apps.ui" = ["index.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

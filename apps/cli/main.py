@@ -20,10 +20,10 @@ import json
 import sys
 from pathlib import Path
 
-from studio.mock.worker import MockDefect, MockWorker
-from studio.orchestration.studio import MODES, Studio
-from studio.planning.validator import instantiate, list_templates
-from studio.statemachine import S
+from shams.mock.worker import MockDefect, MockWorker
+from shams.orchestration.project import MODES, Studio
+from shams.planning.validator import instantiate, list_templates
+from shams.statemachine import S
 
 
 def _open(d: str, defects: list[str] | None = None) -> Studio:
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(list_templates(args.dir)))
         return 0
     if args.cmd == "providers":
-        from studio import providers
+        from shams import providers
         for name in providers.available():
             cls, cfg = providers.PRESETS.get(name, (None, {}))
             cfg = {"base_url": getattr(cls, "default_base_url", "") or None,
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name:<18} {extra}")
         return 0
     if args.cmd == "engines":
-        from studio import engines
+        from shams import engines
         try:
             engines.load_plugins(args.dir)
         except (ValueError, KeyError) as e:
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{e.name:<7} {e.display:<20} {e.language:<11} {e.code_capability:<22} {e.build_target}")
         return 0
     if args.cmd == "init":
-        from studio import engines
+        from shams import engines
         try:
             engines.load_plugins(args.dir)
             prof = engines.get(args.engine)
@@ -111,8 +111,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         Studio.init_project(args.dir, args.project_id, args.goal, mode=args.mode, mock_mode=args.mock,
                             engine={"name": prof.name, "version": prof.default_version})
-        import studio.examples
-        example = Path(studio.examples.__file__).parent / "nodes.example.toml"
+        import shams.examples
+        example = Path(shams.examples.__file__).parent / "nodes.example.toml"
         if example.exists() and not (Path(args.dir) / "nodes.toml").exists():
             (Path(args.dir) / "nodes.example.toml").write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
         print(f"Initialised {args.project_id} in {args.dir} (engine={prof.display}, mode={args.mode}, mock={args.mock})")

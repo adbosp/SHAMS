@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 
 from conftest import PID, dag, task_dict
-from studio import contracts, statemachine
-from studio.nodes.registry import NodeRegistry, mock_registry
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate, validate_dag
-from studio.scheduling.scheduler import SchedulerConfig
-from studio.statemachine import S
+from shams import contracts, statemachine
+from shams.nodes.registry import NodeRegistry, mock_registry
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate, validate_dag
+from shams.scheduling.scheduler import SchedulerConfig
+from shams.statemachine import S
 
 DOCS = Path(__file__).resolve().parent.parent / "docs" / "design" / "examples"
 
@@ -104,8 +104,8 @@ def test_mock_registry_has_cpu_controller_and_virtual_gpu():
 
 
 def test_identical_content_for_two_outputs_keeps_both_artifacts(tmp_path):
-    from studio.artifacts.registry import ArtifactRegistry
-    from studio.events.store import EventStore
+    from shams.artifacts.registry import ArtifactRegistry
+    from shams.events.store import EventStore
     db = EventStore(tmp_path / "s.sqlite", "dup_test")
     reg = ArtifactRegistry(db, tmp_path / "a")
     f = tmp_path / "same.txt"

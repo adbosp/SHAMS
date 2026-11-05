@@ -6,8 +6,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from studio import contracts
-from studio.nodes.registry import NodeRegistry
+from shams import contracts
+from shams.nodes.registry import NodeRegistry
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -77,7 +77,7 @@ TEMPLATE_ALIASES = {"unity_3d_vertical_slice": ("vertical_slice_3d", "unity")}
 
 def template_dirs(project_dir: Path | str | None = None) -> list[Path]:
     """Project templates/ first, then $SHAMS_HOME/templates, then entry points, then built-ins (ADR-116)."""
-    from studio import plugins
+    from shams import plugins
     dirs = plugins.search_dirs("templates", project_dir)
     for ep in plugins.entry_points("shams.templates").values():
         p = Path(str(ep.load()))
@@ -106,7 +106,7 @@ def instantiate(template: str, project_id: str, goal: str, plan_id: str | None =
     """Instantiate an engine-neutral template for one engine profile (ADR-115).
 
     `template` is a name from the search path or a path to a .json file."""
-    from studio import engines
+    from shams import engines
 
     if template in TEMPLATE_ALIASES:
         template, default_engine = TEMPLATE_ALIASES[template]

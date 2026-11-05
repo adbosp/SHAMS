@@ -5,9 +5,9 @@ import json
 import shutil
 from pathlib import Path
 
-from studio import contracts
-from studio.events.store import EventStore
-from studio.statemachine import S
+from shams import contracts
+from shams.events.store import EventStore
+from shams.statemachine import S
 
 
 class ArtifactRegistry:

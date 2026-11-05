@@ -7,10 +7,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
-from studio import contracts
-from studio.events.store import EventStore
-from studio.nodes.registry import NodeRegistry
-from studio.statemachine import S
+from shams import contracts
+from shams.events.store import EventStore
+from shams.nodes.registry import NodeRegistry
+from shams.statemachine import S
 
 RULES: list[tuple[str, str, str]] = [
     # regex, failure_class, default strategy

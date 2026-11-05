@@ -56,7 +56,7 @@ cp projects/game/nodes.example.toml projects/game/nodes.toml   # khai báo model
 shams nodes projects/game --check      # kiểm tra kết nối từng worker
 ```
 
-Ví dụ `nodes.toml` (đầy đủ ở [`studio/examples/nodes.example.toml`](studio/examples/nodes.example.toml)):
+Ví dụ `nodes.toml` (đầy đủ ở [`shams/examples/nodes.example.toml`](shams/examples/nodes.example.toml)):
 
 ```toml
 [[node]]
@@ -77,9 +77,9 @@ capabilities = ["code.godot_gdscript", "integration"]
 - **API key** không ghi trong file: dùng `config = { api_key_env = "TEN_BIEN_MOI_TRUONG" }`.
 - **Công cụ sinh ảnh/3D/âm thanh**: `provider = "command"`, `config = { argv = [...] }`. Chương trình đọc `$SHAMS_CONTEXT` và ghi output vào các đường dẫn được giao.
 - **Code riêng**: `config = { impl = "goi_cua_ban.module:Class" }` cho worker; `provider = "goi.module:Class"` cho provider.
-- **Engine mới**: thêm `engines/<ten>.toml` (mẫu: [`studio/examples/engine.example.toml`](studio/examples/engine.example.toml)).
+- **Engine mới**: thêm `engines/<ten>.toml` (mẫu: [`shams/examples/engine.example.toml`](shams/examples/engine.example.toml)).
 - **Template riêng**: đặt vào thư mục `templates/` của project.
-- **Checker thật**: `studio.verification.qc.register_checker("compile", fn)`.
+- **Checker thật**: `shams.verification.qc.register_checker("compile", fn)`.
 - **Đóng gói plugin**: khai báo entry point `shams.providers`, `shams.workers`, `shams.engines`, `shams.checkers` hoặc `shams.templates` trong gói Python của bạn.
 
 ## Giao diện chính

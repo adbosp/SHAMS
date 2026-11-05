@@ -14,11 +14,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from studio import contracts, engines
-from studio.mock.worker import MockWorker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate
-from studio.statemachine import S
+from shams import contracts, engines
+from shams.mock.worker import MockWorker
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate
+from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 

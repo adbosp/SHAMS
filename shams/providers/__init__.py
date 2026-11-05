@@ -26,7 +26,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Callable, Protocol, runtime_checkable
 
-from studio import plugins
+from shams import plugins
 
 
 class ProviderError(RuntimeError):

@@ -8,7 +8,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from studio import contracts
+from shams import contracts
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class NodeRegistry:
 
     @classmethod
     def from_toml(cls, path: Path) -> "NodeRegistry":
-        """Load nodes.toml. See studio/examples/nodes.example.toml for the format (ADR-114/116)."""
+        """Load nodes.toml. See shams/examples/nodes.example.toml for the format (ADR-114/116)."""
         return cls.from_dict(tomllib.loads(Path(path).read_text(encoding="utf-8")))
 
     @classmethod

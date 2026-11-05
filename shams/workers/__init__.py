@@ -13,7 +13,7 @@ Built-in kinds:
   The class is built with ``(entry=..., attempts_root=..., provider=..., read_blob=...)`` and must
   have ``run(ctx, worker_ref)``.
 
-The Mock Worker (studio.mock) uses the same interface.
+The Mock Worker (shams.mock) uses the same interface.
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from studio import contracts, plugins, providers
-from studio.mock.worker import MockWorker
+from shams import contracts, plugins, providers
+from shams.mock.worker import MockWorker
 
 TEXT_MEDIA = {"application/json", "application/xml", "application/x-yaml", "application/toml",
               "application/javascript", "application/vnd.unity.scene", "application/vnd.unity.prefab",

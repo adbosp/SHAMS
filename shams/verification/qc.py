@@ -5,9 +5,9 @@ import fnmatch
 from pathlib import Path
 from typing import Callable, Protocol
 
-from studio import contracts
-from studio.artifacts.registry import ArtifactRegistry
-from studio.events.store import EventStore
+from shams import contracts
+from shams.artifacts.registry import ArtifactRegistry
+from shams.events.store import EventStore
 
 STAGE = {"exists": 1, "schema": 1, "compile": 2, "unit_test": 3, "integration_test": 3,
          "runtime_log": 4, "screenshot": 4, "metric": 4, "semantic": 5, "visual": 5, "human": 5}
@@ -32,7 +32,7 @@ def register_checker(kind: str, fn: Checker) -> None:
 
 
 def registered_checkers() -> dict[str, Checker]:
-    from studio import plugins
+    from shams import plugins
     out = {}
     for name, ep in plugins.entry_points("shams.checkers").items():
         if name in STAGE:

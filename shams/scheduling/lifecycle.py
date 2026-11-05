@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import Callable, Protocol
 
-from studio import contracts
-from studio.events.store import EventStore
-from studio.nodes.registry import Lane, Worker
+from shams import contracts
+from shams.events.store import EventStore
+from shams.nodes.registry import Lane, Worker
 
 
 class LoadAdapter(Protocol):

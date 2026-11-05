@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from studio import engines, providers, workers
-from studio.nodes.registry import NodeRegistry, normalize_worker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate, list_templates
-from studio.verification import qc
+from shams import engines, providers, workers
+from shams.nodes.registry import NodeRegistry, normalize_worker
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate, list_templates
+from shams.verification import qc
 
-EXAMPLES = Path(__file__).resolve().parent.parent / "studio" / "examples"
+EXAMPLES = Path(__file__).resolve().parent.parent / "shams" / "examples"
 
 
 # --------------------------------------------------------------------------- fake model server

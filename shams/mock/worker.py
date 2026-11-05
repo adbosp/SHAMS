@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from studio import contracts
+from shams import contracts
 
 EXT = {"text/x-csharp": ".cs", "image/png": ".png", "model/gltf-binary": ".glb", "model/fbx": ".fbx",
        "audio/wav": ".wav", "application/json": ".json", "text/markdown": ".md",

@@ -13,8 +13,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from studio import contracts, statemachine
-from studio.statemachine import S
+from shams import contracts, statemachine
+from shams.statemachine import S
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;

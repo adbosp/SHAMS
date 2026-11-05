@@ -149,7 +149,7 @@ def load_file(path: Path | str) -> EngineProfile:
 def load_plugins(project_dir: Path | str | None = None) -> list[str]:
     """Register engines from entry points (group shams.engines) and from engines/*.toml|json in the
     project folder and in $SHAMS_HOME. Returns the names loaded."""
-    from studio import plugins
+    from shams import plugins
     names = []
     for ep in plugins.entry_points("shams.engines").values():
         obj = ep.load()

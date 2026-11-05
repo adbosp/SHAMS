@@ -1,10 +1,10 @@
 """Multi-engine support (ADR-115): one engine-neutral plan, four engine profiles."""
 import pytest
 
-from studio import engines
-from studio.mock.worker import MockWorker
-from studio.orchestration.studio import Studio
-from studio.planning.validator import instantiate, list_templates, validate_dag
+from shams import engines
+from shams.mock.worker import MockWorker
+from shams.orchestration.project import Studio
+from shams.planning.validator import instantiate, list_templates, validate_dag
 
 ALL = ["unity", "unreal", "godot", "web"]
 

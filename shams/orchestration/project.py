@@ -11,19 +11,19 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from studio import contracts
-from studio.artifacts.registry import ArtifactRegistry, ImpactAnalyzer
-from studio.context.compiler import ContextCompiler
-from studio.events.store import EventStore
-from studio.mock.worker import MockWorker, mock_check
-from studio.nodes.registry import Lane, NodeRegistry, Worker, mock_registry
-from studio.planning.validator import validate_dag
-from studio.scheduling.lifecycle import MockAdapter, ModelLifecycle, NullAdapter, ProviderAdapter
-from studio.scheduling.scheduler import Scheduler, SchedulerConfig
-from studio.statemachine import S
-from studio.verification.qc import QCRunner, registered_checkers
-from studio.verification.repair import AnalysisAgent, FailureClassifier, RepairPolicy, RepairRouter
-from studio.orchestration import task_runner
+from shams import contracts
+from shams.artifacts.registry import ArtifactRegistry, ImpactAnalyzer
+from shams.context.compiler import ContextCompiler
+from shams.events.store import EventStore
+from shams.mock.worker import MockWorker, mock_check
+from shams.nodes.registry import Lane, NodeRegistry, Worker, mock_registry
+from shams.planning.validator import validate_dag
+from shams.scheduling.lifecycle import MockAdapter, ModelLifecycle, NullAdapter, ProviderAdapter
+from shams.scheduling.scheduler import Scheduler, SchedulerConfig
+from shams.statemachine import S
+from shams.verification.qc import QCRunner, registered_checkers
+from shams.verification.repair import AnalysisAgent, FailureClassifier, RepairPolicy, RepairRouter
+from shams.orchestration import task_runner
 
 MODES = ("collaborative", "guided", "autonomous")
 CRITICAL_KINDS = {"compile", "unit_test", "integration_test"}
@@ -44,7 +44,7 @@ class Studio:
         self.impact = ImpactAnalyzer(self.db, self.artifacts)
         caps = {t["capability"] for t in self.db.tasks()}
         self.mock_mode = cfg.get("mock_mode", False)
-        from studio import engines
+        from shams import engines
         engines.load_plugins(self.dir)
         self.nodes = nodes or (mock_registry(caps) if self.mock_mode else self._load_nodes())
         self.mock = mock or MockWorker(self.dir / "attempts")
@@ -77,7 +77,7 @@ class Studio:
         d.mkdir(parents=True, exist_ok=True)
         cfg = {"project_id": project_id, "goal": goal, "mode": mode, "mock_mode": mock_mode,
                "engine": engine or {"name": "unity", "version": "6000.0"}, "created_at": contracts.now_iso()}
-        from studio import engines
+        from shams import engines
         prof = engines.get(cfg["engine"]["name"])
         cfg["engine"] = {"name": prof.name, "version": cfg["engine"].get("version") or prof.default_version}
         (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -91,7 +91,7 @@ class Studio:
 
     def set_engine(self, name: str) -> None:
         """Switch the project's engine before a plan exists (ADR-115)."""
-        from studio import engines
+        from shams import engines
         if self.db.tasks():
             raise ValueError("engine can only change before the first plan is loaded")
         prof = engines.get(name)
@@ -147,7 +147,7 @@ class Studio:
 
     def _load_nodes(self) -> NodeRegistry:
         """nodes.toml in the project, else $SHAMS_HOME/nodes.toml (ADR-114/116). Empty if neither exists."""
-        from studio.plugins import shams_home
+        from shams.plugins import shams_home
         for p in (self.dir / "nodes.toml", shams_home() / "nodes.toml"):
             if p.exists():
                 return NodeRegistry.from_toml(p)
@@ -158,7 +158,7 @@ class Studio:
             return self.mock
         impl = self._impls.get(worker.worker_id)
         if impl is None:
-            from studio import workers
+            from shams import workers
             impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path)
             self._impls[worker.worker_id] = impl
         return impl

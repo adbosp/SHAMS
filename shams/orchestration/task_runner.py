@@ -13,11 +13,11 @@ from typing import TYPE_CHECKING, Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from studio import contracts
-from studio.statemachine import S
+from shams import contracts
+from shams.statemachine import S
 
 if TYPE_CHECKING:
-    from studio.orchestration.studio import Studio
+    from shams.orchestration.project import Studio
 
 
 class SimulatedCrash(BaseException):

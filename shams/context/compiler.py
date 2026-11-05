@@ -4,9 +4,9 @@ Workers never receive previous conversations, only this package.
 """
 from __future__ import annotations
 
-from studio import contracts
-from studio.artifacts.registry import ArtifactRegistry
-from studio.events.store import EventStore
+from shams import contracts
+from shams.artifacts.registry import ArtifactRegistry
+from shams.events.store import EventStore
 
 CHARS_PER_TOKEN = 4
 

@@ -5,9 +5,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from studio.events.store import EventStore
-from studio.nodes.registry import Lane, NodeRegistry, Worker
-from studio.statemachine import S
+from shams.events.store import EventStore
+from shams.nodes.registry import Lane, NodeRegistry, Worker
+from shams.statemachine import S
 
 
 @dataclass
