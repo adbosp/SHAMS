@@ -21,7 +21,8 @@
       },
       "scene3d": {
         "model": "qwen3.5-4b-coder:Q8",
-        "num_ctx": 16384
+        "num_ctx": 16384,
+        "blender_model": "qwen2.5-coder:14b"
       },
       "visual_qc": {
         "model": "qwen3-vl:4b",
