@@ -645,6 +645,14 @@ def t9e_moss(c: Ctx) -> tuple[str, str]:
     out = c.out / "t9e_moss.png"
     out.write_bytes(r["images"][0])
     v, d = assets.check_png(out, {"min_width": 512, "min_std": 8})
+    m = c.model("visual_qc")
+    if v == PASS and m:                       # numbers alone can pass a broken picture; let the VL model look
+        c.free_gpu()
+        vp = providers.create("ollama", {"base_url": c.ollama.root, "num_ctx": 8192})
+        vv, vd = make_visual_checker(vp, m)([str(out)], "The image clearly shows a teapot on a wooden table "
+                                            "(a recognisable picture, not noise or abstract colour).",
+                                            {"min_score": 6})
+        v, d = (FAIL if vv == FAIL else v), d + f"; visual QC: {vd}"
     return v, f"moss_image: {d}, {r['seconds']} s | " + " | ".join(notes)
 
 

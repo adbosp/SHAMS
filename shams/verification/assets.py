@@ -156,6 +156,8 @@ def png_info(path: str | Path) -> dict:
     count = 0
     colours: set[bytes] = set()
     step = max(1, h // 128)
+    adj_sum = 0.0                                       # neighbour differences: noise vs. a real picture
+    adj_n = 0
     for y in range(h):
         f = raw[y * (stride + 1)]
         line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
@@ -176,6 +178,9 @@ def png_info(path: str | Path) -> dict:
         prev = line
         if y % step == 0:
             colour_ch = 3 if ch >= 3 else 1
+            lum = [sum(line[x * ch: x * ch + colour_ch]) / colour_ch for x in range(w)]
+            adj_sum += sum(abs(lum[x + 1] - lum[x]) for x in range(w - 1))
+            adj_n += max(w - 1, 0)
             for x in range(0, w, max(1, w // 128)):
                 px = bytes(line[x * ch: x * ch + colour_ch])
                 colours.add(px)
@@ -184,13 +189,15 @@ def png_info(path: str | Path) -> dict:
                 vals_sq += v * v
                 count += 1
     mean = vals_sum / max(count, 1)
-    info.update(mean=round(mean, 2), std=round(math.sqrt(max(vals_sq / max(count, 1) - mean * mean, 0)), 2),
-                distinct_colours=len(colours))
+    std = math.sqrt(max(vals_sq / max(count, 1) - mean * mean, 0))
+    # mean neighbour difference / std: ~1.1 for per-pixel random noise, well under 0.5 for photos and renders
+    rough = (adj_sum / adj_n) / std if adj_n and std > 0 else 0.0
+    info.update(mean=round(mean, 2), std=round(std, 2), distinct_colours=len(colours), roughness=round(rough, 3))
     return info
 
 
 def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
-    """check: min_width, min_height, min_std (not blank), min_colours."""
+    """check: min_width, min_height, min_std (not blank), min_colours, max_roughness (not random noise)."""
     c = check or {}
     try:
         i = png_info(path)
@@ -204,5 +211,8 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
             errs.append(f"image is blank/flat (std {i['std']})")
         if i["distinct_colours"] < int(c.get("min_colours", 8)):
             errs.append(f"only {i['distinct_colours']} colours")
-    summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours" if "std" in i else "")
+        if i["roughness"] > float(c.get("max_roughness", 0.7)):
+            errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
+    summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
+                                               f"{i['roughness']}" if "std" in i else "")
     return ("FAIL", "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)

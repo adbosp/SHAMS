@@ -1,20 +1,19 @@
 {
- "description": "MOSS-Image (SFT) + a LoRA (models/loras), ComfyUI API format. Same base files as moss_image.",
+ "description": "MOSS-Image (SFT) + a LoRA (models/loras), ComfyUI API format. Same base files as moss_image. Settings follow ComfyUI's official MOSS-Image SFT text-to-image template (25 steps, cfg 2.5, er_sde/simple, no ModelSampling node: ComfyUI applies the model's own shift 5; an extra shift node gave noise).",
  "defaults": {
   "unet": "moss_image_sft_int8_convrot.safetensors",
   "weight_dtype": "default",
-  "text_encoder": "qwen3.5_9b_int8_convrot.safetensors",
-  "vae": "flux2-vae.safetensors",
+  "text_encoder": "qwen3.5_9b_w4a8_gptq.safetensors",
+  "vae": "flux2-vae_small.safetensors",
   "prompt": "",
-  "negative": "",
+  "negative": "worst quality, bad anatomy, watermark, jpeg artifact",
   "width": 1024,
   "height": 1024,
-  "steps": 30,
-  "cfg": 3.0,
-  "shift": 5.0,
+  "steps": 25,
+  "cfg": 2.5,
   "seed": -1,
-  "sampler": "euler",
-  "scheduler": "sgm_uniform",
+  "sampler": "er_sde",
+  "scheduler": "simple",
   "prefix": "shams_moss_lora",
   "lora": "MOSS-Image-NSFW-Uncensored-LoRA-ComfyUI.safetensors",
   "lora_strength": 1.0
@@ -39,16 +38,6 @@
    "class_type": "VAELoader",
    "inputs": {
     "vae_name": "{{vae}}"
-   }
-  },
-  "4": {
-   "class_type": "ModelSamplingSD3",
-   "inputs": {
-    "shift": "{{shift}}",
-    "model": [
-     "11",
-     0
-    ]
    }
   },
   "5": {
@@ -89,7 +78,7 @@
     "scheduler": "{{scheduler}}",
     "denoise": 1.0,
     "model": [
-     "4",
+     "11",
      0
     ],
     "positive": [

@@ -7,6 +7,8 @@
 - Presets in the Model Registry (`models.presets`, plus every resolved role): capability, provider, resources, input/output schema, execution modes. Direct-only presets are never picked by Autonomous Mode.
 - Content policy for adult-only presets: opt-in setting, per-run confirmation, refusal of minors / non-consent / real people, logged refusals. Adult presets can never be autonomous.
 - MOSS-Image ComfyUI workflows (base and LoRA). Preflight now checks every choice value, not only model files.
+- MOSS-Image workflows follow the official ComfyUI SFT template (no extra shift node, 25 steps, cfg 2.5, er_sde); needs ComfyUI 0.42+. The old graph produced noise.
+- PNG checks reject random-noise images (neighbour/std "roughness"); self-test 9e adds visual QC.
 - Read-only web research tools for models (public web only, untrusted-content marking, URL log).
 - Simple 3D scenes: the 3D model writes scene JSON and SHAMS builds the GLB and a render without Blender. Blender is used for complex scenes.
 

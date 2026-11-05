@@ -271,6 +271,20 @@ def test_glb_and_png_inspection(tmp_path):
     assert v == "FAIL" and "blank" in d
 
 
+def test_png_check_rejects_random_noise(tmp_path):
+    import random
+    rnd, w, h = random.Random(1), 96, 96
+    rows = b"".join(b"\x00" + bytes(rnd.randrange(256) for _ in range(w * 3)) for _ in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    noise = tmp_path / "noise.png"
+    noise.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                      + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    v, d = assets.check_png(noise, {"min_std": 8})
+    assert v == "FAIL" and "random noise" in d
+    assert assets.png_info(make_png(tmp_path / "grad.png"))["roughness"] < 0.2
+
+
 def test_asset_checkers_dispatch_on_check_type(tmp_path):
     table = AssetCheckers({"compile": lambda k, c, contents: ("PASS", "pack checker")}).table()
     g = make_glb(tmp_path / "a.glb")
