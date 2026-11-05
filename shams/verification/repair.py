@@ -14,7 +14,8 @@ from shams.statemachine import S
 
 RULES: list[tuple[str, str, str]] = [
     # regex, failure_class, default strategy
-    (r"error CS\d+", "compile_error", "fix_in_place"),
+    (r"(?i)\berror [A-Z]{1,4}\d{3,5}\b|compil(e|ation) error|syntax ?error|undefined (name|reference|symbol)",
+     "compile_error", "fix_in_place"),
     (r"out of memory", "resource_oom", "retry_same"),
     (r"(?i)test(s)? failed", "test_failure", "fix_in_place"),
     (r"\w+Exception", "runtime_exception", "fix_in_place"),
@@ -37,9 +38,13 @@ def normalize(text: str) -> str:
 
 
 class FailureClassifier:
+    def __init__(self, extra_rules: list[tuple[str, str, str]] | None = None):
+        """extra_rules come from the project's Domain Pack and are checked first (ADR-117)."""
+        self.rules = list(extra_rules or []) + RULES
+
     def classify(self, task: dict, attempt: int, detail: str, source: str, evidence: list[dict]) -> dict:
         fclass, strategy = "unknown", None
-        for rx, fc, st in RULES:
+        for rx, fc, st in self.rules:
             if re.search(rx, detail):
                 fclass, strategy = fc, st
                 break

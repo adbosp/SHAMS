@@ -1,6 +1,8 @@
-"""Studio Core facade: wires Event Store, Artifacts, Nodes, Scheduler, Task Runner, QC, Repair.
+"""SHAMS Core facade for one project: wires Event Store, Artifacts, Nodes, Scheduler, Task Runner,
+QC and Repair, plus the project's Domain Pack (ADR-117).
 
 Single process, single DB writer (ADR-104). Runs on any PC; no GPU or model needed (ADR-114).
+The core knows no product domain: everything domain-specific comes from the Domain Pack.
 """
 from __future__ import annotations
 
@@ -11,11 +13,11 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from shams import contracts
+from shams import contracts, packs
 from shams.artifacts.registry import ArtifactRegistry, ImpactAnalyzer
 from shams.context.compiler import ContextCompiler
 from shams.events.store import EventStore
-from shams.mock.worker import MockWorker, mock_check
+from shams.mock.worker import MockWorker, make_mock_check
 from shams.nodes.registry import Lane, NodeRegistry, Worker, mock_registry
 from shams.planning.validator import validate_dag
 from shams.scheduling.lifecycle import MockAdapter, ModelLifecycle, NullAdapter, ProviderAdapter
@@ -30,7 +32,24 @@ CRITICAL_KINDS = {"compile", "unit_test", "integration_test"}
 MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric")
 
 
-class Studio:
+DB_FILE = "shams.sqlite"
+
+
+def _db_path(d: Path) -> Path:
+    legacy = d / "studio.sqlite"            # projects created before V2.0
+    return legacy if legacy.exists() and not (d / DB_FILE).exists() else d / DB_FILE
+
+
+def _domain_of(cfg: dict) -> tuple[str, dict]:
+    """(domain, domain_config) from project.json; pre-V2.0 projects only had an engine -> game."""
+    if "domain" in cfg:
+        return cfg["domain"], cfg.get("domain_config", {})
+    if "engine" in cfg:
+        return "game", {"engine": cfg["engine"]}
+    return packs.DEFAULT_DOMAIN, {}
+
+
+class Shams:
     def __init__(self, project_dir: Path | str, *, nodes: NodeRegistry | None = None,
                  mock: MockWorker | None = None, analysis: AnalysisAgent | None = None,
                  checkers: dict | None = None, scheduler_config: SchedulerConfig | None = None,
@@ -39,13 +58,16 @@ class Studio:
         cfg = json.loads((self.dir / "project.json").read_text(encoding="utf-8"))
         self.project = cfg
         self.mode = cfg.get("mode", "guided")
-        self.db = EventStore(self.dir / "studio.sqlite", cfg["project_id"])
+        self.db = EventStore(_db_path(self.dir), cfg["project_id"])
+        domain, dcfg = _domain_of(cfg)
+        self.pack = packs.get(domain)
+        self.pack.activate(self.dir)
+        cfg["domain"], cfg["domain_config"] = self.pack.name, self.pack.normalize_config(dcfg, self.dir)
+        cfg.pop("engine", None)
         self.artifacts = ArtifactRegistry(self.db, self.dir / "artifacts")
         self.impact = ImpactAnalyzer(self.db, self.artifacts)
         caps = {t["capability"] for t in self.db.tasks()}
         self.mock_mode = cfg.get("mock_mode", False)
-        from shams import engines
-        engines.load_plugins(self.dir)
         self.nodes = nodes or (mock_registry(caps) if self.mock_mode else self._load_nodes())
         self.mock = mock or MockWorker(self.dir / "attempts")
         self._impls: dict[str, object] = {}
@@ -54,11 +76,16 @@ class Studio:
         self.lifecycle = ModelLifecycle(self.db, {"mock": MockAdapter(), "none": NullAdapter(),
                                                   "provider": provider_adapter, "ollama": provider_adapter},
                                         self.nodes.workers, fallback=provider_adapter)
-        self.context = ContextCompiler(self.db, self.artifacts, cfg.get("goal", ""), cfg.get("engine"))
+        self.context = ContextCompiler(self.db, self.artifacts, cfg.get("goal", ""), self.pack.name,
+                                       self.pack.domain_context(cfg["domain_config"]))
         if checkers is None:
-            checkers = {k: mock_check for k in MOCK_KINDS} if self.mock_mode else registered_checkers()
+            if self.mock_mode:
+                check = make_mock_check(self.pack.mock_failure_logs())
+                checkers = {k: check for k in MOCK_KINDS}
+            else:
+                checkers = {**self.pack.checkers(), **registered_checkers()}
         self.qc = QCRunner(self.db, self.artifacts, checkers)
-        self.classifier = FailureClassifier()
+        self.classifier = FailureClassifier(self.pack.failure_rules())
         self.repair = RepairRouter(self.db, self.nodes, analysis, repair_policy,
                                    initial_task_count=sum(1 for t in self.db.tasks()
                                                           if t.get("created_by") != "repair_router"))
@@ -70,38 +97,75 @@ class Studio:
     # ------------------------------------------------------------------ project setup
     @staticmethod
     def init_project(project_dir: Path | str, project_id: str, goal: str, *, mode: str = "guided",
-                     mock_mode: bool = False, engine: dict | None = None) -> Path:
+                     mock_mode: bool = False, domain: str | None = None, domain_config: dict | None = None,
+                     engine: dict | str | None = None) -> Path:
+        """Create a project. `domain` defaults to the pack that best matches the goal, else software.
+        `engine=` is a Game Pack shortcut (domain="game", domain_config={"engine": engine})."""
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         d = Path(project_dir)
         d.mkdir(parents=True, exist_ok=True)
+        dcfg = dict(domain_config or {})
+        if engine is not None:
+            domain = domain or "game"
+            dcfg.setdefault("engine", engine)
+        pack = packs.get(domain or packs.detect_domain(goal) or packs.DEFAULT_DOMAIN)
+        pack.activate(d)
+        dcfg = pack.normalize_config(dcfg, d)
         cfg = {"project_id": project_id, "goal": goal, "mode": mode, "mock_mode": mock_mode,
-               "engine": engine or {"name": "unity", "version": "6000.0"}, "created_at": contracts.now_iso()}
-        from shams import engines
-        prof = engines.get(cfg["engine"]["name"])
-        cfg["engine"] = {"name": prof.name, "version": cfg["engine"].get("version") or prof.default_version}
+               "domain": pack.name, "domain_config": dcfg, "created_at": contracts.now_iso()}
         (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-        db = EventStore(d / "studio.sqlite", project_id)
+        db = EventStore(_db_path(d), project_id)
         with db.tx() as c:
             c.execute("INSERT OR REPLACE INTO projects VALUES (?,?,?,?,?,?)",
-                      (project_id, goal, mode, cfg["engine"]["name"], cfg["engine"]["version"], cfg["created_at"]))
-            db.append("project.created", "project", project_id, "human", payload={"mode": mode, "mock": mock_mode})
+                      (project_id, goal, mode, pack.name, json.dumps(dcfg, ensure_ascii=False), cfg["created_at"]))
+            db.append("project.created", "project", project_id, "human",
+                      payload={"mode": mode, "mock": mock_mode, "domain": pack.name})
         db.close()
         return d
 
-    def set_engine(self, name: str) -> None:
-        """Switch the project's engine before a plan exists (ADR-115)."""
-        from shams import engines
+    @property
+    def domain_config(self) -> dict:
+        return self.project["domain_config"]
+
+    def describe(self) -> str:
+        """Human label of the project's domain setup, e.g. 'Software · Python'."""
+        return f"{self.pack.display} · {self.pack.describe(self.domain_config)}"
+
+    def configure(self, domain: str | None = None, **options) -> dict:
+        """Change the domain and/or its options (e.g. engine="ue5", stack="typescript") before a plan exists."""
         if self.db.tasks():
-            raise ValueError("engine can only change before the first plan is loaded")
-        prof = engines.get(name)
-        self.project["engine"] = {"name": prof.name, "version": prof.default_version}
-        self.context.engine = self.project["engine"]
+            raise ValueError("domain and its options can only change before the first plan is loaded")
+        if domain and packs.get(domain).name != self.pack.name:
+            pack = packs.get(domain)
+            pack.activate(self.dir)
+            cfg = pack.configure({}, self.dir, **options)
+        else:
+            pack = self.pack
+            cfg = pack.configure(self.domain_config, self.dir, **options)
+        self.pack = pack
+        self.project["domain"], self.project["domain_config"] = pack.name, cfg
+        self.context.domain, self.context.domain_context = pack.name, pack.domain_context(cfg)
+        self.classifier = FailureClassifier(pack.failure_rules())
+        if self.mock_mode:
+            check = make_mock_check(pack.mock_failure_logs())
+            self.qc.checkers.update({k: check for k in MOCK_KINDS})
         (self.dir / "project.json").write_text(json.dumps(self.project, ensure_ascii=False, indent=2), encoding="utf-8")
         with self.db.tx() as c:
-            c.execute("UPDATE projects SET engine=?, engine_version=? WHERE project_id=?",
-                      (prof.name, prof.default_version, self.db.project_id))
-            self.db.append("project.engine_set", "project", self.db.project_id, "human", payload={"engine": prof.name})
+            c.execute("UPDATE projects SET domain=?, domain_config=? WHERE project_id=?",
+                      (pack.name, json.dumps(cfg, ensure_ascii=False), self.db.project_id))
+            self.db.append("project.configured", "project", self.db.project_id, "human",
+                           payload={"domain": pack.name, "domain_config": cfg})
+        return cfg
+
+    def plan_from_template(self, template: str | None = None, goal: str | None = None,
+                           approved_by: str | None = None) -> dict:
+        """Instantiate a template of this project's Domain Pack and load it."""
+        from shams.planning.validator import instantiate
+        dag = instantiate(template, self.db.project_id, goal if goal is not None else self.project.get("goal", ""),
+                          domain=self.pack.name, config=self.domain_config, project_dir=self.dir)
+        self.load_plan(dag, approved_by=approved_by)
+        return dag
 
     def close(self) -> None:
         self.db.close()
@@ -317,6 +381,7 @@ class Studio:
         tasks = self.db.tasks()
         return {
             "project_id": self.db.project_id, "mode": self.mode, "mock_mode": self.mock_mode,
+            "domain": self.pack.name, "domain_config": self.domain_config, "setup": self.describe(),
             "counts": dict(Counter(t["state"] for t in tasks)),
             "tasks": [{"task_id": t["task_id"], "state": t["state"], "attempt": t["attempt"],
                        "capability": t["capability"]} for t in tasks],
@@ -326,3 +391,6 @@ class Studio:
             "events": self.db.q1("SELECT COUNT(*) FROM events")[0],
             "done": all(S(t["state"]) in {S.ACCEPTED, S.CANCELED} for t in tasks) and bool(tasks),
         }
+
+
+Studio = Shams      # pre-V2.0 name, kept for compatibility

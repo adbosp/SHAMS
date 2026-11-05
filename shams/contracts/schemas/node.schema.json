@@ -83,14 +83,14 @@
       "items": {
         "type": "string"
       },
-      "description": "ollama, llamacpp, comfyui, unity_cli, blender, external:<name>"
+      "description": "provider/tool có trên node, ví dụ ollama, llamacpp, external:<name> (xem `shams providers`)"
     },
     "engines": {
       "type": "array",
       "items": {
         "type": "string"
       },
-      "description": "unity:<version>, unreal:<version>, blender:<version>"
+      "description": "công cụ cài trên node, dạng <tool>:<version> (Domain Pack định nghĩa tên)"
     },
     "profile": {
       "type": "string",

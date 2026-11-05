@@ -10,17 +10,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from shams import contracts
+from shams import contracts, media
 
-EXT = {"text/x-csharp": ".cs", "image/png": ".png", "model/gltf-binary": ".glb", "model/fbx": ".fbx",
-       "audio/wav": ".wav", "application/json": ".json", "text/markdown": ".md",
-       "application/vnd.unity.scene": ".unity", "application/vnd.unity.prefab": ".prefab",
-       "application/x-msdownload": ".exe", "text/x-c++src": ".cpp", "text/x-gdscript": ".gd",
-       "text/typescript": ".ts", "application/vnd.godot.scene": ".tscn", "application/vnd.unreal.map": ".umap",
-       "application/zip": ".zip"}
 
 DEFECT_LOGS = {
-    "compile": "Assets/Scripts/X.cs(42,13): error CS0103: The name 'swimSpeed' does not exist in the current context",
+    "compile": "src/module.x(42,13): error E0103: undefined name 'speed'",
     "unit_test": "Test failed: {criterion} expected 1.0 but was 0.0",
     "integration_test": "Test failed: {criterion} integration contract mismatch",
     "runtime_log": "NullReferenceException: Object reference not set to an instance of an object",
@@ -46,7 +40,7 @@ class MockWorker:
 
     @staticmethod
     def rel_path(task: dict, out: dict) -> str:
-        name = out["name"] + EXT.get(out["media_type"], ".bin")
+        name = out["name"] + media.extension(out["media_type"])
         for glob in task.get("workspace_scope", []):
             base = glob.split("*")[0].rstrip("/")
             cand = f"{base}/{name}" if base else name
@@ -92,9 +86,18 @@ class MockWorker:
         return files, handoff
 
 
-def mock_check(kind: str, criterion: dict, contents: list[str]) -> tuple[str, str]:
-    """Mock checker for deterministic criteria: FAIL iff a defect marker targets this criterion."""
-    marker = f"MOCK_DEFECT:{criterion['id']}"
-    if any(marker in c for c in contents):
-        return "FAIL", DEFECT_LOGS.get(kind, "mock failure").format(criterion=criterion["id"])
-    return "PASS", f"mock {kind} ok"
+def make_mock_check(logs: dict[str, str] | None = None):
+    """Mock checker for deterministic criteria: FAIL iff a defect marker targets this criterion.
+
+    `logs` (from the Domain Pack) make the failure text look like the domain's real tools."""
+    table = {**DEFECT_LOGS, **(logs or {})}
+
+    def check(kind: str, criterion: dict, contents: list[str]) -> tuple[str, str]:
+        marker = f"MOCK_DEFECT:{criterion['id']}"
+        if any(marker in c for c in contents):
+            return "FAIL", table.get(kind, "mock failure").format(criterion=criterion["id"])
+        return "PASS", f"mock {kind} ok"
+    return check
+
+
+mock_check = make_mock_check()

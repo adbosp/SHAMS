@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS events(
   seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE NOT NULL, project_id TEXT NOT NULL,
   type TEXT NOT NULL, subject_kind TEXT NOT NULL, subject_id TEXT NOT NULL, actor_json TEXT NOT NULL,
   from_state TEXT, to_state TEXT, payload_json TEXT, idempotency_key TEXT, ts TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS projects(project_id TEXT PRIMARY KEY, goal TEXT, mode TEXT, engine TEXT,
-  engine_version TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS projects(project_id TEXT PRIMARY KEY, goal TEXT, mode TEXT, domain TEXT,
+  domain_config TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS plans(plan_id TEXT, project_id TEXT, plan_version INTEGER, template TEXT,
   dag_json TEXT, approved_by TEXT, created_at TEXT, PRIMARY KEY(plan_id, plan_version));
 CREATE TABLE IF NOT EXISTS tasks(task_id TEXT PRIMARY KEY, project_id TEXT, plan_id TEXT, state TEXT NOT NULL,

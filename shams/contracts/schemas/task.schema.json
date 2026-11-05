@@ -94,7 +94,7 @@
           },
           "contract": {
             "type": "string",
-            "description": "Tên artifact contract, ví dụ unity.csharp_script, mesh.fbx_game_ready"
+            "description": "Tên artifact contract, ví dụ python.module, mesh.gltf_game_ready (Domain Pack định nghĩa)"
           }
         }
       }

@@ -46,15 +46,28 @@ def test_decide_rejects_invalid_task(tmp_path):
     assert r.status_code == 400
 
 
-def test_chat_detects_engine_and_engine_endpoint(tmp_path):
+def test_chat_detects_domain_and_engine_and_configure_endpoint(tmp_path):
     c = TestClient(create_app(tmp_path / "p"))
     s = c.get("/api/state").json()
-    assert {e["id"] for e in s["engines"]} == {"unity", "unreal", "godot", "web"}
-    assert c.post("/api/engine", json={"engine": "godot"}).json()["project"]["engine_id"] == "godot"
-    assert c.post("/api/engine", json={"engine": "nope"}).status_code == 400
+    assert {"software", "game"} <= {p["id"] for p in s["packs"]}
+    game = next(p for p in s["packs"] if p["id"] == "game")
+    assert {e["id"] for e in game["options"]["engine"]} >= {"unity", "unreal", "godot", "web"}
+    s = c.post("/api/configure", json={"domain": "game", "options": {"engine": "godot"}}).json()
+    assert s["project"]["domain"] == "game" and s["project"]["selected"] == {"engine": "godot"}
+    assert c.post("/api/configure", json={"options": {"engine": "nope"}}).status_code == 400
+    assert c.post("/api/configure", json={"domain": "software", "options": {"engine": "web"}}).status_code == 400
     s = c.post("/api/chat", json={"text": "Game cá mập trên trình duyệt bằng Three.js WebGPU"}).json()
-    assert s["project"]["engine_id"] == "web" and "Three.js" in s["chat"][1]["text"]
+    assert s["project"]["selected"] == {"engine": "web"} and "Three.js" in s["chat"][1]["text"]
     assert any(t["capability"] == "code.web_typescript" for t in s["tasks"])
     s = _wait_idle(c)
     assert s["progress"] == {"done": 11, "total": 11}
-    assert c.post("/api/engine", json={"engine": "unity"}).status_code == 400
+    assert c.post("/api/configure", json={"options": {"engine": "unity"}}).status_code == 400
+
+
+def test_chat_for_software_request_uses_software_pack(tmp_path):
+    c = TestClient(create_app(tmp_path / "p"))
+    s = c.post("/api/chat", json={"text": "Viết một công cụ CLI bằng Python để đổi tên file hàng loạt"}).json()
+    assert s["project"]["domain"] == "software" and s["project"]["selected"] == {"stack": "python"}
+    assert {t["capability"] for t in s["tasks"]} >= {"code.python", "build.python", "integration"}
+    s = _wait_idle(c)
+    assert s["progress"] == {"done": 5, "total": 5}

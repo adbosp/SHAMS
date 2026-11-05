@@ -13,11 +13,12 @@ CHARS_PER_TOKEN = 4
 
 class ContextCompiler:
     def __init__(self, store: EventStore, registry: ArtifactRegistry, goal: str,
-                 engine: dict | None = None, default_token_limit: int = 32000):
+                 domain: str | None = None, domain_context: dict | None = None, default_token_limit: int = 32000):
         self.db = store
         self.reg = registry
         self.goal = goal
-        self.engine = engine
+        self.domain = domain
+        self.domain_context = domain_context or {}
         self.default_limit = default_token_limit
 
     def compile(self, task_id: str, tools_allowed: list[str], token_limit: int | None = None) -> dict:
@@ -53,8 +54,9 @@ class ContextCompiler:
             "output_contract": "Kết thúc bằng handoff hợp lệ theo handoff.schema.json v1.0",
             "token_budget": {"limit": int(limit), "estimated": 0},
         }
-        if self.engine:
-            pkg["engine"] = self.engine
+        if self.domain:
+            pkg["domain"] = self.domain
+            pkg["domain_context"] = self.domain_context
         pkg["token_budget"]["estimated"] = len(str(pkg)) // CHARS_PER_TOKEN
         # Budget rule (04 §4): package <= 60% of the limit. Drop least important parts first.
         cap = int(limit * 0.6)

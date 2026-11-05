@@ -97,27 +97,6 @@
         }
       }
     },
-    "engine": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "version"
-      ],
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Engine Profile id: unity | unreal | godot | web | engine tùy biến (ADR-115/116)"
-        },
-        "version": {
-          "type": "string"
-        },
-        "render_pipeline": {
-          "type": "string"
-        }
-      }
-    },
     "known_issues": {
       "type": "array",
       "items": {
@@ -177,6 +156,16 @@
           "type": "integer"
         }
       }
+    },
+    "domain": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Domain Pack của project: software | game | 3d | pack tùy biến (ADR-117)"
+    },
+    "domain_context": {
+      "type": "object",
+      "description": "Ngữ cảnh do Domain Pack cung cấp (ví dụ engine, stack, ngôn ngữ, thư mục gốc)",
+      "additionalProperties": true
     }
   }
 }

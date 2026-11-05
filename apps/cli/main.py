@@ -1,8 +1,10 @@
 """`shams` CLI (ADR-112): human review and operation before the desktop UI exists.
 
-  shams init <dir> --project-id my_game --goal "..." [--engine unity|unreal|godot|web] [--mode guided] [--mock]
-  shams plan <dir> [--template vertical_slice_3d] [--engine ...] --approve <name>
-  shams engines [--dir <dir>]             # built-in + custom engines (engines/*.toml)
+  shams init <dir> --project-id my_app --goal "..." [--domain software|game|...] [--opt key=value]...
+             [--engine unity|unreal|godot|web] [--mode guided] [--mock]
+  shams plan <dir> [--template <name>] [--opt key=value]... --approve <name>
+  shams packs [--dir <dir>]               # Domain Packs and their options (stack, engine, ...)
+  shams engines [--dir <dir>]             # Game Pack engines (built-in + engines/*.toml)
   shams providers                         # model providers you can use in nodes.toml
   shams nodes <dir> [--check]             # nodes, lanes, workers from nodes.toml; --check pings providers
   shams run <dir> [--defect task_id:criterion_id[:fail_attempts]]...
@@ -21,8 +23,8 @@ import sys
 from pathlib import Path
 
 from shams.mock.worker import MockDefect, MockWorker
-from shams.orchestration.project import MODES, Studio
-from shams.planning.validator import instantiate, list_templates
+from shams.orchestration.project import MODES, Shams as Studio
+from shams.planning.validator import list_templates
 from shams.statemachine import S
 
 
@@ -35,8 +37,18 @@ def _open(d: str, defects: list[str] | None = None) -> Studio:
     return Studio(path, mock=MockWorker(path / "attempts", defects=parsed))
 
 
+def _opts(pairs: list[str]) -> dict:
+    out = {}
+    for p in pairs or []:
+        if "=" not in p:
+            raise ValueError(f"--opt expects KEY=VALUE, got {p!r}")
+        k, v = p.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
 def _print_status(s: dict) -> None:
-    print(f"Project {s['project_id']}  mode={s['mode']}  mock={s['mock_mode']}  done={s['done']}")
+    print(f"Project {s['project_id']}  [{s['setup']}]  mode={s['mode']}  mock={s['mock_mode']}  done={s['done']}")
     print("States: " + ", ".join(f"{k}={v}" for k, v in sorted(s["counts"].items())))
     print(f"Model loads={s['model_loads']}  unloads={s['model_unloads']}  repairs={s['repairs']}  events={s['events']}")
     for t in s["tasks"]:
@@ -49,9 +61,12 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("init"); a.add_argument("dir"); a.add_argument("--project-id", required=True)
     a.add_argument("--goal", required=True); a.add_argument("--mode", choices=MODES, default="guided")
     a.add_argument("--mock", action="store_true", help="run without any AI model (Mock Worker)")
-    a.add_argument("--engine", default="unity", help="unity | unreal (ue5) | godot | web (three.js/WebGPU)")
-    a = sub.add_parser("plan"); a.add_argument("dir"); a.add_argument("--template", default="vertical_slice_3d")
-    a.add_argument("--engine", help="override the project's engine before the first plan")
+    a.add_argument("--domain", help="Domain Pack (see `shams packs`); default: detected from the goal")
+    a.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE", help="pack option, e.g. stack=typescript")
+    a.add_argument("--engine", help="Game Pack shortcut: unity | unreal (ue5) | godot | web (three.js/WebGPU)")
+    a = sub.add_parser("plan"); a.add_argument("dir"); a.add_argument("--template", help="default: the pack's template")
+    a.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE", help="change a pack option before the first plan")
+    a.add_argument("--engine", help="Game Pack shortcut for --opt engine=...")
     a.add_argument("--approve", help="name of the person approving the plan")
     a = sub.add_parser("run"); a.add_argument("dir"); a.add_argument("--defect", action="append")
     a.add_argument("--max-steps", type=int, default=500)
@@ -62,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("events"); a.add_argument("dir"); a.add_argument("--task"); a.add_argument("--since", type=int, default=0)
     a = sub.add_parser("templates"); a.add_argument("--dir")
     a = sub.add_parser("engines"); a.add_argument("--dir")
+    a = sub.add_parser("packs"); a.add_argument("--dir")
     sub.add_parser("providers")
     a = sub.add_parser("nodes"); a.add_argument("dir"); a.add_argument("--check", action="store_true")
     a = sub.add_parser("ui", help="open the SHAMS main UI (local web server)"); a.add_argument("dir")
@@ -91,46 +107,56 @@ def main(argv: list[str] | None = None) -> int:
             extra = " ".join(f"{k}={v}" for k, v in cfg.items() if v)
             print(f"{name:<18} {extra}")
         return 0
+    if args.cmd == "packs":
+        from shams import packs
+        for p in packs.all_packs():
+            print(f"{p.name:<10} {p.display:<10} {p.description}")
+            for opt, choices in p.options(args.dir).items():
+                print(f"    {opt}: " + ", ".join(c["id"] for c in choices))
+        return 0
     if args.cmd == "engines":
-        from shams import engines
+        from shams import packs
         try:
-            engines.load_plugins(args.dir)
+            game = packs.get("game")
+            game.load_plugins(args.dir)
         except (ValueError, KeyError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
+        from shams_packs.game import engines
         for e in engines.ENGINES.values():
             print(f"{e.name:<7} {e.display:<20} {e.language:<11} {e.code_capability:<22} {e.build_target}")
         return 0
     if args.cmd == "init":
-        from shams import engines
         try:
-            engines.load_plugins(args.dir)
-            prof = engines.get(args.engine)
+            opts = _opts(args.opt)
+            Studio.init_project(args.dir, args.project_id, args.goal, mode=args.mode, mock_mode=args.mock,
+                                domain=args.domain, domain_config=opts, engine=args.engine)
         except (KeyError, ValueError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
-        Studio.init_project(args.dir, args.project_id, args.goal, mode=args.mode, mock_mode=args.mock,
-                            engine={"name": prof.name, "version": prof.default_version})
         import shams.examples
         example = Path(shams.examples.__file__).parent / "nodes.example.toml"
         if example.exists() and not (Path(args.dir) / "nodes.toml").exists():
             (Path(args.dir) / "nodes.example.toml").write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
-        print(f"Initialised {args.project_id} in {args.dir} (engine={prof.display}, mode={args.mode}, mock={args.mock})")
+        st = Studio(args.dir)
+        print(f"Initialised {args.project_id} in {args.dir} ({st.describe()}, mode={args.mode}, mock={args.mock})")
+        st.close()
         if not args.mock:
             print("Next: copy nodes.example.toml to nodes.toml and declare your models/APIs (see `shams providers`).")
         return 0
     st = _open(args.dir, getattr(args, "defect", None))
     try:
         if args.cmd == "plan":
+            opts = _opts(args.opt)
             if args.engine:
-                st.set_engine(args.engine)
-            issues = st.load_plan(instantiate(args.template, st.db.project_id, st.project["goal"],
-                                              engine=st.project["engine"]["name"], project_dir=args.dir),
-                                  approved_by=args.approve)
-            for i in issues:
+                opts["engine"] = args.engine
+            if opts:
+                st.configure(**opts)
+            dag = st.plan_from_template(args.template, approved_by=args.approve)
+            from shams.planning.validator import validate_dag
+            for i in validate_dag(dag, st.nodes if not st.mock_mode else None):
                 print(i)
-            print(f"Loaded {len(st.db.tasks())} tasks from template {args.template} "
-                  f"for engine {st.project['engine']['name']}")
+            print(f"Loaded {len(st.db.tasks())} tasks from template {dag['template']} ({st.describe()})")
         elif args.cmd == "nodes":
             for n in st.nodes.nodes.values():
                 gpus = ", ".join(f"gpu{g['index']}={g['vram_mb']}MB" for g in n.get("gpus", [])) or "no GPU"

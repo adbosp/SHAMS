@@ -3,6 +3,7 @@
   "project_id": "template",
   "plan_id": "plan.template",
   "plan_version": 1,
+  "domain": "game",
   "template": "vertical_slice_3d",
   "goal": "Vertical slice 3D chơi được: nhân vật chính, đối tượng sinh ra trong màn chơi, một cơ chế gameplay cốt lõi, HUD, tài nguyên 3D/âm thanh, bản build",
   "vertical_slice_first": true,

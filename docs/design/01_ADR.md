@@ -135,6 +135,27 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Chất lượng mỗi worker vẫn đo bằng Benchmark Lab.
 - Project tạo trước thay đổi khóa artifact cần tạo lại (Phase 1a, chưa có dữ liệu thật).
 
+### ADR-117 — Domain Packs: lõi SHAMS không biết lĩnh vực (SHAMS V2.0)
+**Vấn đề:** SHAMS là hệ thống sản xuất chung (phần mềm, game, 3D, lĩnh vực tùy biến). Bản trước còn để engine game, template game và mẫu lỗi Unity/Unreal/Godot trong lõi, namespace Python là `studio`.
+**Quyết định:**
+- Namespace Python đổi sang `shams` (OPEN-8 trong SHAMS_ARCHITECTURE_V2). Lớp chính là `Shams` (`Studio` còn là alias). Project cũ (`studio.sqlite`, cột `engine`) vẫn mở được và được hiểu là domain `game`.
+- **Domain Pack** (`shams.packs.DomainPack`) mang toàn bộ kiến thức lĩnh vực:
+  - lựa chọn cấu hình (`options`: stack, engine…), `default_config`, `normalize_config`, `configure`;
+  - nhận diện yêu cầu (`match_score`, `detect`), template và token, nhãn template;
+  - `domain_context` gửi cho worker, `failure_rules` thêm vào bộ phân loại lỗi, `checkers`, log lỗi cho Mock Worker, nhãn worker, media type riêng, alias template cũ, plugin dạng file (engine `.toml`).
+- Lõi chỉ thấy `domain` + `domain_config`. Project lưu hai cột này; context package có `domain` + `domain_context` thay cho `engine`; task DAG ghi `domain`.
+- Pack được tìm theo thứ tự: `register_pack()` trong code → entry point `shams.packs` (`pip install`) → pack có sẵn trong `shams_packs/` (nạp lười theo tên, lõi không import).
+- Pack có sẵn:
+  - **Software Pack** (mặc định): stack Python, TypeScript (Node.js); template `software_basic` (scaffold → module lõi → điểm vào → tích hợp → đóng gói).
+  - **Game Pack**: các engine của ADR-115 (Unity, Unreal Engine 5, Godot, Three.js/WebGPU, engine tùy biến) và template `vertical_slice_3d`.
+- Domain được nhận diện từ yêu cầu (pack có điểm cao nhất), hoặc chọn bằng `shams init --domain … --opt key=value`, UI hoặc `POST /api/configure`. Chỉ đổi được trước khi có plan.
+- Test bắt buộc: lõi (`shams/`) không import `shams_packs` và không nhắc tên engine/tool/game cụ thể.
+**Hệ quả:**
+- Thêm lĩnh vực mới (3D, tài liệu, dữ liệu…) = viết một pack, không sửa lõi.
+- `shams engines` vẫn còn nhưng thuộc Game Pack; lệnh chung là `shams packs`.
+- Checker thật cho Software Pack (pytest, tsc, vitest) đến ở V2.2; trước đó compile/test kết thúc `NOT_VERIFIED` nếu chưa đăng ký checker.
+- Intent & Scope Manager, Reuse Before Generate, Fidelity Tier, Generation Budget (SHAMS V2) xây trên lớp pack này, bắt đầu từ V2.1.
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

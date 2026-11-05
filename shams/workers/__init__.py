@@ -8,7 +8,7 @@ Built-in kinds:
 * ``LLMWorker`` (``kind = "llm_agent"`` / ``"inference"``): any ChatProvider writes text outputs
   (code, scenes, configs, docs) as a JSON reply. Works with every local server or API.
 * ``CommandWorker`` (``kind = "tool"``): any local program reads the context JSON and writes the
-  outputs itself. Fits image / 3D / audio generators, Blender scripts, engine CLIs.
+  outputs itself. Fits image / 3D / audio generators, 3D tools, build tools.
 * Custom: ``impl = "package.module:Class"`` in nodes.toml, or the ``shams.workers`` entry point group.
   The class is built with ``(entry=..., attempts_root=..., provider=..., read_blob=...)`` and must
   have ``run(ctx, worker_ref)``.
@@ -24,17 +24,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from shams import contracts, plugins, providers
+from shams import contracts, media, plugins, providers
 from shams.mock.worker import MockWorker
 
-TEXT_MEDIA = {"application/json", "application/xml", "application/x-yaml", "application/toml",
-              "application/javascript", "application/vnd.unity.scene", "application/vnd.unity.prefab",
-              "application/vnd.godot.scene", "image/svg+xml", "model/gltf+json"}
 MAX_INPUT_CHARS = 12_000
 
 
-def is_text(media_type: str) -> bool:
-    return media_type.startswith("text/") or media_type in TEXT_MEDIA or media_type.endswith("+json")
+is_text = media.is_text
 
 
 def output_plan(ctx: dict, attempts_root: Path) -> tuple[Path, list[dict]]:
@@ -70,7 +66,7 @@ def base_handoff(ctx: dict, worker_ref: dict, status: str, summary: str, *, deci
 
 # --------------------------------------------------------------------------- LLM worker
 SYSTEM_PROMPT = """You are a specialist worker inside SHAMS, an AI manufacturing pipeline that builds software and games.
-You receive one task as JSON. Produce every declared output, honouring the engine, language, paths and acceptance criteria.
+You receive one task as JSON. Produce every declared output, honouring domain_context (stack, engine, language, folders), paths and acceptance criteria.
 If prior_failures is not empty, fix exactly what they describe.
 Reply with ONE JSON object and nothing else:
 {"files": [{"logical_id": "<declared logical_id>", "content": "<full file content>"}],
@@ -122,7 +118,7 @@ class LLMWorker:
     def prompt(self, ctx: dict, plan: list[dict]) -> list[dict]:
         task = ctx["task"]
         payload = {
-            "goal": ctx.get("goal", ""), "engine": ctx.get("engine"),
+            "goal": ctx.get("goal", ""), "domain": ctx.get("domain"), "domain_context": ctx.get("domain_context", {}),
             "task": {"task_id": task["task_id"], "title": task["title"], "description": task.get("description", ""),
                      "capability": task["capability"]},
             "outputs": [{"logical_id": o["logical_id"], "path": o["rel"], "media_type": o["media_type"],

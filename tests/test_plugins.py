@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from shams import engines, providers, workers
+from shams import providers, workers
+from shams_packs.game import engines
 from shams.nodes.registry import NodeRegistry, normalize_worker
 from shams.orchestration.project import Studio
 from shams.planning.validator import instantiate, list_templates
@@ -258,7 +259,7 @@ def test_registered_checker_drives_qc(tmp_path, server):
 def test_custom_engine_from_project_folder(tmp_path):
     d = tmp_path / "bevy_game"
     (d / "engines").mkdir(parents=True)
-    (d / "engines" / "bevy.toml").write_text((EXAMPLES / "engine.example.toml").read_text(encoding="utf-8"))
+    (d / "engines" / "bevy.toml").write_text((Path(engines.__file__).parent / "engine.example.toml").read_text(encoding="utf-8"))
     try:
         from apps.cli.main import main
         assert main(["init", str(d), "--project-id", "bevy_game", "--goal", "g", "--engine", "bevy",
@@ -286,7 +287,7 @@ def test_custom_engine_validation():
 def test_project_template_folder(tmp_path):
     d = tmp_path / "p"
     (d / "templates").mkdir(parents=True)
-    tpl = json.loads((Path(engines.__file__).parent.parent / "templates" / "vertical_slice_3d.json").read_text("utf-8"))
+    tpl = json.loads((Path(engines.__file__).parent / "templates" / "vertical_slice_3d.json").read_text("utf-8"))
     tpl["tasks"] = tpl["tasks"][:1]
     (d / "templates" / "tiny.json").write_text(json.dumps(tpl), encoding="utf-8")
     assert "tiny" in list_templates(d)

@@ -1,4 +1,4 @@
-"""Engine Profiles and Engine Adapters (ADR-115).
+"""Engine Profiles and Engine Adapters for the Game Pack (ADR-115, ADR-117).
 
 A game plan is written once (engine-neutral template) and instantiated for one engine profile.
 The profile decides capabilities, file layout, asset formats, artifact contracts and the
@@ -40,7 +40,7 @@ class EngineProfile:
 
     @classmethod
     def from_dict(cls, d: dict) -> "EngineProfile":
-        """Build a custom engine from TOML/JSON (ADR-116). See docs/examples/engine.example.toml."""
+        """Build a custom engine from TOML/JSON (ADR-116). See shams_packs/game/engine.example.toml."""
         d = dict(d)
         missing = [r for r in cls.REQUIRED_ROOTS if r not in d.get("roots", {})]
         if missing:

@@ -94,7 +94,7 @@
         },
         "provider": {
           "type": "string",
-          "description": "ollama, llamacpp, comfyui, unity_cli, blender, external:<name>"
+          "description": "provider/tool, ví dụ ollama, openai_compatible, command, external:<name>"
         },
         "model": {
           "type": "string"

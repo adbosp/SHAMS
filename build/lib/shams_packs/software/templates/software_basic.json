@@ -1,0 +1,276 @@
+{
+  "schema_version": "1.0",
+  "project_id": "template",
+  "plan_id": "plan.template",
+  "plan_version": 1,
+  "domain": "software",
+  "template": "software_basic",
+  "goal": "Phần mềm chạy được tối thiểu: cấu trúc project, module chính có test, điểm vào, test tích hợp, gói phát hành",
+  "milestones": [
+    {
+      "id": "ms.functional",
+      "title": "Bản chạy được",
+      "task_ids": [
+        "task.project_scaffold",
+        "task.core_module",
+        "task.entrypoint",
+        "task.integration",
+        "task.package"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "task.project_scaffold",
+      "title": "Khởi tạo project ${stack_display} + cấu trúc thư mục",
+      "description": "Khởi tạo project ${stack_display} + cấu trúc thư mục",
+      "capability": "${code}",
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "${manifest_name}",
+          "logical_id": "project.manifest",
+          "media_type": "${manifest_mt}",
+          "contract": "project.manifest"
+        },
+        {
+          "name": "README",
+          "logical_id": "doc.readme",
+          "media_type": "text/markdown",
+          "contract": "doc.markdown"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.scaffold_exists",
+          "description": "Có file cấu hình project và README",
+          "kind": "exists"
+        },
+        {
+          "id": "ac.scaffold_compiles",
+          "description": "Project cài đặt/biên dịch được",
+          "kind": "compile"
+        }
+      ],
+      "priority": 80,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "*.toml",
+        "*.json",
+        "*.md"
+      ]
+    },
+    {
+      "task_id": "task.core_module",
+      "title": "Module chức năng chính + unit test",
+      "description": "Module chức năng chính + unit test",
+      "capability": "${code}",
+      "depends_on": [
+        "task.project_scaffold"
+      ],
+      "inputs": [
+        {
+          "name": "manifest",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.manifest"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "core",
+          "logical_id": "code.core",
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
+        },
+        {
+          "name": "test_core",
+          "logical_id": "test.core",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.core_compiles",
+          "description": "Biên dịch / kiểm tra kiểu không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.core_tests",
+          "description": "Unit test (${test_tool}) pass",
+          "kind": "unit_test"
+        }
+      ],
+      "priority": 70,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${src}/**",
+        "${tests}/**"
+      ]
+    },
+    {
+      "task_id": "task.entrypoint",
+      "title": "Điểm vào (CLI hoặc API) dùng module chính",
+      "description": "Điểm vào (CLI hoặc API) dùng module chính",
+      "capability": "${code}",
+      "depends_on": [
+        "task.core_module"
+      ],
+      "inputs": [
+        {
+          "name": "core",
+          "from_task": "task.core_module",
+          "logical_id": "code.core"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "main",
+          "logical_id": "code.entrypoint",
+          "media_type": "${script_mt}",
+          "contract": "${script_contract}"
+        },
+        {
+          "name": "test_main",
+          "logical_id": "test.entrypoint",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.entry_compiles",
+          "description": "Biên dịch / kiểm tra kiểu không lỗi",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.entry_tests",
+          "description": "Unit test điểm vào pass",
+          "kind": "unit_test"
+        }
+      ],
+      "priority": 65,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${src}/**",
+        "${tests}/**"
+      ]
+    },
+    {
+      "task_id": "task.integration",
+      "title": "Kiểm thử tích hợp end-to-end",
+      "description": "Kiểm thử tích hợp end-to-end",
+      "capability": "integration",
+      "depends_on": [
+        "task.core_module",
+        "task.entrypoint"
+      ],
+      "inputs": [
+        {
+          "name": "core",
+          "from_task": "task.core_module",
+          "logical_id": "code.core"
+        },
+        {
+          "name": "main",
+          "from_task": "task.entrypoint",
+          "logical_id": "code.entrypoint"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "test_integration",
+          "logical_id": "test.integration",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.integration",
+          "description": "Integration test pass",
+          "kind": "integration_test"
+        },
+        {
+          "id": "ac.runtime",
+          "description": "Chạy thử không lỗi runtime",
+          "kind": "runtime_log"
+        }
+      ],
+      "priority": 60,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${tests}/**"
+      ]
+    },
+    {
+      "task_id": "task.package",
+      "title": "Đóng gói + smoke test",
+      "description": "Đóng gói + smoke test",
+      "capability": "${build}",
+      "depends_on": [
+        "task.integration",
+        "task.entrypoint",
+        "task.project_scaffold"
+      ],
+      "inputs": [
+        {
+          "name": "main",
+          "from_task": "task.entrypoint",
+          "logical_id": "code.entrypoint"
+        },
+        {
+          "name": "manifest",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.manifest"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "package",
+          "logical_id": "build.package",
+          "media_type": "${build_mt}",
+          "contract": "${build_contract}"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.build_ok",
+          "description": "Đóng gói thành công",
+          "kind": "compile"
+        },
+        {
+          "id": "ac.smoke",
+          "description": "Chạy smoke test, log sạch",
+          "kind": "runtime_log"
+        }
+      ],
+      "priority": 55,
+      "budget": {
+        "max_wall_seconds": 1200,
+        "max_tokens": 60000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${dist}/**"
+      ]
+    }
+  ]
+}
