@@ -37,7 +37,8 @@ def test_chat_creates_plan_and_runs_to_done(tmp_path):
     assert s["progress"] == {"done": 11, "total": 11}
     assert any("Loading mock-coder" in l["text"] for l in s["console"])
     assert {a["state"] for a in s["artifacts"]} == {"ACCEPTED"}
-    assert s["vram"]["simulated"] is True
+    assert "gpus" in s["hardware"]                      # real hardware, not a simulation
+    assert s["vram"] is None or s["vram"]["total_mb"] > 0
 
 
 def test_decide_rejects_invalid_task(tmp_path):

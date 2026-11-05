@@ -125,6 +125,49 @@ class OpenAICompatible(_HTTPProvider):
     def health(self) -> str:
         return "ok" if _get(f"{self.base_url}/models", self._headers(), 10) < 500 else "down"
 
+    def list_models(self) -> list[str]:
+        req = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
+        try:
+            with _open(req, 15) as r:
+                data = json.loads(r.read().decode("utf-8") or "{}")
+        except (urllib.error.URLError, json.JSONDecodeError) as e:
+            raise ProviderError(f"{self.name}: cannot list models: {e}") from None
+        return sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
+
+    # Tool calling (MCP, ADR-118) --------------------------------------------------------------
+    supports_tools = True
+
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
+        """One turn with tools. Returns {"text", "tool_calls": [{"id", "name", "arguments"}], "assistant",
+        "tokens_in", "tokens_out"}; append "assistant" and tool_results(...) to continue the conversation."""
+        body = {"model": model, "messages": messages, **self.options, **opts}
+        if tools:
+            body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+                                                               "parameters": t["input_schema"]}} for t in tools]
+        r = _post_json(f"{self.base_url}/chat/completions", body, self._headers(), self.timeout)
+        try:
+            msg = r["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError):
+            raise ProviderError(f"{self.name}: unexpected response {str(r)[:300]}") from None
+        calls = []
+        for c in msg.get("tool_calls") or []:
+            fn = c.get("function", {})
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {"_raw": fn.get("arguments")}
+            calls.append({"id": c.get("id") or fn.get("name"), "name": fn.get("name"), "arguments": args})
+        u = r.get("usage") or {}
+        assistant = {"role": "assistant", "content": msg.get("content") or ""}
+        if msg.get("tool_calls"):
+            assistant["tool_calls"] = msg["tool_calls"]
+        return {"text": msg.get("content") or "", "tool_calls": calls, "assistant": assistant,
+                "tokens_in": int(u.get("prompt_tokens", 0)), "tokens_out": int(u.get("completion_tokens", 0))}
+
+    @staticmethod
+    def tool_results(results: list[tuple[dict, str]]) -> list[dict]:
+        return [{"role": "tool", "tool_call_id": call["id"], "content": text} for call, text in results]
+
 
 class Ollama(OpenAICompatible):
     """Ollama: chat over its OpenAI-compatible endpoint, load/unload through keep_alive."""
@@ -147,6 +190,15 @@ class Ollama(OpenAICompatible):
     def health(self) -> str:
         return "ok" if _get(f"{self.root}/api/tags", self.extra_headers, 10) < 500 else "down"
 
+    def list_models(self) -> list[str]:
+        req = urllib.request.Request(f"{self.root}/api/tags", headers=self.extra_headers)
+        try:
+            with _open(req, 15) as r:
+                data = json.loads(r.read().decode("utf-8") or "{}")
+        except (urllib.error.URLError, json.JSONDecodeError) as e:
+            raise ProviderError(f"ollama: cannot list models: {e}") from None
+        return sorted(m.get("name", "") for m in data.get("models", []) if m.get("name"))
+
 
 class Anthropic(_HTTPProvider):
     name = "anthropic"
@@ -164,12 +216,51 @@ class Anthropic(_HTTPProvider):
         body = {"model": model, "max_tokens": self.max_tokens, "messages": msgs, **self.options, **opts}
         if system:
             body["system"] = system
-        headers = {"x-api-key": self.api_key() or "", "anthropic-version": self.version, **self.extra_headers}
-        r = _post_json(f"{self.base_url}/v1/messages", body, headers, self.timeout)
+        r = _post_json(f"{self.base_url}/v1/messages", body, self._headers(), self.timeout)
         text = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
         u = r.get("usage") or {}
         return {"text": text, "tokens_in": int(u.get("input_tokens", 0)),
                 "tokens_out": int(u.get("output_tokens", 0))}
+
+    supports_tools = True
+
+    def _headers(self) -> dict[str, str]:
+        return {"x-api-key": self.api_key() or "", "anthropic-version": self.version, **self.extra_headers}
+
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        msgs = [m for m in messages if m["role"] != "system"]
+        body = {"model": model, "max_tokens": self.max_tokens, "messages": msgs, **self.options, **opts}
+        if system:
+            body["system"] = system
+        if tools:
+            body["tools"] = [{"name": t["name"], "description": t.get("description", ""),
+                              "input_schema": t["input_schema"]} for t in tools]
+        r = _post_json(f"{self.base_url}/v1/messages", body, self._headers(), self.timeout)
+        blocks = r.get("content", [])
+        u = r.get("usage") or {}
+        return {"text": "".join(b.get("text", "") for b in blocks if b.get("type") == "text"),
+                "tool_calls": [{"id": b["id"], "name": b["name"], "arguments": b.get("input") or {}}
+                               for b in blocks if b.get("type") == "tool_use"],
+                "assistant": {"role": "assistant", "content": blocks},
+                "tokens_in": int(u.get("input_tokens", 0)), "tokens_out": int(u.get("output_tokens", 0))}
+
+    @staticmethod
+    def tool_results(results: list[tuple[dict, str]]) -> list[dict]:
+        return [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": call["id"], "content": text}
+                                             for call, text in results]}]
+
+    def health(self) -> str:
+        return "ok" if _get(f"{self.base_url}/v1/models", self._headers(), 10) < 500 else "down"
+
+    def list_models(self) -> list[str]:
+        req = urllib.request.Request(f"{self.base_url}/v1/models", headers=self._headers())
+        try:
+            with _open(req, 15) as r:
+                data = json.loads(r.read().decode("utf-8") or "{}")
+        except (urllib.error.URLError, json.JSONDecodeError) as e:
+            raise ProviderError(f"{self.name}: cannot list models: {e}") from None
+        return sorted(m.get("id", "") for m in data.get("data", []) if m.get("id"))
 
 
 class Command:

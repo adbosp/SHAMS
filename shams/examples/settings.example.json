@@ -1,0 +1,57 @@
+{
+  "general": {
+    "language": "vi",
+    "default_mode": "guided",
+    "mock": "auto",
+    "max_tool_rounds": 8
+  },
+  "permissions": {
+    "mode": "default",
+    "allow": ["mcp__filesystem__read_*", "mcp__github__create_issue"],
+    "deny": ["mcp__*__delete_*"]
+  },
+  "connections": {
+    "ollama_local": { "provider": "ollama" },
+    "openai": { "provider": "openai", "api_key_env": "OPENAI_API_KEY" },
+    "claude": { "provider": "anthropic", "api_key_env": "ANTHROPIC_API_KEY" }
+  },
+  "workers": [
+    {
+      "id": "worker.coder_local",
+      "connection": "ollama_local",
+      "model": "qwen2.5-coder:14b",
+      "node": "node.local",
+      "lane": "gpu",
+      "vram_mb": 10000,
+      "capabilities": ["code.python", "code.web_typescript", "integration"],
+      "mcp": ["filesystem"]
+    },
+    {
+      "id": "worker.planner_api",
+      "connection": "claude",
+      "model": "claude-sonnet-5-5",
+      "node": "node.cloud",
+      "lane": "external",
+      "capabilities": ["plan", "debug_analysis", "semantic_review"]
+    }
+  ],
+  "mcp_servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Projects"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" }
+    }
+  },
+  "hooks": {
+    "run.finished": [{ "command": "git add -A && git commit -m \"SHAMS build\"", "timeout": 60 }],
+    "repair.exhausted": [{ "command": "python scripts/notify.py" }]
+  },
+  "env": {
+    "UNITY_PATH": "C:\\Program Files\\Unity\\Hub\\Editor\\6000.0.23f1\\Editor\\Unity.exe"
+  }
+}
