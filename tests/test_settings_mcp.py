@@ -296,3 +296,12 @@ def test_mcp_http_transport_json_and_sse():
     finally:
         mgr.close()
         srv.shutdown()
+
+
+def test_parse_windows_counters():
+    out = json.dumps({"memory": [{"Name": "luid_0x1_phys_0", "DedicatedUsage": 2**28, "SharedUsage": 3 * 2**30}],
+                      "engines": [{"Name": "pid_1_engtype_3D", "UtilizationPercentage": 12},
+                                  {"Name": "pid_2_engtype_3D", "UtilizationPercentage": 5}]})
+    assert hardware.parse_windows_counters(out) == {"dedicated_mb": 256, "shared_mb": 3072, "utilization_pct": 17}
+    assert hardware.parse_windows_counters('{"memory": null, "engines": null}') == {}
+    assert hardware.parse_windows_counters("not json") == {}

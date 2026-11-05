@@ -101,7 +101,7 @@ _PS_GPUS = r"""
 $out = @()
 Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue |
  ForEach-Object { $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
-  if ($p.DriverDesc) { $out += [pscustomobject]@{ name = $p.DriverDesc; bytes = $p.'HardwareInformation.qwMemorySize'; legacy = $p.'HardwareInformation.MemorySize' } } }
+  if ($p.DriverDesc) { $out += [pscustomobject]@{ name = $p.DriverDesc; bytes = $p.'HardwareInformation.qwMemorySize'; legacy = $p.'HardwareInformation.MemorySize'; driver = $p.DriverVersion } } }
 $out | ConvertTo-Json -Compress
 """
 
@@ -131,8 +131,56 @@ def _windows_generic() -> list[dict]:
         vendor = "NVIDIA" if "nvidia" in name.lower() else "AMD" if re.search(r"amd|radeon", name, re.I) \
             else "Intel" if "intel" in name.lower() else ""
         gpus.append({"index": len(gpus), "name": name, "vendor": vendor, "vram_total_mb": total, "vram_used_mb": None,
-                     "utilization_pct": None, "driver": None, "source": "windows-registry"})
+                     "utilization_pct": None, "driver": r.get("driver"), "source": "windows-registry"})
+    if gpus:
+        _windows_counters(gpus)
     return gpus
+
+
+# Windows 10+ GPU performance counters through CIM: class names are not localised (Get-Counter's are).
+_PS_COUNTERS = r"""
+$m = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction SilentlyContinue |
+  Select-Object Name, DedicatedUsage, SharedUsage
+$e = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -like '*engtype_3D*' } | Select-Object Name, UtilizationPercentage
+[pscustomobject]@{ memory = @($m); engines = @($e) } | ConvertTo-Json -Compress -Depth 4
+"""
+
+
+def parse_windows_counters(out: str) -> dict:
+    """{"dedicated_mb", "shared_mb", "utilization_pct"} summed over adapters (single-GPU PCs are the norm)."""
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return {}
+    mem = data.get("memory") or []
+    eng = data.get("engines") or []
+    mem = mem if isinstance(mem, list) else [mem]
+    eng = eng if isinstance(eng, list) else [eng]
+    if not mem and not eng:
+        return {}
+    ded = sum(int(m.get("DedicatedUsage") or 0) for m in mem) // 2**20
+    sh = sum(int(m.get("SharedUsage") or 0) for m in mem) // 2**20
+    util = min(100, sum(int(e.get("UtilizationPercentage") or 0) for e in eng)) if eng else None
+    return {"dedicated_mb": ded, "shared_mb": sh, "utilization_pct": util}
+
+
+def _windows_counters(gpus: list[dict]) -> None:
+    out = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS_COUNTERS], timeout=8)
+    c = parse_windows_counters(out) if out else {}
+    if not c:
+        return
+    g = gpus[0]
+    g["utilization_pct"] = c["utilization_pct"]
+    if g["vendor"] == "Intel" or g["vram_total_mb"] <= 2048:
+        # Integrated GPU: it mostly uses shared system RAM (Windows allows up to half of it).
+        ram = memory().get("total_mb") or 0
+        g.update(integrated=True, vram_used_mb=c["dedicated_mb"] + c["shared_mb"],
+                 vram_total_mb=g["vram_total_mb"] + ram // 2, dedicated_mb=g["vram_total_mb"],
+                 shared_used_mb=c["shared_mb"])
+    else:
+        g["vram_used_mb"] = c["dedicated_mb"]
+    g["source"] = "windows-perf-counters"
 
 
 def _apple() -> list[dict]:
@@ -200,22 +248,55 @@ def cpu() -> dict:
 
 
 # --------------------------------------------------------------------------- public
-def detect(max_age_s: float = 2.0) -> dict:
-    """Snapshot of this machine. GPU list is cached for `max_age_s` seconds (static info for 60 s)."""
+def os_label() -> str:
+    if platform.system() == "Windows":
+        try:
+            build = int(platform.version().split(".")[2])
+        except (IndexError, ValueError):
+            build = 0
+        return f"Windows {'11' if build >= 22000 else platform.release()} (build {build})" if build else \
+            f"Windows {platform.release()}"
+    if platform.system() == "Darwin":
+        return f"macOS {platform.mac_ver()[0]}"
+    return f"{platform.system()} {platform.release()}"
+
+
+def _snapshot() -> dict:
     now = time.monotonic()
+    static = _CACHE.get("static")
+    if not static or now - static[0] > 60:
+        static = (now, {"os": os_label(), "hostname": platform.node(), "cpu": cpu()})
+        _CACHE["static"] = static
+    return {**static[1], "ram": memory(), "gpus": gpus(), "ts": time.time()}  # type: ignore[index]
+
+
+_REFRESHING = threading.Event()
+
+
+def _refresh() -> None:
+    try:
+        snap = _snapshot()
+        with _LOCK:
+            _CACHE["detect"] = (time.monotonic(), snap)
+    finally:
+        _REFRESHING.clear()
+
+
+def detect(max_age_s: float = 2.0) -> dict:
+    """Snapshot of this machine. The first call measures; later calls return the cached snapshot and
+    refresh it in the background when older than `max_age_s`, so a UI polling every second never waits
+    on nvidia-smi / PowerShell."""
     with _LOCK:
         hit = _CACHE.get("detect")
-        if hit and now - hit[0] < max_age_s:
-            return hit[1]  # type: ignore[return-value]
-        static = _CACHE.get("static")
-        if not static or now - static[0] > 60:
-            static = (now, {"os": f"{platform.system()} {platform.release()}", "hostname": platform.node(),
-                            "cpu": cpu()})
-            _CACHE["static"] = static
-        g = gpus()
-        snap = {**static[1], "ram": memory(), "gpus": g, "ts": time.time()}
-        _CACHE["detect"] = (now, snap)
+    if hit is None:
+        snap = _snapshot()
+        with _LOCK:
+            _CACHE["detect"] = (time.monotonic(), snap)
         return snap
+    if time.monotonic() - hit[0] >= max_age_s and not _REFRESHING.is_set():
+        _REFRESHING.set()
+        threading.Thread(target=_refresh, daemon=True).start()
+    return hit[1]  # type: ignore[return-value]
 
 
 def local_node(snapshot: dict | None = None, node_id: str = "node.local") -> dict:

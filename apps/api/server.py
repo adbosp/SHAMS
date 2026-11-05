@@ -296,7 +296,8 @@ class StudioService:
         vram = None
         if g:
             vram = {"name": g["name"], "used_mb": g["vram_used_mb"], "total_mb": g["vram_total_mb"],
-                    "utilization_pct": g["utilization_pct"], "source": g["source"], "count": len(hw["gpus"])}
+                    "utilization_pct": g["utilization_pct"], "source": g["source"], "count": len(hw["gpus"]),
+                    "integrated": bool(g.get("integrated"))}
         return {**hw, "vram": vram}
 
     # ------------------------------------------------------------------ state for the UI

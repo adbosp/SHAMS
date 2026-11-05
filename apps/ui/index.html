@@ -393,7 +393,7 @@ function render(force){
   $("gpu").innerHTML = S.active ? (S.active.gpu ? '<span class="badge b-ok">GPU lane</span>' : '<span class="badge b-chip">CPU / API</span>') : "";
   const hw = S.hardware || {}, v = S.vram;
   if (v){
-    $("vramlbl").textContent = "VRAM" + (v.count > 1 ? ` (GPU 0 / ${v.count})` : "");
+    $("vramlbl").textContent = (v.integrated ? "Bộ nhớ GPU (dùng chung RAM)" : "VRAM") + (v.count > 1 ? ` (GPU 0 / ${v.count})` : "");
     $("vram").classList.remove("sm");
     $("vram").textContent = v.used_mb != null ? `${gb(v.used_mb)} / ${gb(v.total_mb)}` : gb(v.total_mb);
     $("vrambar").style.width = v.used_mb != null && v.total_mb ? (100*v.used_mb/v.total_mb)+"%" : "0";
