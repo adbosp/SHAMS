@@ -204,8 +204,14 @@ class Scene3DWorker:
                 if rep.get("ok") and rep.get("mesh_objects", 0) == 0:
                     rep = {**rep, "ok": False, "error": "The script ran but created no mesh objects."}
                 if rep.get("ok"):
-                    self.log.append({"round": round_, "result": "ok"})
-                    return rep, script, usage
+                    issues = blender_physics(rep)
+                    if not issues or round_ == self.max_fix_rounds:
+                        rep["warnings"] = issues
+                        rep["fix_rounds"] = list(self.log)
+                        self.log.append({"round": round_, "result": "ok"})
+                        return rep, script, usage
+                    rep = {**rep, "ok": False, "error": "The script ran, but the scene is physically wrong (values are "
+                                                         "for each object's centre, Z up): " + "; ".join(issues[:8])}
                 problem = rep.get("error", "unknown Blender error")
             self.log.append({"round": round_, "result": problem[-300:]})
             messages = messages + [{"role": "assistant", "content": raw},
@@ -317,6 +323,16 @@ class Scene3DWorker:
         return files, base_handoff(ctx, worker_ref, "READY_FOR_QC", summary, usage=usage, decisions=decisions)
 
 
+
+
+def blender_physics(rep: dict) -> list[str]:
+    """Same physical checks as JSON scenes, on the world bounding boxes Blender reported (Z up -> Y up)."""
+    boxes = []
+    for o in rep.get("objects", []):
+        if o.get("type") == "MESH" and o.get("bbox"):
+            lo, hi = o["bbox"]
+            boxes.append(({"name": o["name"], "shape": "mesh"}, [lo[0], lo[2], lo[1]], [hi[0], hi[2], hi[1]]))
+    return scene_json.box_problems(boxes, axis="z") if boxes else []
 
 
 def check_blender_import(c: dict, outputs: list[dict], settings: dict) -> tuple[str, str]:

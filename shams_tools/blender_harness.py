@@ -33,6 +33,9 @@ def _stats(scene):
                      zero_area_faces=sum(1 for f in bm.faces if f.calc_area() < 1e-10),
                      has_uv=bool(me.uv_layers),
                      materials=[m.name for m in o.data.materials if m])
+            ws = [o.matrix_world @ Vector(c) for c in o.bound_box]
+            e["bbox"] = [[round(min(v[k] for v in ws), 4) for k in range(3)],
+                         [round(max(v[k] for v in ws), 4) for k in range(3)]]
             bm.free()
             o.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh_clear()
         objs.append(e)

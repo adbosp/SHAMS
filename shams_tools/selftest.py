@@ -215,6 +215,9 @@ def t3b_blender(c: Ctx) -> tuple[str, str]:
     if not rep.get("ok"):
         return FAIL, f"{m}: Blender scene failed after {fixes} fix round(s): {rep.get('error', '')[-300:]}"
     v, d = assets.check_png(work / "render.png", {"min_width": 256, "min_std": 4})
+    if rep.get("warnings"):
+        return FAIL, (f"{m} + Blender: scene built but still physically wrong after {fixes} fix round(s): "
+                      + "; ".join(rep["warnings"]))
     vis = ""
     vm = c.model("visual_qc")
     if v == PASS and vm:                                    # the shape must be right, not only the file

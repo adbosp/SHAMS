@@ -298,15 +298,22 @@ def build(scene: dict) -> dict:
 
 
 def support_problems(built: dict, tol: float = 0.02) -> list[str]:
-    """Physical sanity, with the fix spelled out for the model:
-    * a smaller object whose centre sits over a larger box/cylinder and whose bottom is inside it (sinking);
-    * anything that goes below the ground plane."""
+    """Physical sanity of a JSON scene (see ``box_problems``)."""
     boxes = []
     for m in built["meshes"]:
         t = m["object"]["position"]
         lo = [min(p[k] for p in m["P"]) + t[k] for k in range(3)]
         hi = [max(p[k] for p in m["P"]) + t[k] for k in range(3)]
         boxes.append((m["object"], lo, hi))
+    return box_problems(boxes, tol)
+
+
+def box_problems(boxes: list, tol: float = 0.02, axis: str = "y") -> list[str]:
+    """World bounding boxes (``obj`` with name/shape/rotation, lo, hi; Y up) -> problems with the fix spelled out:
+    * a smaller object whose centre sits over a larger support and whose bottom is inside it (sinking);
+    * a small gap (2-15 cm) between an object and what is under it (floating);
+    * anything that goes below the ground plane.
+    ``axis`` only changes the wording ("z" for Blender scenes)."""
     area = lambda lo, hi: (hi[0] - lo[0]) * (hi[2] - lo[2])  # noqa: E731
     out = []
     flats = [(o, lo, hi) for o, lo, hi in boxes if hi[1] - lo[1] < 1e-6]
@@ -316,8 +323,8 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
         cx, cy, cz = [(alo[k] + ahi[k]) / 2 for k in range(3)]
         if ground is not None and h > 1e-6 and alo[1] < ground - tol:
             out.append(f"{a['name']} goes {round(ground - alo[1], 2)} m below the floor (its lowest point is "
-                       f"y={round(alo[1], 2)}); move it up so its bottom is at y={round(ground, 2)}"
-                       + (" or fix its rotation" if any(a["rotation"]) else ""))
+                       f"{axis}={round(alo[1], 2)}); move it up so its bottom is at {axis}={round(ground, 2)}"
+                       + (" or fix its rotation" if any(a.get("rotation") or []) else ""))
             continue
         if h < 1e-6:
             continue
@@ -328,17 +335,17 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
             below = max(under, default=ground)
             if tol < alo[1] - below < 0.15:          # a small gap is a mistake; a big one is meant (lamp, bird)
                 out.append(f"{a['name']} floats {round((alo[1] - below) * 100)} cm above what is under it "
-                           f"(top at y={round(below, 3)}); lower it to y = {round(cy - (alo[1] - below), 3)} "
+                           f"(top at {axis}={round(below, 3)}); lower it to {axis} = {round(cy - (alo[1] - below), 3)} "
                            f"or make its supports taller")
         for b, blo, bhi in boxes:
-            if b is a or b["shape"] not in ("box", "cylinder") or area(alo, ahi) >= area(blo, bhi):
+            if b is a or b.get("shape") not in ("box", "cylinder", "mesh") or area(alo, ahi) >= area(blo, bhi):
                 continue
             if not (blo[0] <= cx <= bhi[0] and blo[2] <= cz <= bhi[2]):
                 continue
             top, bmid = bhi[1], (blo[1] + bhi[1]) / 2
             if cy > bmid and alo[1] < top - tol and cy < top + h:
                 out.append(f"{a['name']} sinks {round((top - alo[1]) * 100)} cm into {b['name']} (top at "
-                           f"y={round(top, 3)}); set {a['name']}.position y = {round(top + (cy - alo[1]), 3)}")
+                           f"{axis}={round(top, 3)}); set {a['name']}.position {axis} = {round(top + (cy - alo[1]), 3)}")
                 break
     return out
 

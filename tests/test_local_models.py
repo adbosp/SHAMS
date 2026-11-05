@@ -669,3 +669,15 @@ def test_scene_json_flags_small_gaps_but_not_intended_floating():
     assert len(rep["warnings"]) == 1 and "lamp" not in rep["warnings"][0]
     s["objects"][5]["position"][1] = 0.81
     assert scene_json.build_scene(s, None, None)["warnings"] == []
+
+
+def test_blender_scenes_get_the_same_physical_checks():
+    rep = {"objects": [
+        {"name": "Floor", "type": "MESH", "bbox": [[-5, -5, 0], [5, 5, 0]]},
+        {"name": "Top", "type": "MESH", "bbox": [[-0.6, -0.4, 0.72], [0.6, 0.4, 0.78]]},
+        {"name": "Leg", "type": "MESH", "bbox": [[0.5, 0.3, -0.25], [0.56, 0.36, 0.5]]},
+        {"name": "Ball", "type": "MESH", "bbox": [[0.0, 0.0, 0.70], [0.24, 0.24, 0.94]]},
+        {"name": "Camera", "type": "CAMERA"}]}
+    issues = blender_tools.blender_physics(rep)
+    text = "; ".join(issues)
+    assert "Leg goes 0.25 m below the floor" in text and "Ball sinks 8 cm into Top" in text and "z=" in text
