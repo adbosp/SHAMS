@@ -213,7 +213,7 @@ class Scene3DWorker:
                     rep = {**rep, "ok": False, "error": "The script ran, but the scene is physically wrong (values are "
                                                          "for each object's centre, Z up): " + "; ".join(issues[:8])}
                 problem = rep.get("error", "unknown Blender error")
-            self.log.append({"round": round_, "result": problem[-300:]})
+            self.log.append({"round": round_, "result": (problem if len(problem) <= 600 else problem[:300] + " … " + problem[-300:])})
             messages = messages + [{"role": "assistant", "content": raw},
                                    {"role": "user", "content": "The script was checked (and run in Blender if valid) and has this problem; send the full fixed "
                                                                f"script.\n{problem[-2500:]}"}]
@@ -254,7 +254,7 @@ class Scene3DWorker:
             except scene_json.SceneError as e:
                 problem = str(e)
             rep = {"ok": False, "error": problem}
-            self.log.append({"round": round_, "result": problem[-300:]})
+            self.log.append({"round": round_, "result": (problem if len(problem) <= 600 else problem[:300] + " … " + problem[-300:])})
             messages = messages + [{"role": "assistant", "content": raw[:6000]},
                                    {"role": "user", "content": f"SHAMS could not build this scene: {problem}\n"
                                                                "Send the full corrected JSON object."}]
