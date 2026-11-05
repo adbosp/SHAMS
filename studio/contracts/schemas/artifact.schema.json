@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/artifact.schema.json",
+  "title": "Artifact",
+  "description": "Bản ghi trong artifact registry (ADR-105).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "logical_id",
+    "version",
+    "sha256",
+    "media_type",
+    "storage",
+    "state",
+    "produced_by",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "logical_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "contract": {
+      "type": "string"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "storage": {
+      "enum": [
+        "artifact_store",
+        "git_workspace"
+      ]
+    },
+    "store_path": {
+      "type": "string"
+    },
+    "git_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7,40}$"
+    },
+    "state": {
+      "enum": [
+        "CANDIDATE",
+        "ACCEPTED",
+        "REJECTED",
+        "SUPERSEDED",
+        "STALE"
+      ]
+    },
+    "produced_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "attempt"
+      ],
+      "properties": {
+        "task_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "worker": {
+          "$ref": "common.schema.json#/$defs/worker_ref"
+        }
+      }
+    },
+    "derived_from": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Theo contract: poly_count, texture_size, duration_s, ..."
+    },
+    "license": {
+      "type": "string",
+      "description": "Giấy phép model/nguồn tạo ra artifact"
+    },
+    "created_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  }
+}
