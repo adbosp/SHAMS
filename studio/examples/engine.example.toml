@@ -1,0 +1,40 @@
+# Custom engine profile (ADR-116). Save as <project>/engines/<name>.toml or ~/.shams/engines/<name>.toml.
+# Every engine-neutral template (e.g. vertical_slice_3d) can then be instantiated for it:
+#   shams init my_game --project-id my_game --goal "..." --engine bevy
+[engine]
+name = "bevy"
+display = "Bevy"
+default_version = "0.14"
+language = "Rust"
+code_capability = "code.bevy_rust"
+build_capability = "build.bevy"
+test_capability = "test.bevy"
+script_media_type = "text/x-rust"
+script_contract = "bevy.rust_module"
+test_contract = "bevy.cargo_test"
+scene_media_type = "text/x-rust"
+scene_contract = "bevy.scene_module"
+mesh_media_type = "model/gltf-binary"
+mesh_contract = "mesh.gltf_game_ready"
+build_media_type = "application/x-msdownload"
+build_contract = "build.windows"
+build_target = "x86_64-pc-windows-msvc"
+aliases = ["bevy_engine"]
+detect_words = ["bevy"]
+notes = "cargo test / cargo build --release"
+
+[engine.roots]
+scripts = "src/game"
+tests = "tests"
+scenes = "src/scenes"
+models = "assets/models"
+textures = "assets/textures"
+audio = "assets/audio"
+builds = "target/release"
+
+# argv per step; {project} = project folder, {exe} = executable passed to the adapter
+[engine.commands]
+compile = ["cargo", "check", "--manifest-path", "{project}/Cargo.toml"]
+test = ["cargo", "test", "--manifest-path", "{project}/Cargo.toml"]
+build = ["cargo", "build", "--release", "--manifest-path", "{project}/Cargo.toml"]
+capture = ["cargo", "run", "--release", "--manifest-path", "{project}/Cargo.toml", "--", "--screenshot", "capture.png"]

@@ -31,6 +31,27 @@ class EngineProfile:
     build_target: str
     roots: dict[str, str] = field(default_factory=dict)  # scripts, tests, scenes, models, textures, audio, builds
     notes: str = ""
+    # Optional argv per step (compile/test/build/capture); "{project}" and "{exe}" are substituted.
+    commands: dict[str, list[str]] = field(default_factory=dict)
+    aliases: tuple[str, ...] = ()
+    detect_words: tuple[str, ...] = ()
+
+    REQUIRED_ROOTS = ("scripts", "tests", "scenes", "models", "textures", "audio", "builds")
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "EngineProfile":
+        """Build a custom engine from TOML/JSON (ADR-116). See docs/examples/engine.example.toml."""
+        d = dict(d)
+        missing = [r for r in cls.REQUIRED_ROOTS if r not in d.get("roots", {})]
+        if missing:
+            raise ValueError(f"engine {d.get('name')!r}: roots missing {missing}")
+        d["aliases"] = tuple(d.get("aliases", ()))
+        d["detect_words"] = tuple(w.lower() for w in d.get("detect_words", ()))
+        known = set(cls.__dataclass_fields__)
+        unknown = set(d) - known
+        if unknown:
+            raise ValueError(f"engine {d.get('name')!r}: unknown fields {sorted(unknown)}")
+        return cls(**d)
 
     def tokens(self) -> dict[str, str]:
         t = {
@@ -105,10 +126,45 @@ _DETECT = [("web", ("three.js", "threejs", "webgpu", "webgl", "trình duyệt", 
            ("unreal", ("ue5", "unreal")), ("godot", ("godot",)), ("unity", ("unity",))]
 
 
+def register(profile: EngineProfile) -> EngineProfile:
+    """Add or replace an engine profile at runtime (custom engines, ADR-116)."""
+    ENGINES[profile.name] = profile
+    for a in (profile.name, *profile.aliases):
+        ALIASES[a.lower()] = profile.name
+    if profile.detect_words:
+        global _DETECT
+        _DETECT = [(n, w) for n, w in _DETECT if n != profile.name]
+        _DETECT.insert(0, (profile.name, profile.detect_words))
+    return profile
+
+
+def load_file(path: Path | str) -> EngineProfile:
+    import json
+    import tomllib
+    p = Path(path)
+    data = tomllib.loads(p.read_text(encoding="utf-8")) if p.suffix == ".toml" else json.loads(p.read_text("utf-8"))
+    return register(EngineProfile.from_dict(data.get("engine", data)))
+
+
+def load_plugins(project_dir: Path | str | None = None) -> list[str]:
+    """Register engines from entry points (group shams.engines) and from engines/*.toml|json in the
+    project folder and in $SHAMS_HOME. Returns the names loaded."""
+    from studio import plugins
+    names = []
+    for ep in plugins.entry_points("shams.engines").values():
+        obj = ep.load()
+        prof = obj if isinstance(obj, EngineProfile) else EngineProfile.from_dict(obj() if callable(obj) else obj)
+        names.append(register(prof).name)
+    for d in reversed(plugins.search_dirs("engines", project_dir)):   # project wins over user-level
+        for f in sorted(d.glob("*.toml")) + sorted(d.glob("*.json")):
+            names.append(load_file(f).name)
+    return names
+
+
 def get(name: str) -> EngineProfile:
     key = ALIASES.get(name.strip().lower())
     if key is None:
-        raise KeyError(f"unknown engine {name!r}; choose one of {sorted(ENGINES)}")
+        raise KeyError(f"unknown engine {name!r}; choose one of {sorted(ENGINES)} or add engines/<name>.toml")
     return ENGINES[key]
 
 
@@ -134,6 +190,9 @@ class EngineAdapter:
 
     def commands(self) -> dict[str, list[str]]:
         P, n = str(self.project), self.p.name
+        if self.p.commands:
+            exe = self.exe or ""
+            return {k: [a.format(project=P, exe=exe) for a in argv] for k, argv in self.p.commands.items()}
         if n == "unity":
             exe = self.exe or "Unity"
             base = [exe, "-batchmode", "-nographics", "-projectPath", P, "-logFile", "-"]
@@ -164,6 +223,8 @@ class EngineAdapter:
                           f"{P}/builds/game.exe"],
                 "capture": [exe, "--path", P, "--", "--shams-screenshot=capture.png"],
             }
+        if n != "web":
+            raise KeyError(f"engine {n!r} declares no commands; add [engine.commands] to its profile")
         npm = self.exe or "npm"
         return {
             "compile": [npm, "run", "typecheck", "--prefix", P],

@@ -128,7 +128,7 @@ class StudioService:
                 st.context.goal = text
                 (self.dir / "project.json").write_text(json.dumps(st.project, ensure_ascii=False, indent=2),
                                                       encoding="utf-8")
-                dag = instantiate(self.template, st.db.project_id, text, engine=profile.name)
+                dag = instantiate(self.template, st.db.project_id, text, engine=profile.name, project_dir=self.dir)
                 st.load_plan(dag, approved_by="ui-user")
                 how = "nhận diện từ yêu cầu" if detected else "mặc định, ghi tên engine trong yêu cầu để đổi"
                 reply = (f"Đã tạo {len(dag['tasks'])} nhiệm vụ từ khung chung {self.template} cho engine "

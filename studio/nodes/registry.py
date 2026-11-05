@@ -51,6 +51,52 @@ class Worker:
         return q["acceptance_rate"] if q else 0.5
 
 
+_FLAT_KEYS = {"id", "kind", "provider", "model", "model_version", "node", "lane", "capabilities", "vram_mb",
+              "ram_mb", "load_adapter", "load_seconds", "unload_seconds", "context_tokens", "supports_tool_calls",
+              "concurrency", "gpu_index", "privacy", "enabled", "requires_approval", "license", "commercial_use",
+              "config", "cost", "quality"}
+
+
+def normalize_worker(w: dict) -> dict:
+    """Accept the short nodes.toml form and return a Capability Registry entry.
+
+    Short form: id, kind, provider, model, node, lane, capabilities, vram_mb, [worker.config]...
+    The full schema form (keys worker/runtime/policy) is passed through unchanged."""
+    if "worker" in w and "runtime" in w:
+        return w
+    unknown = set(w) - _FLAT_KEYS
+    if unknown:
+        raise ValueError(f"worker {w.get('id')!r}: unknown keys {sorted(unknown)}")
+    if not w.get("id") or not w.get("node") or not w.get("capabilities"):
+        raise ValueError(f"worker {w.get('id')!r}: id, node and capabilities are required")
+    provider = w.get("provider")
+    kind = w.get("kind") or ("tool" if provider in (None, "command") else "llm_agent")
+    lane = w.get("lane") or "cpu"
+    ref = {"worker_id": w["id"], "kind": kind, "node_id": w["node"]}
+    for k in ("provider", "model", "model_version"):
+        if w.get(k):
+            ref[k] = w[k]
+    default_adapter = "ollama" if provider == "ollama" else "provider" if (lane == "gpu" and w.get("model")) else "none"
+    runtime = {"node_id": w["node"], "lane": lane, "load_adapter": w.get("load_adapter", default_adapter)}
+    for src, dst in (("vram_mb", "vram_mb_est"), ("ram_mb", "ram_mb_est"), ("load_seconds", "load_seconds_p50"),
+                     ("unload_seconds", "unload_seconds_p50"), ("context_tokens", "context_tokens"),
+                     ("supports_tool_calls", "supports_tool_calls"), ("concurrency", "concurrency"),
+                     ("gpu_index", "gpu_index")):
+        if src in w:
+            runtime[dst] = w[src]
+    policy = {"enabled": w.get("enabled", True), "privacy": w.get("privacy", "local")}
+    for k in ("requires_approval", "license", "commercial_use"):
+        if k in w:
+            policy[k] = w[k]
+    entry = {"worker": ref, "capabilities": list(w["capabilities"]), "runtime": runtime, "policy": policy}
+    if w.get("config"):
+        entry["provider_config"] = dict(w["config"])
+    for k in ("cost", "quality"):
+        if k in w:
+            entry[k] = w[k]
+    return entry
+
+
 class NodeRegistry:
     def __init__(self, nodes: list[dict] | None = None, workers: list[dict] | None = None):
         self.nodes: dict[str, dict] = {}
@@ -62,10 +108,16 @@ class NodeRegistry:
 
     @classmethod
     def from_toml(cls, path: Path) -> "NodeRegistry":
-        data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
-        nodes = [{"schema_version": contracts.SCHEMA_VERSION, "node_id": n.pop("id"), **n} for n in data.get("node", [])]
-        workers = [w for w in data.get("worker", [])]
-        return cls(nodes, workers)
+        """Load nodes.toml. See studio/examples/nodes.example.toml for the format (ADR-114/116)."""
+        return cls.from_dict(tomllib.loads(Path(path).read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "NodeRegistry":
+        nodes = []
+        for n in data.get("node", []):
+            n = dict(n)
+            nodes.append({"schema_version": contracts.SCHEMA_VERSION, "node_id": n.pop("id", None) or n.pop("node_id"), **n})
+        return cls(nodes, [normalize_worker(w) for w in data.get("worker", [])])
 
     def add_node(self, n: dict) -> None:
         n = {"schema_version": contracts.SCHEMA_VERSION, **n}

@@ -13,8 +13,8 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 | ID | Quyết định | Trạng thái | Điều kiện xem xét lại |
 |---|---|---|---|
 | ADR-001 | LangGraph làm nền orchestration (graph cố định trong code, task list động trong DB) | Accepted | Spike S1 cho thấy không đáp ứng resume/interrupt |
-| ADR-002 | Deep Agents làm harness cho LLM worker | Accepted | Spike S1: tỉ lệ tool-call hợp lệ < 80% với mọi model local |
-| ADR-003 | Ollama / llama.cpp cho LLM local | Accepted | — |
+| ADR-002 | Deep Agents làm harness cho LLM worker | Accepted (ADR-116: là một loại worker plugin, không phải đường duy nhất) | Spike S1: tỉ lệ tool-call hợp lệ < 80% với mọi model local |
+| ADR-003 | Ollama / llama.cpp cho LLM local | Accepted (ADR-116: mọi server OpenAI-compatible và API đều gắn được) | — |
 | ADR-004 | ComfyUI cho image; adapter riêng cho 3D/audio/motion | Accepted | — |
 | ADR-005 | SQLite + LangGraph checkpointer + Git + artifact registry | Accepted (làm rõ ở ADR-104, ADR-105) | > 1 máy chạy worker |
 | ADR-006 | Python + FastAPI backend; Tauri + React + TS desktop (Phase 4) | Accepted | — |
@@ -108,6 +108,32 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Engine chọn lúc tạo project (`shams init --engine`), hoặc đổi trước khi có plan (`shams plan --engine`, UI chọn engine, hoặc nhận diện từ câu chat: "UE5", "Godot", "Three.js/WebGPU"…). **Không đổi engine sau khi đã có plan** (artifact đã sinh không chuyển engine được); muốn đổi thì tạo project mới.
 - Asset chung (texture, audio, mesh glTF) dùng chung contract; chỉ script/scene/test/build là riêng theo engine.
 **Hệ quả:** Worker code cần capability theo ngôn ngữ (C#, C++, GDScript, TS); Benchmark Lab đo riêng từng capability. Unity vẫn là engine mặc định. Template cũ `unity_3d_vertical_slice` giữ làm alias.
+
+### ADR-116 — Lõi mở: mọi model local, mọi API, engine/template/checker tùy biến (plugin)
+**Vấn đề:** SHAMS sẽ được phát hành cho người khác dùng như một hệ thống sản xuất chung (tương tự Claude Code), không gắn với một game, một model hay một nhà cung cấp. Bản 1a chỉ có Mock Worker; worker thật báo "chưa hỗ trợ".
+**Quyết định:**
+- **Provider** = một giao diện `chat(messages, model)` cho mọi backend. Có sẵn:
+  - `openai_compatible` (mọi server nói OpenAI Chat Completions);
+  - preset `ollama` (có load/unload qua `keep_alive`), `llamacpp`, `lmstudio`, `vllm`, `localai`;
+  - preset API `openai`, `openrouter`, `groq`, `deepseek`, `mistral`, `together`, `xai`, `gemini`;
+  - `anthropic` và `command` (chương trình local bất kỳ).
+- **Worker** dùng provider:
+  - `LLMWorker` sinh output dạng text (code, scene, config) từ reply JSON;
+  - `CommandWorker` gọi chương trình bất kỳ (sinh ảnh/3D/âm thanh, Blender, CLI engine): chương trình đọc `$SHAMS_CONTEXT` và tự ghi output;
+  - worker riêng của người dùng khai báo qua `impl = "package.module:Class"`.
+  - Mọi worker trả cùng một handoff, nên QC, repair loop, event log, crash/resume không đổi.
+- **Cấu hình** `nodes.toml` (trong project hoặc `~/.shams/`) khai báo node, lane và worker ở dạng ngắn (`id, provider, model, node, lane, capabilities, vram_mb, config`). **Khóa API không bao giờ ghi vào file**: `api_key_env` chỉ là tên biến môi trường. Server local (localhost) được gọi trực tiếp, bỏ qua proxy.
+- **Model Lifecycle** có adapter `mock` / `none` / `provider` (gọi `load`/`unload` của provider nếu có, ví dụ Ollama). Plugin có thể thêm adapter.
+- **Engine tùy biến**: file `engines/<name>.toml` (trong project hoặc `~/.shams/`) hoặc entry point `shams.engines`. Profile khai báo luôn lệnh compile/test/build/capture (`[engine.commands]`). Template trung lập engine tự áp dụng cho engine mới.
+- **Template tùy biến**: thư mục `templates/` trong project hoặc `~/.shams/`, hoặc entry point `shams.templates`, hoặc đường dẫn `.json`.
+- **Checker thật**: `register_checker(kind, fn)` hoặc entry point `shams.checkers`. Kind nào chưa có checker thì vẫn là `NOT_VERIFIED` (ADR-010), không bao giờ tự PASS.
+- **Plugin** dùng Python entry points (`shams.providers`, `shams.workers`, `shams.engines`, `shams.checkers`, `shams.templates`): cài một gói `pip install shams-plugin-x` là đủ, không sửa mã SHAMS.
+- **Artifact** định danh bằng (hash nội dung, logical_id). Hai output trùng nội dung vẫn là hai artifact; blob dùng chung.
+**Hệ quả:**
+- Mock vẫn là chế độ mặc định khi chưa có model.
+- Deep Agents (ADR-002) trở thành một loại worker plugin cho tác vụ cần tool-call nhiều bước, không còn là đường duy nhất.
+- Chất lượng mỗi worker vẫn đo bằng Benchmark Lab.
+- Project tạo trước thay đổi khóa artifact cần tạo lại (Phase 1a, chưa có dữ liệu thật).
 
 ## Phần C — Còn mở (quyết định bằng spike)
 

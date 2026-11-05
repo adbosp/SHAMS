@@ -18,6 +18,29 @@ class Checker(Protocol):
     def __call__(self, kind: str, criterion: dict, contents: list[str]) -> tuple[str, str]: ...
 
 
+_CHECKERS: dict[str, Checker] = {}
+
+
+def register_checker(kind: str, fn: Checker) -> None:
+    """Plug a real checker for one criterion kind (compile, unit_test, metric, ...) — ADR-116.
+
+    A checker receives (kind, criterion, output_contents) and returns (verdict, detail) with verdict
+    PASS | FAIL | NOT_VERIFIED. Kinds without a checker end as NOT_VERIFIED (ADR-010)."""
+    if kind not in STAGE:
+        raise ValueError(f"unknown criterion kind {kind!r}; one of {sorted(STAGE)}")
+    _CHECKERS[kind] = fn
+
+
+def registered_checkers() -> dict[str, Checker]:
+    from studio import plugins
+    out = {}
+    for name, ep in plugins.entry_points("shams.checkers").items():
+        if name in STAGE:
+            out[name] = ep.load()
+    out.update(_CHECKERS)
+    return out
+
+
 def gate_for(task: dict) -> str:
     cap = task["capability"]
     if cap.startswith("build."):

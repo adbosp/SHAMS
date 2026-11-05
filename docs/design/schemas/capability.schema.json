@@ -51,7 +51,7 @@
         },
         "load_adapter": {
           "type": "string",
-          "description": "ollama | llamacpp | comfyui | process | mock | none"
+          "description": "Tên adapter nạp/giải phóng model: mock | none | ollama | provider | tên plugin"
         },
         "vram_mb_est": {
           "type": "integer",
@@ -173,6 +173,11 @@
           "$ref": "common.schema.json#/$defs/timestamp"
         }
       }
+    },
+    "provider_config": {
+      "type": "object",
+      "description": "Cấu hình riêng của provider/worker (ADR-116): base_url, api_key_env (TÊN biến môi trường, không ghi khóa), argv, impl ('package.module:Class'), system_prompt, chat_options, timeout...",
+      "additionalProperties": true
     }
   },
   "examples": [

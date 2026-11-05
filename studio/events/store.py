@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS tasks(task_id TEXT PRIMARY KEY, project_id TEXT, plan
 CREATE TABLE IF NOT EXISTS task_deps(task_id TEXT, depends_on_task_id TEXT, PRIMARY KEY(task_id, depends_on_task_id));
 CREATE TABLE IF NOT EXISTS artifacts(sha256 TEXT, project_id TEXT, logical_id TEXT, version INTEGER, state TEXT,
   media_type TEXT, contract TEXT, storage TEXT, store_path TEXT, produced_task_id TEXT, produced_attempt INTEGER,
-  artifact_json TEXT, created_at TEXT, PRIMARY KEY(sha256, project_id));
+  artifact_json TEXT, created_at TEXT, PRIMARY KEY(sha256, project_id, logical_id));
 CREATE TABLE IF NOT EXISTS handoffs(task_id TEXT, attempt INTEGER, status TEXT, handoff_json TEXT, ts TEXT,
   PRIMARY KEY(task_id, attempt));
 CREATE TABLE IF NOT EXISTS handoff_inputs(task_id TEXT, attempt INTEGER, sha256 TEXT);
