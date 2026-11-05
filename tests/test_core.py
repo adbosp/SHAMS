@@ -72,10 +72,11 @@ def test_missing_capability_blocks_then_unblocks(tmp_path):
 
 
 def _two_model_dag(n=4):
+    # priorities interleave the two model families: code0=50, img0=49, code1=48, img1=47, ...
     tasks = []
     for i in range(n):
-        tasks.append(task_dict(f"task.code{i}", "code.unity_csharp"))
-        tasks.append(task_dict(f"task.img{i}", "image.texture",
+        tasks.append(task_dict(f"task.code{i}", "code.unity_csharp", prio=50 - 2 * i))
+        tasks.append(task_dict(f"task.img{i}", "image.texture", prio=49 - 2 * i,
                                outputs=[{"name": f"img{i}", "logical_id": f"out.img{i}", "media_type": "image/png"}]))
     return dag(tasks)
 
@@ -88,12 +89,11 @@ def test_affinity_scheduling_minimises_model_loads(tmp_path, affinity, max_loads
         Studio.init_project(d, PID, "g", mode="autonomous", mock_mode=True)
         st = Studio(d, scheduler_config=SchedulerConfig(affinity_bonus=aff, switch_cost_divisor=1e9))
         st.load_plan(_two_model_dag())
-        # equal priority, interleaved READY set: without affinity, ties alternate by task_id order
         st.run()
         assert st.status()["done"]
         loads[aff] = st.status()["model_loads"]
     assert loads[affinity] <= max_loads
-    assert loads[affinity] < loads[0.0]
+    assert loads[0.0] == 8          # pure priority order alternates models on every task
 
 
 def test_mock_registry_has_cpu_controller_and_virtual_gpu():

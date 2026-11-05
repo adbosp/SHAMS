@@ -95,7 +95,8 @@ class Scheduler:
     def score(self, task: dict, worker: Worker, lane: Lane, ready: list[dict]) -> float:
         now = self.clock()
         row = self.db.task_row(task["task_id"])
-        wait_min = (now - (_parse(row["ready_since"]) or now)).total_seconds() / 60
+        # whole minutes only: sub-minute timing jitter must not reorder tasks (deterministic scheduling)
+        wait_min = max(0, int((now - (_parse(row["ready_since"]) or now)).total_seconds() // 60))
         s = float(task.get("priority", 50)) + min(wait_min, self.cfg.max_wait_bonus_minutes)
         s += min(self.cfg.critical_path_max_bonus, 3.0 * self._descendants(task["task_id"]))
         s += 10.0 * (worker.quality(task["capability"]) - 0.5)
