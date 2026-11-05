@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from shams import __version__, contracts, hardware, packs, providers
 from shams import settings as settings_mod
 from shams.mcp import MCPManager
+from shams.events.store import StoreClosed
 from shams.mock.worker import MockWorker
 from shams.orchestration.project import Shams as Studio
 from shams.statemachine import S
@@ -140,6 +141,7 @@ class StudioService:
                 first = Path(projects[0]["dir"])
         self.mock_delay, self.template = mock_delay, template
         self.lock = threading.RLock()
+        self._open_lock = threading.Lock()
         self.running = False
         self._stop = False
         self._thread: threading.Thread | None = None
@@ -169,6 +171,12 @@ class StudioService:
     def open(self, project_dir: Path, resume: bool = False) -> None:
         """Open a project. An unfinished project is NOT resumed on its own (opening the app must not spend
         model time on an old project); the user presses "Tiếp tục chạy" (POST /api/run) or passes resume."""
+        with self._open_lock:                   # one switch at a time; repeated clicks must not pile up
+            if self.studio is not None and self.dir == Path(project_dir) and not resume:
+                return                          # already open
+            self._open(project_dir, resume)
+
+    def _open(self, project_dir: Path, resume: bool) -> None:
         self.stop()
         with self.lock:
             if self.studio:
@@ -336,6 +344,16 @@ class StudioService:
                 for p in sorted(packs.all_packs(), key=lambda p: (p.name != packs.DEFAULT_DOMAIN, p.name))]
 
     def state(self) -> dict:
+        """UI state. A project switch can close the open project mid-read; that is retried, never fatal."""
+        for _ in range(20):
+            try:
+                return self._state()
+            except StoreClosed:
+                time.sleep(0.1)
+        return {"app": "SHAMS", "version": __version__, "connected": True, "switching": True,
+                "running": self.running, "projects": self.projects()}
+
+    def _state(self) -> dict:
         hw = self.hardware_view()
         base = {"app": "SHAMS", "version": __version__, "packs": self._packs(), "connected": True,
                 "workspace": str(self.workspace), "projects": self.projects(), "hardware": hw, "vram": hw["vram"],

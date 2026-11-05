@@ -357,3 +357,54 @@ def test_app_does_not_resume_an_unfinished_project_on_open(tmp_path, monkeypatch
     assert svc.dir == proj and started == []
     svc.open(proj, resume=True)
     assert started == [proj]
+
+
+def test_store_close_is_safe_while_other_threads_read(tmp_path):
+    from shams.events.store import EventStore, StoreClosed
+    db = EventStore(tmp_path / "s.sqlite", "p")
+    assert db.q("SELECT 1")[0][0] == 1
+    db.close()
+    db.close()                                   # idempotent
+    with pytest.raises(StoreClosed):
+        db.q("SELECT 1")
+
+
+def test_app_survives_concurrent_project_switches(tmp_path):
+    """Several clicks on the project list while the UI polls state(): no crash, no closed-database error."""
+    import threading
+    from apps.api.server import StudioService
+    from shams.orchestration.project import Shams
+    ws = tmp_path / "ws"
+    for name in ("a1", "b2"):
+        Shams.init_project(ws / name, name, "CLI Python", mode="autonomous", mock_mode=True)
+        st = Shams(ws / name)
+        st.plan_from_template(goal="CLI Python", approved_by="t")
+        st.close()
+    svc = StudioService(ws)
+    errors, stop = [], threading.Event()
+
+    def poll():
+        while not stop.is_set():
+            try:
+                svc.state()
+            except Exception as e:  # noqa: BLE001
+                errors.append(repr(e))
+
+    def switch(i):
+        try:
+            for k in range(6):
+                svc.open(ws / ("a1" if (i + k) % 2 else "b2"))
+        except Exception as e:  # noqa: BLE001
+            errors.append(repr(e))
+
+    pollers = [threading.Thread(target=poll) for _ in range(3)]
+    switchers = [threading.Thread(target=switch, args=(i,)) for i in range(4)]
+    for t in pollers + switchers:
+        t.start()
+    for t in switchers:
+        t.join(60)
+    stop.set()
+    for t in pollers:
+        t.join(10)
+    assert errors == []
+    assert svc.state()["project"]["id"] in ("a1", "b2")
