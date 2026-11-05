@@ -7,7 +7,7 @@
   shams engines [--dir <dir>]             # Game Pack engines (built-in + engines/*.toml)
   shams providers                         # model providers you can use in nodes.toml
   shams nodes <dir> [--check]             # nodes, lanes, workers from nodes.toml; --check pings providers
-  shams run <dir> [--defect task_id:criterion_id[:fail_attempts]]...
+  shams run <dir> [--defect task_id:criterion_id[:fail_attempts]]...   # exit 0 done, 1 waiting/blocked, 2 error
   shams status <dir> [--json]
   shams review <dir>                      # list tasks waiting for a human
   shams decide <dir> <task_id> accept|retry|fail|cancel|unblock [--note ...]
@@ -56,7 +56,9 @@ def _print_status(s: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from shams import __version__
     p = argparse.ArgumentParser(prog="shams", description="SHAMS controller CLI")
+    p.add_argument("--version", action="version", version=f"shams {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("init"); a.add_argument("dir"); a.add_argument("--project-id", required=True)
     a.add_argument("--goal", required=True); a.add_argument("--mode", choices=MODES, default="guided")
@@ -181,7 +183,14 @@ def main(argv: list[str] | None = None) -> int:
             if missing:
                 print("Capabilities with no worker (tasks will be BLOCKED): " + ", ".join(missing))
         elif args.cmd == "run":
-            _print_status(st.run(args.max_steps))
+            if not st.db.tasks():
+                print("error: no plan loaded; run `shams plan <dir> --approve <name>` first", file=sys.stderr)
+                return 2
+            s = st.run(args.max_steps)
+            _print_status(s)
+            if not s["done"]:
+                print("Not finished: see `shams review` for tasks waiting on a human.", file=sys.stderr)
+                return 1
         elif args.cmd == "status":
             s = st.status()
             print(json.dumps(s, ensure_ascii=False, indent=2)) if args.json else _print_status(s)

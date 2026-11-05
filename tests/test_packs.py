@@ -145,3 +145,46 @@ def test_custom_pack_registered_in_code(tmp_path):
         assert st.run()["counts"] == {"ACCEPTED": 1}
     finally:
         packs._REGISTERED.pop("notes", None)
+
+
+# ---------------------------------------------------------------- CLI robustness (found on the PC smoke run)
+def test_failed_init_leaves_nothing_behind(tmp_path):
+    from apps.cli.main import main
+    d = tmp_path / "p"
+    assert main(["init", str(d), "--project-id", "g", "--goal", "CLI Python", "--mock"]) == 2
+    assert not d.exists()
+    d.mkdir(); (d / "keep.txt").write_text("x")
+    assert main(["init", str(d), "--project-id", "g", "--goal", "CLI Python", "--mock"]) == 2
+    assert sorted(p.name for p in d.iterdir()) == ["keep.txt"]
+
+
+def test_init_refuses_existing_project(tmp_path):
+    from apps.cli.main import main
+    d = str(tmp_path / "p")
+    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock"]) == 0
+    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock"]) == 2
+
+
+def test_run_exit_codes(tmp_path):
+    from apps.cli.main import main
+    d = str(tmp_path / "p")
+    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "autonomous"]) == 0
+    assert main(["run", d]) == 2                       # no plan yet
+    assert main(["plan", d]) == 0
+    assert main(["run", d, "--defect", "task.core_module:" + _first_criterion(d, "task.core_module") + ":9"]) == 1
+    assert main(["decide", d, "task.core_module", "accept"]) == 0
+    assert main(["run", d]) == 0
+
+
+def _first_criterion(d, task_id):
+    from shams.orchestration.project import Shams
+    st = Shams(d)
+    try:
+        return st.db.task(task_id)["acceptance_criteria"][0]["id"]
+    finally:
+        st.close()
+
+
+def test_version():
+    import shams
+    assert shams.__version__.startswith("2.")

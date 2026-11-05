@@ -7,6 +7,7 @@ The core knows no product domain: everything domain-specific comes from the Doma
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from collections import Counter
 from pathlib import Path
@@ -101,27 +102,44 @@ class Shams:
                      engine: dict | str | None = None) -> Path:
         """Create a project. `domain` defaults to the pack that best matches the goal, else software.
         `engine=` is a Game Pack shortcut (domain="game", domain_config={"engine": engine})."""
+        # Validate everything before touching the disk, so a failed init leaves nothing behind.
         if mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
+        contracts.check_id(project_id, "project id")
         d = Path(project_dir)
-        d.mkdir(parents=True, exist_ok=True)
+        if (d / "project.json").exists():
+            raise ValueError(f"{d} already contains a project (project.json); choose an empty folder")
         dcfg = dict(domain_config or {})
         if engine is not None:
             domain = domain or "game"
             dcfg.setdefault("engine", engine)
         pack = packs.get(domain or packs.detect_domain(goal) or packs.DEFAULT_DOMAIN)
-        pack.activate(d)
-        dcfg = pack.normalize_config(dcfg, d)
+        pack.load_plugins(d if d.exists() else None)
+        dcfg = pack.normalize_config(dcfg, d if d.exists() else None)
         cfg = {"project_id": project_id, "goal": goal, "mode": mode, "mock_mode": mock_mode,
                "domain": pack.name, "domain_config": dcfg, "created_at": contracts.now_iso()}
-        (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-        db = EventStore(_db_path(d), project_id)
-        with db.tx() as c:
-            c.execute("INSERT OR REPLACE INTO projects VALUES (?,?,?,?,?,?)",
-                      (project_id, goal, mode, pack.name, json.dumps(dcfg, ensure_ascii=False), cfg["created_at"]))
-            db.append("project.created", "project", project_id, "human",
-                      payload={"mode": mode, "mock": mock_mode, "domain": pack.name})
-        db.close()
+        existed = d.exists()
+        before = set(d.iterdir()) if existed else set()
+        d.mkdir(parents=True, exist_ok=True)
+        pack.activate(d)
+        try:
+            db = EventStore(_db_path(d), project_id)
+            try:
+                with db.tx() as c:
+                    c.execute("INSERT OR REPLACE INTO projects VALUES (?,?,?,?,?,?)",
+                              (project_id, goal, mode, pack.name, json.dumps(dcfg, ensure_ascii=False),
+                               cfg["created_at"]))
+                    db.append("project.created", "project", project_id, "human",
+                              payload={"mode": mode, "mock": mock_mode, "domain": pack.name})
+            finally:
+                db.close()
+            (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            for f in set(d.iterdir()) - before:      # remove only what this call created
+                shutil.rmtree(f) if f.is_dir() else f.unlink()
+            if not existed:
+                d.rmdir()
+            raise
         return d
 
     @property

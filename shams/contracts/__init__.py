@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -48,6 +49,15 @@ def validate(name: str, obj: Any) -> Any:
     if errs:
         raise ContractError(name, errs)
     return obj
+
+
+def check_id(value: str, what: str = "id") -> str:
+    """Raise ValueError unless `value` matches common.schema.json#/$defs/id (e.g. a project id)."""
+    pattern = _registry()[1]["common"]["$defs"]["id"]["pattern"]
+    if not isinstance(value, str) or not re.fullmatch(pattern, value):
+        raise ValueError(f"invalid {what} {value!r}: use 2-128 characters, start with a lowercase letter, "
+                         f"then lowercase letters, digits, '_', '.' or '-' (pattern {pattern})")
+    return value
 
 
 def sha256_bytes(data: bytes) -> str:

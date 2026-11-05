@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from shams import contracts, packs
+from shams import __version__, contracts, packs
 from shams.mock.worker import MockWorker
 from shams.orchestration.project import Shams as Studio
 from shams.statemachine import S
@@ -241,7 +241,7 @@ class StudioService:
 
 def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
-    app = FastAPI(title="SHAMS", version="0.1.0")
+    app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
 
     @app.get("/")
