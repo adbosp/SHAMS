@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "project_id": "shark_mvp",
+  "task_id": "task.shark_movement",
+  "attempt": 0,
+  "producer": {
+    "worker_id": "worker.code_local",
+    "kind": "llm_agent",
+    "provider": "ollama",
+    "model": "<model-from-spike-S1>",
+    "model_version": "<digest>",
+    "node_id": "node.gpu_box"
+  },
+  "consumers": [
+    "task.prey_eat",
+    "task.integration_slice1"
+  ],
+  "status": "READY_FOR_QC",
+  "inputs": [
+    {
+      "logical_id": "unity.project_scaffold",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  ],
+  "outputs": [
+    {
+      "logical_id": "code.shark_controller",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "path": "Assets/Scripts/Shark/SharkController.cs",
+      "media_type": "text/x-csharp"
+    },
+    {
+      "logical_id": "test.shark_movement",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "path": "Assets/Tests/Shark/SharkMovementTests.cs",
+      "media_type": "text/x-csharp"
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Dùng Rigidbody + AddForce thay vì Transform.Translate",
+      "reason": "Va chạm với cá mồi cần physics"
+    }
+  ],
+  "known_issues": [
+    {
+      "issue": "Chưa có giới hạn độ sâu tối đa",
+      "severity": "low"
+    }
+  ],
+  "self_checks": [
+    {
+      "name": "unity_compile",
+      "result": "pass"
+    }
+  ],
+  "logs": [],
+  "next_actions": [
+    "task.prey_eat dùng SharkController.Mouth (Transform) làm điểm ăn"
+  ],
+  "context_summary": "SharkController.cs: Rigidbody-based, public float swimSpeed, turnSpeed; Transform Mouth cho va chạm ăn. Tests: 3 PlayMode test di chuyển.",
+  "usage": {
+    "tokens_in": 18000,
+    "tokens_out": 3500,
+    "wall_seconds": 240,
+    "peak_vram_mb": 9800
+  },
+  "git": {
+    "branch": "task/shark_movement/a0",
+    "commit": "abc1234"
+  },
+  "timestamp": "2026-11-05T06:00:00Z"
+}

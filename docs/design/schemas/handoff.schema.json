@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/handoff.schema.json",
+  "title": "Handoff",
+  "description": "Bàn giao bắt buộc sau mỗi attempt, persist trước khi nhả GPU. Không chấp nhận 'Done' bằng lời.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "task_id",
+    "attempt",
+    "producer",
+    "status",
+    "inputs",
+    "outputs",
+    "context_summary",
+    "timestamp"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "project_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "task_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "producer": {
+      "$ref": "common.schema.json#/$defs/worker_ref"
+    },
+    "consumers": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      },
+      "description": "task_id các task downstream"
+    },
+    "status": {
+      "enum": [
+        "READY_FOR_QC",
+        "PARTIAL",
+        "BLOCKED",
+        "FAILED"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      },
+      "description": "Đúng hash đã dùng, phục vụ invalidation (ADR-110)"
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "known_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issue",
+          "severity"
+        ],
+        "properties": {
+          "issue": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          }
+        }
+      }
+    },
+    "self_checks": {
+      "type": "array",
+      "description": "Kiểm tra worker tự chạy; chỉ tham khảo, KHÔNG thay QC (ADR-011)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "result"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "fail",
+              "skipped"
+            ]
+          },
+          "log_ref": {
+            "$ref": "common.schema.json#/$defs/artifact_ref"
+          }
+        }
+      }
+    },
+    "logs": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/artifact_ref"
+      }
+    },
+    "blocked_reason": {
+      "type": "string"
+    },
+    "next_actions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context_summary": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "Tóm tắt cho worker sau; giới hạn để Context Compiler kiểm soát token"
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "tokens_in": {
+          "type": "integer"
+        },
+        "tokens_out": {
+          "type": "integer"
+        },
+        "wall_seconds": {
+          "type": "number"
+        },
+        "peak_vram_mb": {
+          "type": "integer"
+        },
+        "cost_usd": {
+          "type": "number"
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        }
+      }
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "BLOCKED"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "blocked_reason"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "READY_FOR_QC"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outputs": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

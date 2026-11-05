@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/node.schema.json",
+  "title": "Compute Node",
+  "description": "Máy hoặc dịch vụ cung cấp tài nguyên cho worker (ADR-114). Controller không phụ thuộc phần cứng cụ thể.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "node_id",
+    "kind"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "node_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "kind": {
+      "enum": [
+        "local",
+        "remote",
+        "external"
+      ]
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "URL cho node remote/external; rỗng với local"
+    },
+    "os": {
+      "enum": [
+        "windows",
+        "linux",
+        "macos",
+        "unknown"
+      ]
+    },
+    "cpu_slots": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2
+    },
+    "ram_mb": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "gpus": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "index",
+          "vram_mb"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "vram_mb": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "vendor": {
+            "enum": [
+              "nvidia",
+              "amd",
+              "intel",
+              "apple",
+              "other"
+            ]
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "ollama, llamacpp, comfyui, unity_cli, blender, external:<name>"
+    },
+    "engines": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "unity:<version>, unreal:<version>, blender:<version>"
+    },
+    "profile": {
+      "type": "string",
+      "description": "Hồ sơ tham chiếu để lấy mặc định, ví dụ profile.rtx3060_12gb, profile.cpu_only"
+    },
+    "budget_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "rate_limit_per_min": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "artifact_transfer": {
+      "enum": [
+        "shared_fs",
+        "http"
+      ],
+      "default": "http"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "degraded",
+            "down"
+          ]
+        },
+        "checked_at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shams.local/schemas/v1/capability.schema.json",
+  "title": "Capability Registry entry",
+  "description": "Một worker/model/tool khả dụng và năng lực đã đo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "worker",
+    "capabilities",
+    "runtime",
+    "policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/schema_version"
+    },
+    "worker": {
+      "$ref": "common.schema.json#/$defs/worker_ref"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/capability"
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "lane",
+        "load_adapter"
+      ],
+      "properties": {
+        "node_id": {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        "lane": {
+          "enum": [
+            "gpu",
+            "cpu",
+            "external"
+          ]
+        },
+        "gpu_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "load_adapter": {
+          "type": "string",
+          "description": "ollama | llamacpp | comfyui | process | mock | none"
+        },
+        "vram_mb_est": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ram_mb_est": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "load_seconds_p50": {
+          "type": "number"
+        },
+        "unload_seconds_p50": {
+          "type": "number"
+        },
+        "context_tokens": {
+          "type": "integer"
+        },
+        "supports_tool_calls": {
+          "type": "boolean"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "description": "capability -> {acceptance_rate, n, last_benchmark}",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "acceptance_rate",
+          "n"
+        ],
+        "properties": {
+          "acceptance_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "n": {
+            "type": "integer"
+          },
+          "last_benchmark": {
+            "$ref": "common.schema.json#/$defs/timestamp"
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "usd_per_1k_tokens_in": {
+          "type": "number"
+        },
+        "usd_per_1k_tokens_out": {
+          "type": "number"
+        },
+        "usd_per_call": {
+          "type": "number"
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "default": false
+        },
+        "privacy": {
+          "enum": [
+            "local",
+            "external_ok",
+            "external_forbidden"
+          ]
+        },
+        "license": {
+          "type": "string"
+        },
+        "commercial_use": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "degraded",
+            "down"
+          ]
+        },
+        "checked_at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "v1_capability_names": [
+        "plan",
+        "architect",
+        "code.unity_csharp",
+        "code.unreal_cpp",
+        "debug_analysis",
+        "integration",
+        "semantic_review",
+        "visual_review",
+        "image.generate",
+        "image.ui_asset",
+        "image.texture",
+        "mesh.image_to_3d",
+        "mesh.text_to_3d",
+        "mesh.process",
+        "rig",
+        "animation.generate",
+        "animation.retarget",
+        "audio.sfx",
+        "audio.music",
+        "audio.voice",
+        "build.unity",
+        "build.unreal",
+        "test.unity",
+        "test.unreal",
+        "scene.capture",
+        "validate.schema",
+        "validate.mesh",
+        "vcs.git"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "project_id": "shark_mvp",
+  "task_id": "task.shark_movement",
+  "title": "Điều khiển cá mập bơi 3D",
+  "description": "Script SharkController: bơi theo input WASD/chuột, quay mượt, giới hạn trong vùng nước.",
+  "capability": "code.unity_csharp",
+  "state": "READY",
+  "depends_on": ["task.project_scaffold"],
+  "inputs": [{"name": "scaffold", "from_task": "task.project_scaffold", "logical_id": "unity.project_scaffold"}],
+  "outputs": [{"name": "controller", "logical_id": "code.shark_controller", "media_type": "text/x-csharp", "contract": "unity.csharp_script"}],
+  "acceptance_criteria": [
+    {"id": "ac.compiles", "description": "Project compile không lỗi", "kind": "compile"},
+    {"id": "ac.movement_tests", "description": "EditMode/PlayMode test di chuyển pass", "kind": "unit_test", "check": {"test_filter": "SharkMovementTests"}},
+    {"id": "ac.swim_screenshot", "description": "Chạy scene, có screenshot cá mập ở 2 vị trí khác nhau", "kind": "screenshot", "required": false}
+  ],
+  "budget": {"max_wall_seconds": 1200, "max_tokens": 60000},
+  "priority": 70,
+  "max_attempts": 3,
+  "workspace_scope": ["Assets/Scripts/Shark/**", "Assets/Tests/Shark/**"],
+  "created_by": "template"
+}

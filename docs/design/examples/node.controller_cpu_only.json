@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "node_id": "node.controller",
+  "kind": "local",
+  "os": "windows",
+  "cpu_slots": 3,
+  "ram_mb": 16384,
+  "gpus": [],
+  "providers": [
+    "unity_cli",
+    "blender"
+  ],
+  "engines": [
+    "unity:6000.0"
+  ],
+  "profile": "profile.cpu_only",
+  "artifact_transfer": "shared_fs",
+  "enabled": true
+}

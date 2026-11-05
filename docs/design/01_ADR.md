@@ -1,0 +1,107 @@
+# SHAMS — Architecture Decision Records (ADR)
+
+**SHAMS = Sequential Heterogeneous AI Manufacturing System**
+Phiên bản thiết kế: `v1.1-design` · Ngày: 2026-11-05
+Nguồn gốc: `AI_Game_Studio_Chat_Export/` (v1-proposal). File này giữ nguyên định hướng V1, chỉ ghi lại quyết định và các tối ưu bổ sung.
+
+Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc · **Accepted (v1.1)** = tối ưu mới trong bản thiết kế này, không đổi định hướng · **Open** = chờ spike/benchmark.
+
+---
+
+## Phần A — Quyết định gốc (giữ nguyên)
+
+| ID | Quyết định | Trạng thái | Điều kiện xem xét lại |
+|---|---|---|---|
+| ADR-001 | LangGraph làm nền orchestration (graph cố định trong code, task list động trong DB) | Accepted | Spike S1 cho thấy không đáp ứng resume/interrupt |
+| ADR-002 | Deep Agents làm harness cho LLM worker | Accepted | Spike S1: tỉ lệ tool-call hợp lệ < 80% với mọi model local |
+| ADR-003 | Ollama / llama.cpp cho LLM local | Accepted | — |
+| ADR-004 | ComfyUI cho image; adapter riêng cho 3D/audio/motion | Accepted | — |
+| ADR-005 | SQLite + LangGraph checkpointer + Git + artifact registry | Accepted (làm rõ ở ADR-104, ADR-105) | > 1 máy chạy worker |
+| ADR-006 | Python + FastAPI backend; Tauri + React + TS desktop (Phase 4) | Accepted | — |
+| ADR-007 | Unity trước, Unreal sau qua engine adapter | Accepted | — |
+| ADR-008 | Local-first; external API là fallback có budget và cần bật | Accepted (mở rộng ở ADR-114: "local" = node do người dùng sở hữu, không nhất thiết cùng máy controller) | — |
+| ADR-009 | Pin version LangGraph/Deep Agents, bọc adapter, chỉ fork khi không có extension API | Accepted | — |
+| ADR-010 | Không có bằng chứng thì không PASS; thiếu tool thì `NOT_VERIFIED` | Accepted | — |
+| ADR-011 | Worker không tự QC; chỉ QC được đặt `ACCEPTED` | Accepted | — |
+| ADR-012 | Human approval cho hành động phá hủy, tốn phí, ra ngoài, không đảo ngược | Accepted | — |
+| ADR-013 | CCGS chỉ dùng làm tham khảo quy trình/role/QA | Accepted | — |
+
+## Phần B — Tối ưu v1.1 (không đổi định hướng)
+
+### ADR-101 — Một state machine duy nhất cho Task và Artifact
+**Vấn đề:** Tài liệu gốc dùng cả `QC_PENDING` (JSON) và `READY_FOR_QC` (mục Handoff); thiếu trạng thái chờ dependency, `STALE`, và thất bại cuối.
+**Quyết định:** `QC_PENDING` là **trạng thái task**; `READY_FOR_QC` là **giá trị `status` trong handoff** (lời khai của worker). Thêm `PENDING`, `LEASED`, `STALE`, `FAILED`. Chi tiết: `02_State_Machine.md`.
+
+### ADR-102 — Hai tầng điều phối: Scheduler thuần Python + LangGraph "Task Runner Graph"
+**Vấn đề:** Một graph LangGraph khổng lồ chứa cả DAG động thì khó resume, khó debug, khó chạy song song CPU/GPU.
+**Quyết định:**
+- **Studio Scheduler** (Python deterministic, không LLM): đọc task DB, chọn task READY, cấp lease tài nguyên, khởi chạy run.
+- **Task Runner Graph** (LangGraph, graph cố định): vòng đời một task `prepare_context → acquire → load_model → execute → persist_handoff → release → qc → route`. Mỗi task attempt = một `thread_id` LangGraph riêng.
+- **Planning Graph** và **Repair Graph** là graph LangGraph riêng, cũng được scheduler gọi như task.
+**Lợi ích:** đúng nguyên tắc "graph cố định, task list động"; crash một task không làm hỏng các task khác; LangGraph vẫn lo checkpoint/interrupt/resume.
+
+### ADR-103 — Model-affinity scheduling thay cho keep-warm thụ động
+**Vấn đề:** Keep-warm chỉ có lợi nếu task kế tiếp *tình cờ* cùng model.
+**Quyết định:** Scheduler chủ động ưu tiên task READY dùng **model đang nạp**, có chống đói (tuổi chờ tối đa, số task liên tiếp tối đa). Chi phí chuyển model lấy từ số đo thực tế (Spike S3). Chi tiết: `04_Scheduling_and_Policies.md §1`.
+
+### ADR-104 — Event log là nguồn sự thật; bảng task là projection
+**Vấn đề:** SQLite task DB, LangGraph checkpoint, Git cùng giữ trạng thái → nguy cơ lệch nhau sau crash.
+**Quyết định:**
+- `events` (append-only, SQLite, transaction) là **nguồn sự thật duy nhất** cho trạng thái task/artifact.
+- Bảng `tasks`, `artifacts` là projection cập nhật trong **cùng transaction** với event.
+- LangGraph checkpoint chỉ giữ **tiến độ bên trong một attempt** (đang ở node nào). Khi lệch, event log thắng.
+- Một tiến trình duy nhất ghi DB (scheduler/API process); worker trả kết quả qua scheduler.
+
+### ADR-105 — Artifact store content-addressed; Git chỉ cho text/code
+**Vấn đề:** Đưa mesh/texture/audio vào Git làm repo phình và chậm.
+**Quyết định:** Mọi artifact lưu tại `artifacts/sha256/<ab>/<hash>` (bất biến) + bản ghi trong `artifacts` table. Workspace dự án game (Unity project) là Git repo cho code/scene/prefab/meta; asset nhị phân lớn được **import từ artifact store** vào workspace và theo dõi bằng Git LFS hoặc `.gitignore` + manifest hash. Mỗi task attempt thay đổi code chạy trên **Git branch/worktree riêng**; merge khi `ACCEPTED`.
+
+### ADR-106 — QC theo bậc rẻ trước, đắt sau, dừng sớm
+**Quyết định:** Mỗi gate chạy theo thứ tự: (1) schema/hash/file tồn tại → (2) compiler/validator → (3) test tự động → (4) chạy scene + screenshot/log → (5) review bằng model (semantic/visual). Bậc nào FAIL thì dừng, không nạp model review. Model review chỉ chạy khi acceptance criteria có loại `semantic` hoặc `visual`.
+
+### ADR-107 — Phân loại lỗi deterministic trước, Analysis LLM sau
+**Vấn đề:** Gọi Analysis Agent cho mọi FAIL tốn một lần đổi model GPU.
+**Quyết định:** `FailureClassifier` dùng quy tắc (regex lỗi compiler Unity, test name, validator code) để gán `failure_class` và route thẳng tới worker sửa. Chỉ khi `failure_class = unknown` hoặc lặp lại ≥ 2 lần với cùng chữ ký lỗi mới gọi Analysis Agent.
+
+### ADR-108 — Planner dùng DAG template + LLM điền tham số
+**Quyết định:** Có thư viện DAG template theo loại sản phẩm (V1: `unity_3d_vertical_slice`). Planner LLM chọn template và điền/khai triển task; validator kiểm tra chu trình, contract, capability. Yêu cầu không khớp template → Planner tự do tạo DAG, bắt buộc qua validator và (tùy chế độ) human approval.
+
+### ADR-109 — Engine/editor là tài nguyên GPU cần lease
+**Quyết định:** Unity/Blender/UE khi chạy chế độ có đồ họa (play mode, screenshot, render) được coi là **consumer GPU** và phải lấy lease như model. Unity `-batchmode -nographics` (compile, EditMode test, build) chạy làn CPU, song song được với inference.
+
+### ADR-110 — Dependency invalidation theo hash, revalidate trước rồi mới rework
+**Quyết định:** Mỗi handoff ghi hash của input đã dùng. Khi artifact upstream được chấp nhận với hash mới, mọi task downstream `ACCEPTED` dùng hash cũ → `STALE`. Task `STALE` đi **QC lại trước**; chỉ khi QC FAIL mới tạo repair task. Tránh làm lại hàng loạt.
+
+### ADR-111 — Side-effect ledger cho idempotency
+**Quyết định:** Mọi side effect ngoài workspace (API trả phí, publish, push) có `idempotency_key = hash(task_id, attempt, action, input_hashes)` ghi vào `side_effects` table **trước** khi gọi và cập nhật kết quả sau. Khi resume, key đã `COMPLETED` thì không gọi lại.
+
+### ADR-112 — Human Review có từ Phase 1 qua CLI/API
+**Quyết định:** Trước Tauri UI (Phase 4), approval và human review đi qua FastAPI endpoint + CLI `shams review`. LangGraph `interrupt()` dùng để dừng chờ duyệt.
+
+### ADR-113 — Chế độ vận hành
+**Quyết định:** 3 chế độ: `collaborative` (duyệt kế hoạch và mọi gate quan trọng), `guided` (duyệt kế hoạch + hành động rủi ro), `autonomous` (chỉ duyệt hành động thuộc ADR-012). Mặc định `guided`.
+
+### ADR-114 — Controller độc lập phần cứng; model chạy trên Compute Node (thay giả định RTX 3060)
+**Vấn đề:** Bản v1-proposal gắn toàn bộ hệ thống với một máy (Win11, RTX 3060 12 GB). Nhưng SHAMS về bản chất là **bộ điều khiển**; model AI là phần gắn vào sau.
+**Quyết định:**
+- **Studio Controller** (Scheduler, Event Store, Artifact Registry, QC logic, API/CLI/UI) chỉ cần CPU, chạy được trên **PC bất kỳ** (Windows/Linux/macOS, không cần GPU). Yêu cầu tối thiểu tham khảo: 4 nhân, 8 GB RAM, Python 3.11+.
+- Mọi thứ cần tài nguyên đặc biệt nằm sau abstraction **Compute Node**: một node khai báo tài nguyên của nó (số GPU, VRAM mỗi GPU, CPU slots, engine cài sẵn) và các provider nó phục vụ. Node có thể là:
+  - `local` — chính máy controller (có GPU hoặc không);
+  - `remote` — máy khác trong mạng LAN chạy Ollama/llama.cpp/ComfyUI/Unity, nối qua HTTP (và Node Agent nhỏ ở Phase 2+);
+  - `external` — API bên thứ ba (không có VRAM, chỉ có budget/rate limit).
+- Scheduler không còn "1 GPU lane cố định": **mỗi GPU trên mỗi node là một lane**; mỗi node có lane CPU riêng. Affinity (ADR-103) tính theo **(node, gpu, model)**.
+- Capability Registry ghi `node_id` cho mỗi worker; router chọn worker theo capability, rồi theo node còn rảnh.
+- RTX 3060 12 GB chỉ còn là **hồ sơ tham chiếu** (`profile.rtx3060_12gb`) để đặt mặc định và benchmark, không phải yêu cầu.
+- Hệ thống phải chạy được end-to-end **khi chưa gắn model nào**: chế độ `mock` dùng worker giả (trả artifact mẫu + handoff hợp lệ) để kiểm thử orchestrator, state machine, QC, repair, crash/resume.
+**Hệ quả:** ADR-109 áp dụng theo node (engine có đồ họa lấy lease GPU *trên node đó*). Spike S1/S3 chuyển thành việc của lúc gắn model đầu tiên, không chặn việc xây controller.
+
+## Phần C — Còn mở (quyết định bằng spike)
+
+| ID | Câu hỏi | Quyết định bằng |
+|---|---|---|
+| OPEN-1 | Model code/reasoning mặc định cho từng hồ sơ phần cứng (bắt đầu từ hồ sơ của node đầu tiên được gắn) | Spike S1 + benchmark B-set |
+| OPEN-2 | Ngưỡng affinity và chi phí chuyển model | Spike S3 |
+| OPEN-3 | Image-to-3D local hay API | Spike Phase 3 |
+| OPEN-4 | Sandbox trên Windows (Windows Sandbox / WSL2 / container / chỉ path allowlist) | Trước khi phân phối; V1 dùng path allowlist + Git worktree |
+| OPEN-5 | Microsoft Agent Framework thay LangGraph? | Không xét trong V1 trừ khi ADR-001 bị bác bởi Spike S1 |
+| OPEN-6 | Tracing local (LangSmith self-host / Langfuse / OpenTelemetry file) | Phase 1; mặc định ghi event log + OpenTelemetry JSON file |
