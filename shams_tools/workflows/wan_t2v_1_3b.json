@@ -1,0 +1,24 @@
+{
+  "description": "Wan 2.1 text-to-video 1.3B (ComfyUI API format, native nodes). Needs the diffusion model (models/diffusion_models), the Wan VAE (models/vae) and the umt5 text encoder (models/text_encoders); preflight reports any missing file. Output: animated WebP.",
+  "defaults": {"unet": "wan2.1_t2v_1.3B_fp16.safetensors", "vae": "wan_2.1_vae.safetensors",
+               "text_encoder": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "prompt": "",
+               "negative": "blurry, low quality, static, distorted", "width": 832, "height": 480, "length": 33,
+               "fps": 16, "steps": 30, "cfg": 6.0, "shift": 8.0, "seed": -1, "sampler": "uni_pc",
+               "scheduler": "simple", "prefix": "shams_video"},
+  "graph": {
+    "37": {"class_type": "UNETLoader", "inputs": {"unet_name": "{{unet}}", "weight_dtype": "default"}},
+    "38": {"class_type": "CLIPLoader", "inputs": {"clip_name": "{{text_encoder}}", "type": "wan", "device": "default"}},
+    "39": {"class_type": "VAELoader", "inputs": {"vae_name": "{{vae}}"}},
+    "48": {"class_type": "ModelSamplingSD3", "inputs": {"shift": "{{shift}}", "model": ["37", 0]}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{prompt}}", "clip": ["38", 0]}},
+    "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{negative}}", "clip": ["38", 0]}},
+    "40": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {"width": "{{width}}", "height": "{{height}}",
+           "length": "{{length}}", "batch_size": 1}},
+    "3": {"class_type": "KSampler", "inputs": {"seed": "{{seed}}", "steps": "{{steps}}", "cfg": "{{cfg}}",
+          "sampler_name": "{{sampler}}", "scheduler": "{{scheduler}}", "denoise": 1.0,
+          "model": ["48", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["40", 0]}},
+    "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["39", 0]}},
+    "28": {"class_type": "SaveAnimatedWEBP", "inputs": {"filename_prefix": "{{prefix}}", "fps": "{{fps}}",
+           "lossless": false, "quality": 85, "method": "default", "images": ["8", 0]}}
+  }
+}

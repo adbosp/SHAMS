@@ -77,6 +77,30 @@ def _get(url: str, headers: dict[str, str], timeout: float) -> int:
         raise ProviderError(f"cannot reach {url}: {e.reason}") from None
 
 
+def _stream_lines(url: str, body: dict, headers: dict[str, str], timeout: float, cancel: Any = None):
+    """POST and yield response lines as they arrive (NDJSON or SSE). Closing early stops generation on the
+    server; ``cancel`` is anything with ``is_set()`` (threading.Event) checked between lines."""
+    data = json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST",
+                                 headers={"Content-Type": "application/json", **headers})
+    try:
+        r = _open(req, timeout)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:500]
+        raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
+    except (urllib.error.URLError, OSError) as e:
+        raise ProviderError(f"cannot reach {url}: {getattr(e, 'reason', e)}") from None
+    try:
+        for raw in r:
+            if cancel is not None and cancel.is_set():
+                return
+            line = raw.decode("utf-8", "replace").strip()
+            if line:
+                yield line
+    finally:
+        r.close()
+
+
 class _HTTPProvider:
     name = "http"
     default_base_url = ""
@@ -168,6 +192,55 @@ class OpenAICompatible(_HTTPProvider):
     def tool_results(results: list[tuple[dict, str]]) -> list[dict]:
         return [{"role": "tool", "tool_call_id": call["id"], "content": text} for call, text in results]
 
+    stream_tool_results = tool_results
+
+    # Streaming (desktop client, ADR-122) ----------------------------------------------------
+    def chat_stream(self, messages: list[dict], *, model: str, tools: list[dict] | None = None, cancel: Any = None,
+                    **opts: Any):
+        """Yield {"type": "text"|"tool_calls"|"done", ...} from an SSE Chat Completions stream."""
+        body = {"model": model, "messages": messages, **self.options, **opts, "stream": True}
+        if tools:
+            body["tools"] = tool_specs(tools)
+        calls: dict[int, dict] = {}
+        text, tin, tout = "", 0, 0
+        for line in _stream_lines(f"{self.base_url}/chat/completions", body, self._headers(), self.timeout, cancel):
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                chunk = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            u = chunk.get("usage") or {}
+            tin, tout = int(u.get("prompt_tokens", tin) or tin), int(u.get("completion_tokens", tout) or tout)
+            for ch in chunk.get("choices") or []:
+                d = ch.get("delta") or {}
+                if d.get("content"):
+                    text += d["content"]
+                    yield {"type": "text", "text": d["content"]}
+                for tc in d.get("tool_calls") or []:
+                    slot = calls.setdefault(int(tc.get("index", len(calls))), {"id": "", "name": "", "args": ""})
+                    fn = tc.get("function") or {}
+                    slot["id"] = tc.get("id") or slot["id"]
+                    slot["name"] += fn.get("name") or ""
+                    slot["args"] += fn.get("arguments") or ""
+        if calls:
+            out, raw = [], []
+            for i in sorted(calls):
+                c = calls[i]
+                try:
+                    args = json.loads(c["args"] or "{}")
+                except json.JSONDecodeError:
+                    args = {"_raw": c["args"]}
+                cid = c["id"] or f"call_{i}"
+                out.append({"id": cid, "name": c["name"], "arguments": args})
+                raw.append({"id": cid, "type": "function", "function": {"name": c["name"], "arguments": c["args"] or "{}"}})
+            yield {"type": "tool_calls", "calls": out,
+                   "assistant": {"role": "assistant", "content": text, "tool_calls": raw}}
+        yield {"type": "done", "tokens_in": tin, "tokens_out": tout}
+
 
 def _get_json(url: str, headers: dict[str, str], timeout: float) -> dict:
     req = urllib.request.Request(url, headers=headers)
@@ -228,6 +301,68 @@ class Ollama(OpenAICompatible):
         return {"text": msg.get("content") or "", "thinking": msg.get("thinking") or "",
                 "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0)),
                 "load_seconds": round(r.get("load_duration", 0) / 1e9, 3)}
+
+    def chat_stream(self, messages: list[dict], *, model: str, tools: list[dict] | None = None, cancel: Any = None,
+                    images: list[str] | None = None, think: Any = "default", **opts: Any):
+        """Native streaming /api/chat. Yields {"type": "text"|"thinking", "text"}, {"type": "tool_calls",
+        "calls", "assistant"} and finally {"type": "done", tokens_in, tokens_out, load_seconds}."""
+        msgs = [dict(m) for m in messages]
+        if images:
+            for m in reversed(msgs):
+                if m["role"] == "user":
+                    m["images"] = list(images)
+                    break
+        options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
+        if self.num_ctx and "num_ctx" not in options:
+            options["num_ctx"] = self.num_ctx
+        body: dict[str, Any] = {"model": model, "messages": msgs, "stream": True, "keep_alive": self.keep_alive,
+                                "options": options}
+        think = self.think if think == "default" else think
+        if think is not None:
+            body["think"] = think
+        if tools:
+            body["tools"] = tool_specs(tools)
+        text, calls, last = "", [], {}
+        for line in _stream_lines(f"{self.root}/api/chat", body, self.extra_headers, self.timeout, cancel):
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "error" in chunk:
+                raise ProviderError(f"ollama: {chunk['error']}")
+            m = chunk.get("message") or {}
+            if m.get("thinking"):
+                yield {"type": "thinking", "text": m["thinking"]}
+            if m.get("content"):
+                text += m["content"]
+                yield {"type": "text", "text": m["content"]}
+            for c in m.get("tool_calls") or []:
+                fn = c.get("function") or {}
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {"_raw": args}
+                calls.append({"id": c.get("id") or f"call_{len(calls)}", "name": fn.get("name"), "arguments": args or {}})
+            if chunk.get("done"):
+                last = chunk
+        if calls:
+            yield {"type": "tool_calls", "calls": calls,
+                   "assistant": {"role": "assistant", "content": text,
+                                 "tool_calls": [{"function": {"name": c["name"], "arguments": c["arguments"]}}
+                                                for c in calls]}}
+        yield {"type": "done", "tokens_in": int(last.get("prompt_eval_count", 0)),
+               "tokens_out": int(last.get("eval_count", 0)), "load_seconds": round(last.get("load_duration", 0) / 1e9, 3)}
+
+    @staticmethod
+    def stream_tool_results(results: list[tuple[dict, str]]) -> list[dict]:
+        """Tool results for the conversation continued with ``chat_stream`` (native /api/chat format)."""
+        return [{"role": "tool", "tool_name": call["name"], "content": text} for call, text in results]
+
+    def load_with(self, model: str, keep_alive: Any) -> None:
+        """Load (or keep) a model with an explicit keep_alive (Model Manager)."""
+        _post_json(f"{self.root}/api/generate", {"model": model, "keep_alive": keep_alive}, self.extra_headers, self.timeout)
 
     def embed(self, texts: list[str], *, model: str) -> list[list[float]]:
         r = _post_json(f"{self.root}/api/embed", {"model": model, "input": list(texts), "keep_alive": self.keep_alive},
@@ -430,6 +565,32 @@ def create(type_: str, config: dict | None = None) -> Any:
     if ":" in type_:
         return plugins.load_object(type_)(**cfg)
     raise KeyError(f"unknown provider {type_!r}; choose one of {available()} or use 'package.module:Class'")
+
+
+def tool_specs(tools: list[dict]) -> list[dict]:
+    """SHAMS/MCP tool descriptors ({name, description, input_schema}) -> OpenAI/Ollama function specs."""
+    return [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+                                               "parameters": t.get("input_schema") or {"type": "object", "properties": {}}}}
+            for t in tools]
+
+
+def stream_chat(provider: Any, messages: list[dict], *, model: str, tools: list[dict] | None = None,
+                cancel: Any = None, **opts: Any):
+    """Stream from any provider: native ``chat_stream`` when it has one, else one non-streamed turn."""
+    if hasattr(provider, "chat_stream"):
+        yield from provider.chat_stream(messages, model=model, tools=tools, cancel=cancel, **opts)
+        return
+    if tools and getattr(provider, "supports_tools", False):
+        r = provider.chat_tools(messages, model=model, tools=tools)
+        if r.get("text"):
+            yield {"type": "text", "text": r["text"]}
+        if r.get("tool_calls"):
+            yield {"type": "tool_calls", "calls": r["tool_calls"], "assistant": r["assistant"]}
+    else:
+        r = provider.chat(messages, model=model, **opts)
+        if r.get("text"):
+            yield {"type": "text", "text": r["text"]}
+    yield {"type": "done", "tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0)}
 
 
 def timed_chat(provider: Any, messages: list[dict], model: str, **opts: Any) -> dict:

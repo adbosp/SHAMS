@@ -303,7 +303,7 @@ class ComfyUIImageWorker:
                 return [], base_handoff(ctx, worker_ref, "BLOCKED", "content policy",
                                         blocked_reason=f"policy: {e}"[:500])
         params.pop("_adult_confirmed", None)
-        imgs = [o for o in plan if o["media_type"] in ("image/png", "image/jpeg")]
+        imgs = [o for o in plan if o["media_type"] in ("image/png", "image/jpeg", "image/webp")]
         if not imgs:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", "no image output declared",
                                     blocked_reason="comfyui worker only writes image/png outputs")

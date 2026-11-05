@@ -16,6 +16,7 @@
   shams ui [workspace|project] [--port 8765] [--no-browser]   # the app at http://127.0.0.1:8765
   shams hardware [--json]                 # real GPUs / VRAM / RAM / CPU
   shams settings [<dir>] [--json]         # merged settings (user + project + local), validation
+  shams desktop-backend [<dir>] [--port N]   # local API for the desktop client (Tauri)
   shams mcp [<dir>] [--name <server>]     # connect to MCP servers, list tools and permissions
 """
 from __future__ import annotations
@@ -91,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--no-browser", action="store_true", help="do not open the browser")
     a.add_argument("--host", default="127.0.0.1"); a.add_argument("--port", type=int, default=8765)
     a.add_argument("--mock-delay", type=float, default=0.8, help="seconds of simulated work per mock task")
+    a = sub.add_parser("desktop-backend", help="run the local API for the SHAMS desktop client (no browser)")
+    a.add_argument("dir", nargs="?", help="workspace folder (default: $SHAMS_WORKSPACE or ~/SHAMS)")
+    a.add_argument("--host", default="127.0.0.1"); a.add_argument("--port", type=int, default=8765)
+    a.add_argument("--mock-delay", type=float, default=0.8)
     a = sub.add_parser("hardware", help="GPUs / VRAM / RAM / CPU of this PC"); a.add_argument("--json", action="store_true")
     a = sub.add_parser("settings", help="show merged settings (user + project) and check them")
     a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
@@ -209,6 +214,14 @@ def main(argv: list[str] | None = None) -> int:
         target = args.dir or os.environ.get("SHAMS_WORKSPACE") or str(Path.home() / "SHAMS")
         print("Ctrl+C to stop")
         serve(target, args.host, args.port, args.mock_delay, open_browser=False if args.no_browser else None)
+        return 0
+    if args.cmd == "desktop-backend":
+        import os
+        from apps.api.server import serve
+        target = args.dir or os.environ.get("SHAMS_WORKSPACE") or str(Path.home() / "SHAMS")
+        # the desktop shell passes a random token; the API then refuses requests without it (ADR-122)
+        serve(target, args.host, args.port, args.mock_delay, open_browser=False,
+              token=os.environ.get("SHAMS_DESKTOP_TOKEN") or None, ready_line=True)
         return 0
     if args.cmd == "hardware":
         from shams import hardware

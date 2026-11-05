@@ -10,6 +10,7 @@ import json
 import re
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -21,6 +22,7 @@ from shams import settings as settings_mod
 from shams.mcp import MCPManager
 from shams.mock.worker import MockWorker
 from shams.orchestration.project import Shams as Studio
+from shams.scheduling.gate import GPU_GATE
 from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
@@ -241,7 +243,12 @@ class StudioService:
     def _loop(self) -> None:
         try:
             while not self._stop:
-                with self.lock:
+                st = self.studio
+                if st is None:
+                    break
+                # mock projects use no GPU; real ones share the GPU with chats and Direct Mode (ADR-122)
+                gate = nullcontext() if st.mock_mode else GPU_GATE.hold(f"autonomous:{st.db.project_id}", kind="workflow")
+                with gate, self.lock:
                     if self.studio is None:
                         break
                     progressed = self.studio.step()
@@ -545,13 +552,14 @@ class DirectService:
         return {"presets": out, "confirm_text": policy.CONFIRM_TEXT,
                 "allow_adult_content": bool(s["general"].get("allow_adult_content", False))}
 
-    def run(self, body: DirectIn) -> dict:
+    def queue(self, body: DirectIn) -> str:
+        """Validate and queue one Direct Mode task; returns its id (``execute`` runs it)."""
         from shams import policy
         st = self._open()
         with self.lock:
             try:
                 st.settings = settings_mod.load(self.dir)          # pick up presets added since the app started
-                tid = st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult)
+                return st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult)
             except policy.PolicyError as e:
                 raise HTTPException(403, str(e))
             except KeyError as e:
@@ -559,10 +567,17 @@ class DirectService:
             except (ValueError, PermissionError, RuntimeError) as e:
                 raise HTTPException(400, str(e))
 
-        def go():
+    def execute(self, tid: str) -> dict:
+        """Run a queued task to its final state, holding the process-wide GPU gate (ADR-122)."""
+        st = self._open()
+        t = st.db.task(tid)
+        with GPU_GATE.hold(f"direct:{tid}", model=t.get("preset"), kind="direct"):
             with self.lock:
-                st.run_task(tid)
-        t = threading.Thread(target=go, daemon=True)
+                return st.run_task(tid)
+
+    def run(self, body: DirectIn) -> dict:
+        tid = self.queue(body)
+        t = threading.Thread(target=self.execute, args=(tid,), daemon=True)
         self.threads[tid] = t
         t.start()
         return self.task(tid)
@@ -608,7 +623,7 @@ class DirectService:
         return FileResponse(st.artifacts.blob_path(sha), media_type=row[0])
 
 
-def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
+def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | None = None) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
     app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
@@ -716,17 +731,28 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     def direct_artifact(sha: str):
         return direct.artifact(sha)
 
+    from apps.api.desktop.routes import install       # desktop client API (ADR-122)
+    install(app, svc, direct, token)
     return app
 
 
 def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: float = 0.8,
-          open_browser: bool | None = None) -> None:
+          open_browser: bool | None = None, token: str | None = None, ready_line: bool = False) -> None:
     import uvicorn
-    app = create_app(path, mock_delay)
+    app = create_app(path, mock_delay, token=token)
     if open_browser is None:
         open_browser = bool(settings_mod.load(None)["general"].get("open_browser", True))
     if open_browser:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
-    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace})")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    app.state.server = server                       # /api/desktop/shutdown stops it gracefully
+    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace})", flush=True)
+    if ready_line:
+        print(json.dumps({"shams_backend": "starting", "port": port, "pid": __import__("os").getpid()}), flush=True)
+    try:
+        server.run()
+    finally:
+        app.state.svc.stop()
+        app.state.desktop.store.close()

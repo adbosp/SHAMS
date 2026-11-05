@@ -1,0 +1,30 @@
+{
+  "_comment": "Known SHAMS model inventory (data, not orchestration logic). The Model Manager matches each entry against what is really installed — Ollama tags or ComfyUI model files — and never treats an entry as installed because it is listed here. 'suggest' is the preset the user can register with one click; nothing is downloaded.",
+  "models": [
+    {"id": "qwen3.5-9b", "label": "Qwen3.5 9B", "backend": "ollama", "match": ["qwen3.5:9b"], "kind": "chat",
+     "use": "planner / reasoning / chat"},
+    {"id": "qwen3.5-9b-heretic-q4", "label": "Qwen3.5-9B Heretic Q4", "backend": "ollama",
+     "match": ["hf.co/darrellbest/Qwen3.5-9B-Heretic-GGUF:Q4_K_M", "qwen3.5-9b-heretic"], "kind": "chat",
+     "use": "direct chat only", "specialty": true},
+    {"id": "qwen2.5-coder-14b", "label": "Qwen2.5-Coder 14B", "backend": "ollama", "match": ["qwen2.5-coder:14b"],
+     "kind": "chat", "use": "coding agent"},
+    {"id": "qwen3.5-4b-coder-q8", "label": "Qwen3.5-4B-Coder Q8", "backend": "ollama",
+     "match": ["hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0", "qwen3.5-4b-coder:Q8"], "kind": "chat", "use": "3D scene JSON / code"},
+    {"id": "qwen3-vl-4b", "label": "Qwen3-VL 4B", "backend": "ollama", "match": ["qwen3-vl:4b"], "kind": "chat",
+     "use": "vision / visual QC"},
+    {"id": "sdxl-lightning", "label": "SDXL-Lightning", "backend": "comfyui", "files": ["*sdxl*lightning*"],
+     "folders": ["checkpoints", "loras", "diffusion_models"], "kind": "image", "workflow": "sdxl_lightning_4step"},
+    {"id": "z-image-turbo", "label": "Z-Image-Turbo", "backend": "comfyui", "files": ["*z_image*turbo*", "*z-image*turbo*"],
+     "folders": ["diffusion_models", "checkpoints"], "kind": "image", "workflow": "z_image_turbo"},
+    {"id": "moss-image", "label": "MOSS-Image", "backend": "comfyui", "files": ["*moss_image*"],
+     "folders": ["diffusion_models", "checkpoints"], "kind": "image", "workflow": "moss_image"},
+    {"id": "moss-image-nsfw-lora", "label": "MOSS-Image + LoRA (18+)", "backend": "comfyui", "files": ["*moss*nsfw*", "*nsfw*moss*"],
+     "folders": ["loras"], "kind": "image", "workflow": "moss_image_lora", "specialty": true, "adult": true},
+    {"id": "noobai-xl-1.1", "label": "NoobAI-XL 1.1", "backend": "comfyui", "files": ["*noobai*xl*1.1*", "*noobai*xl*v1.1*", "*noobai*"],
+     "folders": ["checkpoints"], "kind": "image", "workflow": "sdxl_checkpoint", "specialty": true},
+    {"id": "wan-1.3b", "label": "Wan 1.3B (custom video checkpoint)", "backend": "comfyui", "files": ["*wan*1.3b*"],
+     "folders": ["diffusion_models", "checkpoints"], "kind": "video", "workflow": "wan_t2v_1_3b",
+     "requires": [{"folder": "vae", "files": ["*wan*vae*"]}, {"folder": "text_encoders", "files": ["*umt5*"]}]},
+    {"id": "stable-fast-3d", "label": "Stable Fast 3D", "backend": "stable_fast_3d", "kind": "image_to_3d"}
+  ]
+}

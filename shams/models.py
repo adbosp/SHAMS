@@ -354,12 +354,23 @@ SCENE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["p
     "prompt": {"type": "string", "minLength": 1, "maxLength": 8000},
     "builder": {"type": "string", "pattern": "^[a-z0-9_]{1,32}$",
                 "description": "auto (default), or a builder offered by the scene worker"}}}
+VIDEO_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["prompt"], "properties": {
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "negative": {"type": "string", "maxLength": 4000},
+    "width": {"type": "integer", "minimum": 256, "maximum": 1280, "multipleOf": 16},
+    "height": {"type": "integer", "minimum": 256, "maximum": 1280, "multipleOf": 16},
+    "length": {"type": "integer", "minimum": 1, "maximum": 161, "description": "frames"},
+    "fps": {"type": "integer", "minimum": 1, "maximum": 60},
+    "steps": {"type": "integer", "minimum": 1, "maximum": 100},
+    "cfg": {"type": "number", "minimum": 0, "maximum": 30},
+    "seed": {"type": "integer", "minimum": -1}}}
 KIND_IO = {
     "chat": (CHAT_SCHEMA, [{"name": "response", "media_type": "text/markdown"}]),
     "image": (IMAGE_SCHEMA, [{"name": "image", "media_type": "image/png"}]),
     "scene3d": (SCENE_SCHEMA, [{"name": "scene", "media_type": "model/gltf-binary"},
                                {"name": "render", "media_type": "image/png"},
                                {"name": "scene_report", "media_type": "application/json"}]),
+    "video": (VIDEO_SCHEMA, [{"name": "video", "media_type": "image/webp"}]),     # animated WebP
 }
 ROLE_PRESET_KIND = {"planner": "chat", "coder": "chat", "visual_qc": "chat", "scene3d": "scene3d", "image": "image"}
 DIRECT_PREFIX = "worker.direct."
@@ -416,7 +427,9 @@ def _make_preset(self, pid: str, pc: dict, b: RoleBinding, allow_adult: bool) ->
     modes = list(pc.get("execution_modes") or ["direct"])
     auto_default = bool(pc.get("autonomous_default", False)) and not policy.get("adult")
     status = b.status
-    if b.ok and policy.get("adult") and not allow_adult:
+    if pc.get("enabled") is False:
+        status = "disabled"                # switched off in the Model Manager (kept in the registry)
+    elif b.ok and policy.get("adult") and not allow_adult:
         status = "disabled_adult"          # opt-in: general.allow_adult_content
     p = {"id": pid, "label": pc.get("label") or pid, "description": pc.get("description", ""), "kind": kind,
          "provider": b.backend or pc.get("provider"), "wanted": b.wanted, "model": b.model_id, "status": status,
