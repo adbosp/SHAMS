@@ -28,6 +28,7 @@ include = ["studio*", "apps*"]
 [tool.setuptools.package-data]
 "studio.contracts" = ["schemas/*.json"]
 "studio.templates" = ["*.json"]
+"studio.examples" = ["*.toml"]
 "apps.ui" = ["index.html"]
 
 [tool.pytest.ini_options]

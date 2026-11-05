@@ -18,10 +18,10 @@ from studio.events.store import EventStore
 from studio.mock.worker import MockWorker, mock_check
 from studio.nodes.registry import Lane, NodeRegistry, Worker, mock_registry
 from studio.planning.validator import validate_dag
-from studio.scheduling.lifecycle import MockAdapter, ModelLifecycle
+from studio.scheduling.lifecycle import MockAdapter, ModelLifecycle, NullAdapter, ProviderAdapter
 from studio.scheduling.scheduler import Scheduler, SchedulerConfig
 from studio.statemachine import S
-from studio.verification.qc import QCRunner
+from studio.verification.qc import QCRunner, registered_checkers
 from studio.verification.repair import AnalysisAgent, FailureClassifier, RepairPolicy, RepairRouter
 from studio.orchestration import task_runner
 
@@ -44,13 +44,19 @@ class Studio:
         self.impact = ImpactAnalyzer(self.db, self.artifacts)
         caps = {t["capability"] for t in self.db.tasks()}
         self.mock_mode = cfg.get("mock_mode", False)
-        self.nodes = nodes or (mock_registry(caps) if self.mock_mode else NodeRegistry())
+        from studio import engines
+        engines.load_plugins(self.dir)
+        self.nodes = nodes or (mock_registry(caps) if self.mock_mode else self._load_nodes())
         self.mock = mock or MockWorker(self.dir / "attempts")
+        self._impls: dict[str, object] = {}
         self.scheduler = Scheduler(self.db, self.nodes, scheduler_config)
-        self.lifecycle = ModelLifecycle(self.db, {"mock": MockAdapter()}, self.nodes.workers)
+        provider_adapter = ProviderAdapter(self._provider_for)
+        self.lifecycle = ModelLifecycle(self.db, {"mock": MockAdapter(), "none": NullAdapter(),
+                                                  "provider": provider_adapter, "ollama": provider_adapter},
+                                        self.nodes.workers, fallback=provider_adapter)
         self.context = ContextCompiler(self.db, self.artifacts, cfg.get("goal", ""), cfg.get("engine"))
         if checkers is None:
-            checkers = {k: mock_check for k in MOCK_KINDS} if self.mock_mode else {}
+            checkers = {k: mock_check for k in MOCK_KINDS} if self.mock_mode else registered_checkers()
         self.qc = QCRunner(self.db, self.artifacts, checkers)
         self.classifier = FailureClassifier()
         self.repair = RepairRouter(self.db, self.nodes, analysis, repair_policy,
@@ -71,6 +77,9 @@ class Studio:
         d.mkdir(parents=True, exist_ok=True)
         cfg = {"project_id": project_id, "goal": goal, "mode": mode, "mock_mode": mock_mode,
                "engine": engine or {"name": "unity", "version": "6000.0"}, "created_at": contracts.now_iso()}
+        from studio import engines
+        prof = engines.get(cfg["engine"]["name"])
+        cfg["engine"] = {"name": prof.name, "version": cfg["engine"].get("version") or prof.default_version}
         (d / "project.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
         db = EventStore(d / "studio.sqlite", project_id)
         with db.tx() as c:
@@ -79,6 +88,20 @@ class Studio:
             db.append("project.created", "project", project_id, "human", payload={"mode": mode, "mock": mock_mode})
         db.close()
         return d
+
+    def set_engine(self, name: str) -> None:
+        """Switch the project's engine before a plan exists (ADR-115)."""
+        from studio import engines
+        if self.db.tasks():
+            raise ValueError("engine can only change before the first plan is loaded")
+        prof = engines.get(name)
+        self.project["engine"] = {"name": prof.name, "version": prof.default_version}
+        self.context.engine = self.project["engine"]
+        (self.dir / "project.json").write_text(json.dumps(self.project, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self.db.tx() as c:
+            c.execute("UPDATE projects SET engine=?, engine_version=? WHERE project_id=?",
+                      (prof.name, prof.default_version, self.db.project_id))
+            self.db.append("project.engine_set", "project", self.db.project_id, "human", payload={"engine": prof.name})
 
     def close(self) -> None:
         self.db.close()
@@ -122,14 +145,31 @@ class Studio:
     def lane(self, lane_id: str) -> Lane:
         return next(l for l in self.nodes.lanes() if l.lane_id == lane_id)
 
+    def _load_nodes(self) -> NodeRegistry:
+        """nodes.toml in the project, else $SHAMS_HOME/nodes.toml (ADR-114/116). Empty if neither exists."""
+        from studio.plugins import shams_home
+        for p in (self.dir / "nodes.toml", shams_home() / "nodes.toml"):
+            if p.exists():
+                return NodeRegistry.from_toml(p)
+        return NodeRegistry()
+
     def worker_impl(self, worker: Worker):
         if worker.entry["worker"]["kind"] == "mock":
             return self.mock
-        raise NotImplementedError(f"{worker.worker_id}: real workers arrive in Phase 1b (Deep Agents/Ollama)")
+        impl = self._impls.get(worker.worker_id)
+        if impl is None:
+            from studio import workers
+            impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path)
+            self._impls[worker.worker_id] = impl
+        return impl
+
+    def _provider_for(self, worker: Worker):
+        return getattr(self.worker_impl(worker), "provider", None)
 
     def tools_for(self, worker_id: str) -> list[str]:
         w = self.nodes.workers[worker_id]
-        return ["mock"] if w.entry["worker"]["kind"] == "mock" else []
+        kind = w.entry["worker"]["kind"]
+        return ["mock"] if kind == "mock" else [w.entry["worker"].get("provider") or kind]
 
     def release(self, lease_id: str, lane_id: str, worker_id: str) -> None:
         worker = self.nodes.workers[worker_id]
@@ -164,7 +204,7 @@ class Studio:
             self.db.save_qc(rep)
             with self.db.tx():
                 for o in handoff["outputs"]:
-                    self.artifacts.reject(o["sha256"])
+                    self.artifacts.reject(o["sha256"], o["logical_id"])
                 self.db.transition(task_id, S.REPAIR_REQUIRED, "qc.failed", "qc",
                                    {"failure_id": failure["failure_id"], "stage": rep.get("stopped_at_stage")})
             self.repair.route(failure)
@@ -191,7 +231,7 @@ class Studio:
                 if refresh_handoff:
                     self.db.save_handoff(handoff)   # record the new input hashes after revalidation
                 for o in handoff["outputs"]:
-                    superseded += self.artifacts.accept(o["sha256"])
+                    superseded += self.artifacts.accept(o["sha256"], o["logical_id"])
             self.db.transition(task_id, S.ACCEPTED, event, actor, payload)
         if superseded:
             self.impact.on_superseded(superseded)

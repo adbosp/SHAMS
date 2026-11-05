@@ -101,3 +101,18 @@ def test_mock_registry_has_cpu_controller_and_virtual_gpu():
     kinds = {l.lane_id: l.kind for l in reg.lanes()}
     assert kinds == {"cpu:node.controller": "cpu", "gpu:node.mock_gpu:0": "gpu"}
     assert reg.candidates("build.unity")[0].lane_kind == "cpu"
+
+
+def test_identical_content_for_two_outputs_keeps_both_artifacts(tmp_path):
+    from studio.artifacts.registry import ArtifactRegistry
+    from studio.events.store import EventStore
+    db = EventStore(tmp_path / "s.sqlite", "dup_test")
+    reg = ArtifactRegistry(db, tmp_path / "a")
+    f = tmp_path / "same.txt"
+    f.write_text("same bytes")
+    w = {"worker_id": "worker.x", "kind": "tool"}
+    a = reg.put(f, logical_id="out.a", media_type="text/plain", contract=None, task_id="task.t", attempt=0, worker=w)
+    b = reg.put(f, logical_id="out.b", media_type="text/plain", contract=None, task_id="task.t", attempt=0, worker=w)
+    assert (a["logical_id"], b["logical_id"]) == ("out.a", "out.b") and a["sha256"] == b["sha256"]
+    reg.accept(b["sha256"], "out.b")
+    assert reg.accepted("out.b") and reg.accepted("out.a") is None

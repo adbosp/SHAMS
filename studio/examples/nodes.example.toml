@@ -1,0 +1,86 @@
+# SHAMS nodes.toml — which machines exist and which AI models / tools each one serves (ADR-114, ADR-116).
+#
+# Put this file in the project folder as nodes.toml (or in ~/.shams/nodes.toml to share it).
+# Every model is optional: SHAMS routes each task to a worker that declares the task's capability.
+# API keys are NEVER written here: `api_key_env` names the environment variable that holds the key.
+#
+# Providers: ollama, llamacpp, lmstudio, vllm, localai, openai_compatible (any URL), openai, openrouter,
+# groq, deepseek, mistral, together, xai, gemini, anthropic, command, or "package.module:Class".
+# Run `shams providers` for the current list.
+
+# --------------------------------------------------------------------------- nodes
+[[node]]
+id = "node.local"                 # this PC
+kind = "local"
+cpu_slots = 2
+gpus = [{ index = 0, vram_mb = 12288 }]   # leave gpus = [] on a PC without GPU
+
+# [[node]]
+# id = "node.lan_gpu"             # another PC in the LAN running Ollama / ComfyUI
+# kind = "remote"
+# endpoint = "http://192.168.1.50"
+# gpus = [{ index = 0, vram_mb = 24576 }]
+
+[[node]]
+id = "node.cloud"                 # remote APIs: no VRAM, limited by rate and budget (ADR-008)
+kind = "external"
+rate_limit_per_min = 30
+budget_usd = 5.0
+
+# --------------------------------------------------------------------------- workers
+# Short form. Keys: id, provider, model, node, lane (gpu | cpu | external), capabilities,
+# vram_mb, privacy (local | external_ok), requires_approval, [worker.config] (provider settings).
+
+[[worker]]
+id = "worker.coder_local"
+provider = "ollama"
+model = "qwen2.5-coder:14b"
+node = "node.local"
+lane = "gpu"
+vram_mb = 10000
+capabilities = ["code.unity_csharp", "code.godot_gdscript", "code.web_typescript", "code.unreal_cpp", "integration"]
+config = { base_url = "http://127.0.0.1:11434", keep_alive = "30m" }
+
+[[worker]]
+id = "worker.reasoner_api"
+provider = "anthropic"            # or openai, openrouter, gemini, deepseek, ...
+model = "claude-sonnet-5-5"
+node = "node.cloud"
+lane = "external"
+privacy = "external_ok"
+requires_approval = false
+capabilities = ["plan", "architect", "debug_analysis", "semantic_review"]
+config = { api_key_env = "ANTHROPIC_API_KEY" }
+
+# Any OpenAI-compatible server: llama.cpp, LM Studio, vLLM, LocalAI, a company gateway...
+# [[worker]]
+# id = "worker.lmstudio"
+# provider = "openai_compatible"
+# model = "my-local-model"
+# node = "node.local"
+# lane = "gpu"
+# vram_mb = 8000
+# capabilities = ["code.web_typescript"]
+# config = { base_url = "http://127.0.0.1:1234/v1" }
+
+# Any local program (image / 3D / audio generator, Blender script, ComfyUI client...).
+# It reads $SHAMS_CONTEXT (JSON with an "outputs" list of absolute paths) and writes those files.
+# [[worker]]
+# id = "worker.texture_gen"
+# provider = "command"
+# node = "node.local"
+# lane = "gpu"
+# vram_mb = 6000
+# capabilities = ["image.texture", "image.ui_asset"]
+# config = { argv = ["python", "tools/gen_texture.py", "{context}"], timeout = 900 }
+
+# Your own Python worker class (gets entry, attempts_root, provider, read_blob; must have run(ctx, worker_ref)).
+# [[worker]]
+# id = "worker.custom"
+# provider = "openai"
+# model = "gpt-5"
+# node = "node.cloud"
+# lane = "external"
+# privacy = "external_ok"
+# capabilities = ["audio.sfx"]
+# config = { impl = "my_shams_plugins.audio:SfxWorker", api_key_env = "OPENAI_API_KEY" }

@@ -1,8 +1,8 @@
 """Plan Validator + DAG templates (ADR-108)."""
 from __future__ import annotations
 
-import copy
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,17 +72,59 @@ def validate_dag(dag: dict, nodes: NodeRegistry | None = None) -> list[Issue]:
     return issues
 
 
-def list_templates() -> list[str]:
-    return sorted(p.stem for p in TEMPLATE_DIR.glob("*.json"))
+TEMPLATE_ALIASES = {"unity_3d_vertical_slice": ("vertical_slice_3d", "unity")}
 
 
-def instantiate(template: str, project_id: str, goal: str, plan_id: str | None = None) -> dict:
-    raw = json.loads((TEMPLATE_DIR / f"{template}.json").read_text(encoding="utf-8"))
-    dag = copy.deepcopy(raw)
+def template_dirs(project_dir: Path | str | None = None) -> list[Path]:
+    """Project templates/ first, then $SHAMS_HOME/templates, then entry points, then built-ins (ADR-116)."""
+    from studio import plugins
+    dirs = plugins.search_dirs("templates", project_dir)
+    for ep in plugins.entry_points("shams.templates").values():
+        p = Path(str(ep.load()))
+        if p.is_dir():
+            dirs.append(p)
+    return dirs + [TEMPLATE_DIR]
+
+
+def list_templates(project_dir: Path | str | None = None) -> list[str]:
+    names = {p.stem for d in template_dirs(project_dir) for p in d.glob("*.json")}
+    return sorted(names) + sorted(TEMPLATE_ALIASES)
+
+
+def find_template(name: str, project_dir: Path | str | None = None) -> Path:
+    p = Path(name)
+    if p.suffix == ".json" and p.exists():
+        return p
+    for d in template_dirs(project_dir):
+        if (d / f"{name}.json").exists():
+            return d / f"{name}.json"
+    raise KeyError(f"template {name!r} not found; available: {list_templates(project_dir)}")
+
+
+def instantiate(template: str, project_id: str, goal: str, plan_id: str | None = None,
+                engine: str | None = None, project_dir: Path | str | None = None) -> dict:
+    """Instantiate an engine-neutral template for one engine profile (ADR-115).
+
+    `template` is a name from the search path or a path to a .json file."""
+    from studio import engines
+
+    if template in TEMPLATE_ALIASES:
+        template, default_engine = TEMPLATE_ALIASES[template]
+        engine = engine or default_engine
+    profile = engines.get(engine or "unity")
+    path = find_template(template, project_dir)
+    template = path.stem
+    text = path.read_text(encoding="utf-8")
+    tokens = profile.tokens()
+    missing = sorted(set(re.findall(r"\$\{(\w+)\}", text)) - set(tokens))
+    if missing:
+        raise KeyError(f"template {template} uses tokens the {profile.name} profile lacks: {missing}")
+    text = re.sub(r"\$\{(\w+)\}", lambda m: tokens[m.group(1)], text)
+    dag = json.loads(text)
     dag["project_id"] = project_id
     dag["plan_id"] = plan_id or f"plan.{project_id}"
-    dag["goal"] = goal or raw.get("goal", "")
-    dag["template"] = template
+    dag["goal"] = goal or dag.get("goal", "")
+    dag["template"] = f"{template}@{profile.name}"
     dag["created_at"] = contracts.now_iso()
     for t in dag["tasks"]:
         t["project_id"] = project_id

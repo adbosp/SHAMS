@@ -81,9 +81,13 @@ def build_graph(studio: "Studio", checkpointer):
             files, handoff = impl.run(s["context"], worker.ref)
         except Exception as e:  # worker crash is a task failure, not a controller crash
             return {"trace": ["execute"], "outcome": "crashed", "error": f"{type(e).__name__}: {e}"}
-        return {"trace": ["execute"], "files": files, "handoff": handoff,
-                "outcome": "blocked" if handoff["status"] == "BLOCKED"
-                else "worker_failed" if handoff["status"] == "FAILED" else "ok"}
+        out = {"trace": ["execute"], "files": files, "handoff": handoff,
+               "outcome": "blocked" if handoff["status"] == "BLOCKED"
+               else "worker_failed" if handoff["status"] == "FAILED" else "ok"}
+        if handoff["status"] == "FAILED":
+            out["error"] = handoff.get("blocked_reason") or "; ".join(
+                i["issue"] for i in handoff.get("known_issues", [])) or "worker reported FAILED"
+        return out
 
     def persist(s: RunState) -> dict:
         hook("persist")

@@ -15,7 +15,9 @@ from studio import contracts
 EXT = {"text/x-csharp": ".cs", "image/png": ".png", "model/gltf-binary": ".glb", "model/fbx": ".fbx",
        "audio/wav": ".wav", "application/json": ".json", "text/markdown": ".md",
        "application/vnd.unity.scene": ".unity", "application/vnd.unity.prefab": ".prefab",
-       "application/x-msdownload": ".exe"}
+       "application/x-msdownload": ".exe", "text/x-c++src": ".cpp", "text/x-gdscript": ".gd",
+       "text/typescript": ".ts", "application/vnd.godot.scene": ".tscn", "application/vnd.unreal.map": ".umap",
+       "application/zip": ".zip"}
 
 DEFECT_LOGS = {
     "compile": "Assets/Scripts/X.cs(42,13): error CS0103: The name 'swimSpeed' does not exist in the current context",

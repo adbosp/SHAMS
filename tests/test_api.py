@@ -44,3 +44,17 @@ def test_decide_rejects_invalid_task(tmp_path):
     c = TestClient(create_app(tmp_path / "p"))
     r = c.post("/api/decide", json={"task_id": "task.nope", "decision": "accept"})
     assert r.status_code == 400
+
+
+def test_chat_detects_engine_and_engine_endpoint(tmp_path):
+    c = TestClient(create_app(tmp_path / "p"))
+    s = c.get("/api/state").json()
+    assert {e["id"] for e in s["engines"]} == {"unity", "unreal", "godot", "web"}
+    assert c.post("/api/engine", json={"engine": "godot"}).json()["project"]["engine_id"] == "godot"
+    assert c.post("/api/engine", json={"engine": "nope"}).status_code == 400
+    s = c.post("/api/chat", json={"text": "Game cá mập trên trình duyệt bằng Three.js WebGPU"}).json()
+    assert s["project"]["engine_id"] == "web" and "Three.js" in s["chat"][1]["text"]
+    assert any(t["capability"] == "code.web_typescript" for t in s["tasks"])
+    s = _wait_idle(c)
+    assert s["progress"] == {"done": 11, "total": 11}
+    assert c.post("/api/engine", json={"engine": "unity"}).status_code == 400

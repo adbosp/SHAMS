@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from studio import contracts
+from studio import contracts, engines
 from studio.mock.worker import MockWorker
 from studio.orchestration.studio import Studio
 from studio.planning.validator import instantiate
@@ -64,6 +64,10 @@ class ChatIn(BaseModel):
     text: str
 
 
+class EngineIn(BaseModel):
+    engine: str
+
+
 class DecideIn(BaseModel):
     task_id: str
     decision: str
@@ -71,7 +75,7 @@ class DecideIn(BaseModel):
 
 
 class StudioService:
-    def __init__(self, project_dir: Path, mock_delay: float = 0.0, template: str = "unity_3d_vertical_slice"):
+    def __init__(self, project_dir: Path, mock_delay: float = 0.0, template: str = "vertical_slice_3d"):
         self.dir = Path(project_dir)
         if not (self.dir / "project.json").exists():
             Studio.init_project(self.dir, "shams_project", "", mode="autonomous", mock_mode=True)
@@ -116,14 +120,20 @@ class StudioService:
         st = self.studio
         with self.lock:
             if not st.db.tasks():
+                detected = engines.detect(text)
+                if detected:
+                    st.set_engine(detected)
+                profile = engines.get(st.project["engine"]["name"])
                 st.project["goal"] = text
                 st.context.goal = text
                 (self.dir / "project.json").write_text(json.dumps(st.project, ensure_ascii=False, indent=2),
                                                       encoding="utf-8")
-                dag = instantiate(self.template, st.db.project_id, text)
+                dag = instantiate(self.template, st.db.project_id, text, engine=profile.name, project_dir=self.dir)
                 st.load_plan(dag, approved_by="ui-user")
-                reply = (f"Đã phân tích yêu cầu và tạo {len(dag['tasks'])} nhiệm vụ từ template "
-                         f"{self.template}. Đang triển khai.")
+                how = "nhận diện từ yêu cầu" if detected else "mặc định, ghi tên engine trong yêu cầu để đổi"
+                reply = (f"Đã tạo {len(dag['tasks'])} nhiệm vụ từ khung chung {self.template} cho engine "
+                         f"{profile.display} ({how}). Đang triển khai. Khung này chưa đọc nội dung yêu cầu; "
+                         f"Planner LLM (Phase 1b) sẽ tách nhiệm vụ riêng theo từng dự án.")
                 if st.mock_mode:
                     reply += " (Chế độ mock: chưa gắn model AI.)"
                 self.chat.append({"role": "director", "text": reply, "ts": contracts.now_iso(), "live": True})
@@ -182,10 +192,13 @@ class StudioService:
                 console.append({"ts": e["ts"][11:19], "text": line, "type": e["type"]})
         done = sum(1 for t in tasks if t["state"] == "ACCEPTED")
         goal = st.project.get("goal") or ""
+        profile = engines.get((st.project.get("engine") or {}).get("name", "unity"))
         return {
             "app": "SHAMS",
+            "engines": [{"id": p.name, "display": p.display, "language": p.language}
+                        for p in engines.ENGINES.values()],
             "project": {"id": st.db.project_id, "name": goal[:60] or st.db.project_id,
-                        "engine": (st.project.get("engine") or {}).get("name", "unity").capitalize(),
+                        "engine": profile.display, "engine_id": profile.name, "language": profile.language,
                         "dir": str(self.dir)},
             "mode": st.mode, "mock_mode": st.mock_mode, "running": self.running, "connected": True,
             "progress": {"done": done, "total": len(tasks)},
@@ -197,6 +210,14 @@ class StudioService:
             "models": models, "artifacts": arts, "qc": qcs, "console": console[-200:],
             "review": [t for t in task_rows if t["state"] in ("HUMAN_REVIEW", "BLOCKED")],
         }
+
+    def set_engine(self, name: str) -> dict:
+        with self.lock:
+            try:
+                self.studio.set_engine(name)
+            except (ValueError, KeyError) as e:
+                raise HTTPException(400, str(e))
+        return self.state()
 
     def decide(self, d: DecideIn) -> dict:
         with self.lock:
@@ -228,6 +249,10 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     @app.post("/api/decide")
     def decide(body: DecideIn):
         return svc.decide(body)
+
+    @app.post("/api/engine")
+    def engine(body: EngineIn):
+        return svc.set_engine(body.engine)
 
     @app.post("/api/run")
     def run():

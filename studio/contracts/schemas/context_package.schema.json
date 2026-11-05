@@ -106,10 +106,9 @@
       ],
       "properties": {
         "name": {
-          "enum": [
-            "unity",
-            "unreal"
-          ]
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Engine Profile id: unity | unreal | godot | web | engine tùy biến (ADR-115/116)"
         },
         "version": {
           "type": "string"
