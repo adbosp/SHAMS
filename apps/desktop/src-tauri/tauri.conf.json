@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SHAMS",
+  "version": "2.1.0",
+  "identifier": "com.shams.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SHAMS",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 620,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob: http://127.0.0.1:* https:; media-src 'self' blob: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "category": "DeveloperTool",
+    "shortDescription": "SHAMS — Sequential Heterogeneous AI Manufacturing System",
+    "longDescription": "Desktop client for the SHAMS Core Service: direct model chat, coding agent, media generation and autonomous multi-model workflows on local models. Model weights are not bundled; the app uses the models already installed on this PC.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}

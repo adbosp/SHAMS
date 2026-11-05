@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**SHAMS Desktop Client** (ADR-122)
+- Desktop app in `apps/desktop/` (Tauri 2 + React + TypeScript + Tailwind): New Chat, Chat History, Direct AI, Autonomous Workflow, Projects, Media Gallery, Model Manager, Settings; light/dark themes. The Rust shell starts, health-checks and stops the Python Core Service (`shams desktop-backend`).
+- Streamed chat with Markdown, code blocks, attachments, thinking, and grouped blocks: tool calls, images/videos/3D, links. History in SQLite; search, pin, archive; survives restarts.
+- Coding agent in a local Project (folder + environment): workspace tools, three permission modes, approvals with diff/command preview, per-turn checkpoints and revert, tool log.
+- Model Manager: Ollama/ComfyUI discovery, SHAMS inventory matched against installed files, register/enable/disable/remove presets, Ollama load/unload with keep_alive, ComfyUI start and free.
+- Process-wide GPU gate shared by chats, Direct Mode and Autonomous runs; resource monitor; job cancel.
+- Video preset kind (animated WebP), Wan 2.1 1.3B and generic SDXL checkpoint workflows.
+
 **Direct Mode and presets** (ADR-121)
 - Direct Mode: pick a model or preset, enter a prompt, run one task without planner or DAG. It runs on the same scheduler, GPU lease, model switching, workers, artifact registry, QC and event log. App view "Direct Mode", API `/api/direct/*`, CLI `shams presets` and `shams direct`.
 - Presets in the Model Registry (`models.presets`, plus every resolved role): capability, provider, resources, input/output schema, execution modes. Direct-only presets are never picked by Autonomous Mode.

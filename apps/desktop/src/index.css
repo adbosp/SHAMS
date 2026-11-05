@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 250 250 249;
+  --panel: 255 255 255;
+  --sunk: 244 244 242;
+  --line: 228 228 224;
+  --fg: 28 28 30;
+  --muted: 112 112 118;
+  --accent: 37 99 235;
+  --ok: 22 163 74;
+  --warn: 202 138 4;
+  --bad: 220 38 38;
+  color-scheme: light;
+}
+:root.dark {
+  --bg: 22 22 24;
+  --panel: 30 30 33;
+  --sunk: 17 17 19;
+  --line: 52 52 58;
+  --fg: 236 236 238;
+  --muted: 150 150 158;
+  --accent: 96 145 255;
+  --ok: 74 200 120;
+  --warn: 230 180 60;
+  --bad: 245 100 100;
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-fg font-sans antialiased; margin: 0; font-size: 14px; }
+* { box-sizing: border-box; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--line)); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+
+.btn { @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-sm hover:bg-sunk disabled:opacity-50 disabled:cursor-not-allowed; }
+.btn-primary { @apply inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed; }
+.btn-ghost { @apply inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-sunk hover:text-fg; }
+.input { @apply w-full rounded-md border border-line bg-panel px-2.5 py-1.5 text-sm outline-none focus:border-accent; }
+.card { @apply rounded-lg border border-line bg-panel; }
+.chip { @apply inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs text-muted; }
+.label { @apply text-xs font-medium uppercase tracking-wide text-muted; }
+
+.prose-shams { line-height: 1.6; overflow-wrap: anywhere; }
+.prose-shams p { margin: 0.4em 0; }
+.prose-shams h1, .prose-shams h2, .prose-shams h3 { font-weight: 600; margin: 0.9em 0 0.4em; }
+.prose-shams h1 { font-size: 1.35em; } .prose-shams h2 { font-size: 1.2em; } .prose-shams h3 { font-size: 1.05em; }
+.prose-shams ul { list-style: disc; padding-left: 1.4em; margin: 0.4em 0; }
+.prose-shams ol { list-style: decimal; padding-left: 1.4em; margin: 0.4em 0; }
+.prose-shams a { color: rgb(var(--accent)); text-decoration: underline; text-underline-offset: 2px; }
+.prose-shams code { font-family: theme("fontFamily.mono"); font-size: 0.9em; background: rgb(var(--sunk)); padding: 0.1em 0.35em; border-radius: 4px; }
+.prose-shams pre code { background: none; padding: 0; }
+.prose-shams table { border-collapse: collapse; margin: 0.6em 0; display: block; overflow-x: auto; }
+.prose-shams th, .prose-shams td { border: 1px solid rgb(var(--line)); padding: 0.3em 0.6em; }
+.prose-shams blockquote { border-left: 3px solid rgb(var(--line)); padding-left: 0.8em; color: rgb(var(--muted)); }
+
+.diff-add { background: rgb(var(--ok) / 0.12); }
+.diff-del { background: rgb(var(--bad) / 0.12); }
+.diff-hunk { color: rgb(var(--accent)); }

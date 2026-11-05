@@ -382,6 +382,8 @@ class DesktopService:
                 ch.publish("usage", usage=u)
         if ch.cancel.is_set():
             raise InterruptedError
+        if text_block is not None and not text_block["text"].strip():
+            blocks.remove(text_block)           # whitespace between tool calls: keeps tool groups together
         return calls
 
     # ------------------------------------------------------------------ coding agent
