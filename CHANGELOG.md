@@ -8,6 +8,9 @@
 - Content policy for adult-only presets: opt-in setting, per-run confirmation, refusal of minors / non-consent / real people, logged refusals. Adult presets can never be autonomous.
 - MOSS-Image ComfyUI workflows (base and LoRA). Preflight now checks every choice value, not only model files.
 - MOSS-Image workflows follow the official ComfyUI SFT template (no extra shift node, 25 steps, cfg 2.5, er_sde); needs ComfyUI 0.42+. The old graph produced noise.
+- Game template QC runs for real: GLB checks (triangle budget, UV, size) for character meshes, a preview render judged by the vision model, power-of-two texture check, and a Node.js syntax check for Web/Three.js code. Unity/Unreal/Godot compile stays NOT_VERIFIED until the engine runner exists.
+- 3D asset tasks (mesh.*) build only their one asset; the project goal is passed as background.
+- App: native crashes write every thread's stack to `<workspace>/_logs/crash.log`; run-loop errors go to `_logs/run_loop_errors.log` and the project chat.
 - PNG checks reject random-noise images (neighbour/std "roughness"); self-test 9e adds visual QC.
 - Read-only web research tools for models (public web only, untrusted-content marking, URL log).
 - Simple 3D scenes: the 3D model writes scene JSON and SHAMS builds the GLB and a render without Blender. Blender is used for complex scenes.

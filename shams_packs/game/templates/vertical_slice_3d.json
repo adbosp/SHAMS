@@ -278,7 +278,7 @@
     {
       "task_id": "task.player_model",
       "title": "Mesh nhân vật chính game-ready",
-      "description": "Mesh nhân vật chính game-ready",
+      "description": "Chỉ dựng MỘT mesh: nhân vật chính theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 20000 tam giác, có UV.",
       "capability": "mesh.text_to_3d",
       "depends_on": [],
       "inputs": [],
@@ -288,6 +288,12 @@
           "logical_id": "asset.player.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
+        },
+        {
+          "name": "player_preview",
+          "logical_id": "asset.player.preview",
+          "media_type": "image/png",
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
@@ -296,14 +302,23 @@
           "description": "Poly ≤ 20k, có UV, scale đúng",
           "kind": "schema",
           "check": {
-            "max_tris": 20000
+            "type": "${mesh_check}",
+            "logical_id": "asset.player.mesh",
+            "max_triangles": 20000,
+            "require_uv": true,
+            "min_size_m": 0.5,
+            "max_size_m": 3
           }
         },
         {
           "id": "ac.player_look",
           "description": "Hình dáng khớp mô tả nhân vật trong yêu cầu",
           "kind": "visual",
-          "required": false
+          "required": false,
+          "check": {
+            "type": "vlm",
+            "min_score": 6
+          }
         }
       ],
       "priority": 40,
@@ -319,7 +334,7 @@
     {
       "task_id": "task.npc_model",
       "title": "Mesh đối tượng phụ / NPC",
-      "description": "Mesh đối tượng phụ / NPC",
+      "description": "Chỉ dựng MỘT mesh: một nhân vật phụ (NPC) theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 3000 tam giác, có UV.",
       "capability": "mesh.text_to_3d",
       "depends_on": [],
       "inputs": [],
@@ -329,6 +344,12 @@
           "logical_id": "asset.npc.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
+        },
+        {
+          "name": "npc_preview",
+          "logical_id": "asset.npc.preview",
+          "media_type": "image/png",
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
@@ -337,7 +358,12 @@
           "description": "Poly ≤ 3k, có UV",
           "kind": "schema",
           "check": {
-            "max_tris": 3000
+            "type": "${mesh_check}",
+            "logical_id": "asset.npc.mesh",
+            "max_triangles": 3000,
+            "require_uv": true,
+            "min_size_m": 0.3,
+            "max_size_m": 3
           }
         }
       ],
@@ -370,7 +396,14 @@
         {
           "id": "ac.texture_valid",
           "description": "PNG lũy thừa 2, ≤ 2048",
-          "kind": "schema"
+          "kind": "schema",
+          "check": {
+            "type": "image",
+            "power_of_two": true,
+            "max_width": 2048,
+            "max_height": 2048,
+            "min_width": 64
+          }
         }
       ],
       "priority": 30,

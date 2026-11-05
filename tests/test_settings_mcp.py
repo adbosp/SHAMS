@@ -330,3 +330,13 @@ def test_app_auto_mock_counts_model_registry_role_workers(tmp_path, monkeypatch)
     assert svc._mock_default(s) is True
     assert svc._mock_default({"general": {"mock": "off"}}) is False
     assert svc._mock_default({"general": {"mock": "on"}}) is True
+
+
+def test_crash_log_is_enabled(tmp_path):
+    import faulthandler
+    from apps.api.server import enable_crash_log
+    try:
+        p = enable_crash_log(tmp_path)
+        assert p.exists() and "started" in p.read_text(encoding="utf-8") and faulthandler.is_enabled()
+    finally:
+        faulthandler.disable()

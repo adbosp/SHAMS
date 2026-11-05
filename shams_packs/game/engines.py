@@ -62,6 +62,8 @@ class EngineProfile:
             "scene_contract": self.scene_contract, "mesh_mt": self.mesh_media_type,
             "mesh_contract": self.mesh_contract, "build_mt": self.build_media_type,
             "build_contract": self.build_contract, "build_target": self.build_target,
+            # QC check type for the mesh: GLB is inspected for real; other formats have no checker yet
+            "mesh_check": "glb" if self.mesh_media_type == "model/gltf-binary" else "mesh_unverified",
         }
         t.update(self.roots)
         return t

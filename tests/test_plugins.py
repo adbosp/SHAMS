@@ -248,7 +248,8 @@ def test_registered_checker_drives_qc(tmp_path, server):
         d = tmp_path / "proj"
         Studio.init_project(d, "real_game", "g", mode="autonomous", engine={"name": "web"})
         st = Studio(d, nodes=real_nodes(tmp_path, server.url))      # checkers come from the registry
-        st.qc.checkers.update({k: passing for k in ("unit_test", "integration_test")})
+        # fake workers write text for every output, so the real asset checks (GLB, PNG, vision) are replaced too
+        st.qc.checkers.update({k: passing for k in ("unit_test", "integration_test", "schema", "visual")})
         st.load_plan(instantiate("vertical_slice_3d", "real_game", "g", engine="web"))
         assert st.run()["done"]
         assert [r["verdict"] for r in st.db.qc_reports("task.hud")] == ["FAIL", "PASS"]

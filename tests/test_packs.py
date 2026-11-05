@@ -1,6 +1,7 @@
 """Domain Packs (ADR-117): the core knows no product domain; packs add it."""
 import json
 import pkgutil
+import shutil
 import re
 import subprocess
 import sys
@@ -188,3 +189,35 @@ def _first_criterion(d, task_id):
 def test_version():
     import shams
     assert shams.__version__.startswith("2.")
+
+
+# --------------------------------------------------------------------------- real QC for the game template
+def test_game_template_criteria_have_real_checks():
+    for engine, mesh_type in (("web", "glb"), ("unreal", "mesh_unverified")):
+        dag = instantiate("vertical_slice_3d", "p", "g", engine=engine)
+        t = {x["task_id"]: x for x in dag["tasks"]}
+        crit = {c["id"]: c for c in t["task.player_model"]["acceptance_criteria"]}
+        assert crit["ac.player_mesh_valid"]["check"]["type"] == mesh_type
+        assert crit["ac.player_mesh_valid"]["check"]["max_triangles"] == 20000
+        assert crit["ac.player_look"]["check"]["type"] == "vlm"
+        assert any(o["media_type"] == "image/png" for o in t["task.player_model"]["outputs"])
+        assert "Chỉ dựng MỘT mesh" in t["task.npc_model"]["description"]
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+def test_game_compile_checker_parses_web_code(tmp_path):
+    from shams_packs.game import PACK
+    chk = PACK.checkers()["compile"]
+    ok = tmp_path / "ok.ts"
+    ok.write_text('import * as THREE from "three";\nexport class P { speed: number = 3; move(dt: number): void {} }\n')
+    bad = tmp_path / "bad.ts"
+    bad.write_text("export class P { move(dt: number { }\n")
+    cs = tmp_path / "a.cs"
+    cs.write_text("class A {}")
+    def out(p, mt):
+        return [{"logical_id": "code.x", "path": p.name, "media_type": mt, "file": str(p), "role": "output"}]
+    assert chk("compile", {}, [], outputs=out(ok, "text/typescript"))[0] == "PASS"
+    v, d = chk("compile", {}, [], outputs=out(bad, "text/typescript"))
+    assert v == "FAIL" and "compile error" in d
+    assert chk("compile", {}, [], outputs=out(cs, "text/x-csharp"))[0] == "NOT_VERIFIED"
+    assert chk("compile", {}, [], outputs=[])[0] == "FAIL"

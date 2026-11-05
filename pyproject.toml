@@ -27,7 +27,7 @@ include = ["shams*", "shams_packs*", "apps*"]
 
 [tool.setuptools.package-data]
 "shams.contracts" = ["schemas/*.json"]
-"shams_packs.game" = ["templates/*.json", "*.toml"]
+"shams_packs.game" = ["templates/*.json", "*.toml", "js/*.mjs"]
 "shams_packs.software" = ["templates/*.json"]
 "shams.examples" = ["*.toml", "*.json"]
 "shams_tools" = ["workflows/*.json"]

@@ -198,7 +198,8 @@ def png_info(path: str | Path) -> dict:
 
 
 def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
-    """check: min_width, min_height, min_std (not blank), min_colours, max_roughness (not random noise)."""
+    """check: min/max_width, min/max_height, power_of_two, min_std (not blank), min_colours,
+    max_roughness (not random noise)."""
     c = check or {}
     try:
         i = png_info(path)
@@ -207,6 +208,10 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
     errs = []
     if i["width"] < int(c.get("min_width", 16)) or i["height"] < int(c.get("min_height", 16)):
         errs.append(f"too small {i['width']}x{i['height']}")
+    if i["width"] > int(c.get("max_width", 1 << 16)) or i["height"] > int(c.get("max_height", 1 << 16)):
+        errs.append(f"too large {i['width']}x{i['height']}")
+    if c.get("power_of_two") and any(n & (n - 1) for n in (i["width"], i["height"])):
+        errs.append(f"size {i['width']}x{i['height']} is not a power of two")
     if "std" in i:
         if i["std"] < float(c.get("min_std", 3.0)):
             errs.append(f"image is blank/flat (std {i['std']})")

@@ -695,3 +695,18 @@ def test_blender_scenes_get_the_same_physical_checks():
     issues = blender_tools.blender_physics(rep)
     text = "; ".join(issues)
     assert "Leg goes 0.25 m below the floor" in text and "Ball sinks 8 cm into Top" in text and "z=" in text
+
+
+def test_asset_task_gets_goal_only_as_background():
+    from shams_tools.blender import scoped_payload
+    p = scoped_payload({}, {"capability": "mesh.text_to_3d"}, {"goal": "garden game with 5 characters", "task": "player"})
+    assert "goal" not in p and p["project_background"].startswith("garden") and "ONLY" in p["scope"]
+    q = scoped_payload({}, {"capability": "scene.build"}, {"goal": "a table scene", "task": "scene"})
+    assert q["goal"] == "a table scene" and "scope" not in q
+
+
+def test_png_power_of_two_and_max_size(tmp_path):
+    assert assets.check_png(make_png(tmp_path / "a.png", 64, 64), {"power_of_two": True})[0] == "PASS"
+    v, d = assets.check_png(make_png(tmp_path / "b.png", 96, 64), {"power_of_two": True})
+    assert v == "FAIL" and "power of two" in d
+    assert assets.check_png(make_png(tmp_path / "c.png", 64, 64), {"max_width": 32})[0] == "FAIL"

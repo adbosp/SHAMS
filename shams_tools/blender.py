@@ -135,6 +135,21 @@ def run_blender(blender: str, spec: dict, workdir: Path, timeout: float) -> dict
     return rep
 
 
+SINGLE_ASSET = ("Build ONLY the one asset named in 'task' and 'description'. 'project_background' describes the "
+                "whole project for context only: do NOT build its ground, environment, buildings or other "
+                "characters. One object (or one group of parts forming it), real-world size, standing on the "
+                "origin, within the polygon budget.")
+
+
+def scoped_payload(ctx: dict, task: dict, payload: dict) -> dict:
+    """An asset task (capability mesh.*) gets the project goal only as background, so the model builds the one
+    asset instead of the whole project scene."""
+    if str(task.get("capability", "")).startswith("mesh."):
+        payload = {"scope": SINGLE_ASSET, **payload}
+        payload["project_background"] = payload.pop("goal", "")
+    return payload
+
+
 class Scene3DWorker:
     """LLM (a coding model) writes Blender Python; Blender runs it headless; errors go back to the model
     for up to ``max_fix_rounds`` fixes inside one attempt. Outputs by media type: model/gltf-binary (GLB),
@@ -163,6 +178,7 @@ class Scene3DWorker:
                                            if c.get("check", {}).get("max_triangles")), 50000),
                    "upstream_summaries": ctx.get("upstream_summaries", []),
                    "prior_failures": ctx.get("prior_failures", [])}
+        payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": SCENE_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
 
@@ -227,6 +243,7 @@ class Scene3DWorker:
                    "description": params.get("prompt") or task.get("description", ""),
                    "acceptance_criteria": [c["description"] for c in task["acceptance_criteria"]],
                    "polygon_budget": budget, "prior_failures": ctx.get("prior_failures", [])}
+        payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": scene_json.SCENE_JSON_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
 

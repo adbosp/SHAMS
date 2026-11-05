@@ -69,6 +69,8 @@ class AssetCheckers:
             fb = self.fallback.get(k)
             if fb is None:
                 return "NOT_VERIFIED", f"no checker for kind '{k}'" + (f" / type '{ctype}'" if ctype else "")
+            if getattr(fb, "wants_outputs", False):
+                return fb(k, criterion, contents, outputs=outputs)
             return fb(k, criterion, contents)
         check.wants_outputs = True
         return check

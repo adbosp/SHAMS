@@ -7,6 +7,7 @@ MCP servers and real hardware are exposed under /api/settings, /api/connections,
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -248,6 +249,17 @@ class StudioService:
                 if not progressed:
                     break
                 time.sleep(0.05)
+        except Exception as e:  # noqa: BLE001 - a crashed run loop must be visible, not a silent stop
+            import traceback
+            tb = traceback.format_exc()
+            if self.dir:
+                logd = self.workspace / "_logs"
+                logd.mkdir(parents=True, exist_ok=True)
+                with open(logd / "run_loop_errors.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n=== {contracts.now_iso()} {self.dir.name}\n{tb}")
+                self.chat.append({"role": "director", "ts": contracts.now_iso(),
+                                  "text": f"Vòng chạy dừng vì lỗi: {type(e).__name__}: {e}. Xem _logs/run_loop_errors.log."})
+                self._save_chat()
         finally:
             self.running = False
 
@@ -728,5 +740,24 @@ def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: floa
     if open_browser:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
-    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace})")
+    crash = enable_crash_log(app.state.svc.workspace)
+    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace}, crash log: {crash})")
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def enable_crash_log(workspace: Path) -> Path:
+    """A native crash (access violation in the interpreter or an extension) leaves no Python traceback; the
+    fault handler writes the stack of every thread to a file so the cause can be found afterwards."""
+    import faulthandler
+    d = Path(workspace) / "_logs"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "crash.log"
+    f = open(path, "a", encoding="utf-8")          # noqa: SIM115 - must stay open for the process lifetime
+    f.write(f"\n=== SHAMS {__version__} started {contracts.now_iso()} pid {os.getpid()} ===\n")
+    f.flush()
+    faulthandler.enable(file=f, all_threads=True)
+    _CRASH_FILES.append(f)
+    return path
+
+
+_CRASH_FILES: list = []
