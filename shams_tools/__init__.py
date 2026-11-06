@@ -122,7 +122,7 @@ def register() -> None:
     _DONE = True
     from shams import models, providers, workers
     from shams.verification.checkers import register_check_type
-    from shams_tools import blender, comfyui, sf3d
+    from shams_tools import blender, comfyui, sf3d, web_build
 
     providers.register_provider("comfyui", comfyui.ComfyUI)
     providers.register_provider("stable_fast_3d", sf3d.StableFast3D)
@@ -137,6 +137,12 @@ def register() -> None:
     models.register_probe("comfyui", _probe_comfyui)
     models.register_probe("stable_fast_3d", _probe_sf3d)
     register_check_type("blender_import", blender.check_blender_import)
+    providers.register_provider("web_build", web_build.WebBuildProvider)
+    workers.register_worker("web_build", web_build.WebBuildWorker)
+    models.register_backend("web_build", web_build._WebBuildBackend())
+    models.register_default_role("build", {"backend": "web_build", "capabilities": ["build.web"]})
+    register_check_type("web_zip", web_build.check_web_zip)
+    register_check_type("web_smoke", web_build.check_web_smoke)
 
 
 WORKFLOWS = Path(__file__).resolve().parent / "workflows"

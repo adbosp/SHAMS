@@ -299,3 +299,53 @@ def test_web_unit_test_checker_runs_vitest(tmp_path):
     good.write_text(good.read_text(encoding="utf-8").replace("toBe(2)", "toBe(3)"), encoding="utf-8")
     v, d = chk("unit_test", crit, [], outputs=outs)
     assert v == "FAIL" and "tests failed" in d
+
+
+def _browser():
+    from shams_tools import web_build
+    return web_build.find_browser()
+
+
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_build_and_smoke_in_a_headless_browser(tmp_path):
+    from shams_tools import web_build
+    scene = tmp_path / "Slice1.ts"
+    scene.write_text("""import * as THREE from 'three';
+import { SPEED } from '../game/Core/Config';
+export function start(container: HTMLElement): void {
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(640, 360);
+  container.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x336699);
+  const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
+  cam.position.z = 3;
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshNormalMaterial());
+  scene.add(cube);
+  const tick = () => { cube.rotation.y += SPEED; renderer.render(scene, cam); requestAnimationFrame(tick); };
+  tick();
+}
+""", encoding="utf-8")
+    cfg = tmp_path / "Config.ts"
+    cfg.write_text("export const SPEED = 0.01;\n", encoding="utf-8")
+    files = [("src/scenes/Slice1.ts", scene), ("src/game/Core/Config.ts", cfg)]
+    r = web_build.build_web(files)
+    try:
+        assert r["ok"], r["log"]
+        assert (r["dist"] / "index.html").exists() and r["entry"]["src/main.ts"].endswith("scenes/Slice1.ts")
+        z = tmp_path / "game.zip"
+        web_build.zip_dir(r["dist"], z)
+        outs = [{"logical_id": "build.game", "media_type": "application/zip", "file": str(z), "role": "output"}]
+        assert web_build.check_web_zip({}, outs)[0] == "PASS"
+        if _browser():
+            v, d = web_build.check_web_smoke({"check": {"seconds": 4}}, outs)
+            assert v == "PASS", d
+    finally:
+        shutil.rmtree(r["work"], ignore_errors=True)
+    broken = tmp_path / "Broken.ts"
+    broken.write_text("export function start(el: HTMLElement) { throw new Error('boom at start'); }\n", encoding="utf-8")
+    if _browser():
+        v, d = web_build.check_web_smoke({"check": {"seconds": 3}}, [
+            {"logical_id": "scene", "path": "src/scenes/Broken.ts", "media_type": "text/typescript",
+             "file": str(broken), "role": "output"}])
+        assert v == "FAIL" and "boom" in d, d

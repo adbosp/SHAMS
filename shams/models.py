@@ -42,7 +42,16 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
     # backends for these two come from extensions (settings: "backend": "<name>")
     "image": {"label": "Image generation", "backend": None, "kind": "tool", "capabilities": ["image.*"]},
     "image_to_3d": {"label": "Image-to-3D", "backend": None, "kind": "tool", "capabilities": ["mesh.image_to_3d"]},
+    "build": {"label": "Build & run tools", "backend": None, "kind": "tool", "capabilities": ["build.*"]},
 }
+
+# role -> config used when the user's settings do not mention the role (extensions add tools that need no
+# setup, e.g. a build tool that runs from a SHAMS toolchain folder); "enabled": false in settings turns it off
+DEFAULT_ROLES: dict[str, dict[str, Any]] = {}
+
+
+def register_default_role(role: str, cfg: dict[str, Any]) -> None:
+    DEFAULT_ROLES[role] = dict(cfg)
 
 WORKER_PREFIX = "worker.role."
 
@@ -227,7 +236,10 @@ class ModelRegistry:
     def bindings(self) -> list[RoleBinding]:
         out = []
         aliases = dict(self.cfg.get("aliases") or {})
-        for role, rcfg in (self.cfg.get("roles") or {}).items():
+        roles = dict(self.cfg.get("roles") or {})
+        for role, dcfg in DEFAULT_ROLES.items():
+            roles.setdefault(role, dict(dcfg))
+        for role, rcfg in roles.items():
             rcfg = dict(rcfg or {}) if not isinstance(rcfg, str) else {"model": rcfg}
             spec = ROLE_SPECS.get(role, {"backend": rcfg.get("backend", "ollama")})
             backend = rcfg.get("backend") or spec.get("backend")

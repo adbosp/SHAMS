@@ -186,7 +186,8 @@
       "capability": "${code}",
       "depends_on": [
         "task.player_controller",
-        "task.spawner"
+        "task.spawner",
+        "task.project_scaffold"
       ],
       "inputs": [
         {
@@ -198,6 +199,11 @@
           "name": "spawner",
           "from_task": "task.spawner",
           "logical_id": "code.spawner"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
@@ -245,13 +251,31 @@
       "description": "HUD trạng thái người chơi",
       "capability": "${code}",
       "depends_on": [
-        "task.core_mechanic"
+        "task.core_mechanic",
+        "task.project_scaffold",
+        "task.player_controller",
+        "task.spawner"
       ],
       "inputs": [
         {
           "name": "mechanic",
           "from_task": "task.core_mechanic",
           "logical_id": "code.core_mechanic"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
+        },
+        {
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
         }
       ],
       "outputs": [
@@ -729,7 +753,7 @@
     {
       "task_id": "task.integration_slice1",
       "title": "Tích hợp vertical slice 1",
-      "description": "Tích hợp vertical slice 1",
+      "description": "Ghép mọi phần đã làm thành một màn chơi chạy được. ${scene_hint}",
       "capability": "integration",
       "depends_on": [
         "task.player_controller",
@@ -739,7 +763,7 @@
         "task.player_model",
         "task.npc_model",
         "task.environment_texture",
-        "task.sfx_core"
+        "task.project_scaffold"
       ],
       "inputs": [
         {
@@ -778,9 +802,9 @@
           "logical_id": "asset.environment.texture"
         },
         {
-          "name": "sfx",
-          "from_task": "task.sfx_core",
-          "logical_id": "asset.sfx.core"
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
@@ -799,13 +823,19 @@
         },
         {
           "id": "ac.slice_integration",
-          "description": "Integration PlayMode test",
-          "kind": "integration_test"
+          "description": "Màn chơi build và mở được, không lỗi khi khởi động",
+          "kind": "integration_test",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.slice_runtime",
-          "description": "Chạy 30 s không exception",
-          "kind": "runtime_log"
+          "description": "Chạy vài giây trong trình duyệt không có exception",
+          "kind": "runtime_log",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.slice_screenshot",
@@ -830,13 +860,61 @@
       "description": "Build ${build_target} + smoke test",
       "capability": "${build}",
       "depends_on": [
-        "task.integration_slice1"
+        "task.integration_slice1",
+        "task.project_scaffold",
+        "task.player_controller",
+        "task.spawner",
+        "task.core_mechanic",
+        "task.hud",
+        "task.player_model",
+        "task.npc_model",
+        "task.environment_texture"
       ],
       "inputs": [
         {
           "name": "scene",
           "from_task": "task.integration_slice1",
           "logical_id": "scene.slice1"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
+        },
+        {
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
+        },
+        {
+          "name": "mechanic",
+          "from_task": "task.core_mechanic",
+          "logical_id": "code.core_mechanic"
+        },
+        {
+          "name": "hud",
+          "from_task": "task.hud",
+          "logical_id": "code.hud"
+        },
+        {
+          "name": "player_mesh",
+          "from_task": "task.player_model",
+          "logical_id": "asset.player.mesh"
+        },
+        {
+          "name": "npc_mesh",
+          "from_task": "task.npc_model",
+          "logical_id": "asset.npc.mesh"
+        },
+        {
+          "name": "environment",
+          "from_task": "task.environment_texture",
+          "logical_id": "asset.environment.texture"
         }
       ],
       "outputs": [
@@ -851,12 +929,18 @@
         {
           "id": "ac.build_ok",
           "description": "Build thành công",
-          "kind": "compile"
+          "kind": "compile",
+          "check": {
+            "type": "${build_check}"
+          }
         },
         {
           "id": "ac.smoke",
-          "description": "Chạy 30 s, log sạch",
-          "kind": "runtime_log"
+          "description": "Mở bản build trong trình duyệt, không có exception",
+          "kind": "runtime_log",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.fps",
@@ -866,7 +950,8 @@
             "metric": "fps",
             "op": ">=",
             "value": 30
-          }
+          },
+          "required": false
         }
       ],
       "priority": 60,

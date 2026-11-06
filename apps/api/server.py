@@ -209,9 +209,11 @@ class StudioService:
         m = s["general"].get("mock", "auto")
         if m != "auto":
             return m == "on"
-        from shams.models import merge_role_workers     # same worker list the project will load (roles too)
+        from shams.models import DEFAULT_ROLES, WORKER_PREFIX, merge_role_workers   # same list the project loads
         try:
-            return not merge_role_workers(s)
+            # tools that need no setup (default roles, e.g. the web build) do not make a project "real"
+            return not [w for w in merge_role_workers(s)
+                        if w.get("id") not in {WORKER_PREFIX + r for r in DEFAULT_ROLES}]
         except Exception:  # noqa: BLE001 - an unreachable model server means test mode, not a crash
             return True
 

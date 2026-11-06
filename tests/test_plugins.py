@@ -235,7 +235,7 @@ def test_custom_provider_and_worker_by_reference(tmp_path):
     assert Path(st.artifacts.blob_path(ref["sha256"])).read_text() == "hello"
 
 
-def test_registered_checker_drives_qc(tmp_path, server):
+def test_registered_checker_drives_qc(tmp_path, server, monkeypatch):
     seen = []
 
     def compile_checker(kind, criterion, contents):
@@ -250,6 +250,9 @@ def test_registered_checker_drives_qc(tmp_path, server):
         st = Studio(d, nodes=real_nodes(tmp_path, server.url))      # checkers come from the registry
         # fake workers write text for every output, so the real asset checks (GLB, PNG, vision) are replaced too
         st.qc.checkers.update({k: passing for k in ("unit_test", "integration_test", "schema", "visual", "exists")})
+        from shams.verification.checkers import CHECK_TYPES
+        for t in ("web_zip", "web_smoke"):                  # fake text outputs are not a real web build
+            monkeypatch.setitem(CHECK_TYPES, t, lambda c, outputs, settings=None: ("PASS", "fake"))
         st.load_plan(instantiate("vertical_slice_3d", "real_game", "g", engine="web"))
         assert st.run()["done"]
         assert [r["verdict"] for r in st.db.qc_reports("task.hud")] == ["FAIL", "PASS"]

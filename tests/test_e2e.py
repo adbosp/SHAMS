@@ -104,7 +104,7 @@ def test_upstream_change_marks_consumers_stale_then_revalidates(make_studio):
     new = st.artifacts.accepted("code.player_controller")["sha256"]
     assert new != old and st.artifacts.get(old)["state"] == "SUPERSEDED"
     invalidated = {e["subject_id"] for e in st.db.events() if e["type"] == "task.invalidated"}
-    assert invalidated == {"task.core_mechanic", "task.integration_slice1"}
+    assert invalidated == {"task.core_mechanic", "task.hud", "task.integration_slice1", "task.build_game"}
     revalidated = {e["subject_id"] for e in st.db.events() if e["type"] == "task.revalidate"}
     assert revalidated == invalidated
     # STALE tasks were re-QC'd, not re-executed (ADR-110)

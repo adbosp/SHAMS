@@ -301,8 +301,8 @@ class ComfyUIImageWorker:
             txt = " ".join(l.strip().lstrip("#*-> ").strip() for l in txt.splitlines() if l.strip())
             if skip or max_sentences:
                 import re
-                sents = [x for x in re.split(r"(?<=[.!?])\s+", txt)
-                         if not any(w.lower() in x.lower() for w in skip or [])]
+                pats = [re.compile(r"\b" + re.escape(w.strip()) + r"\b", re.I) for w in skip or [] if w.strip()]
+                sents = [x for x in re.split(r"(?<=[.!?])\s+", txt) if not any(p.search(x) for p in pats)]
                 txt = " ".join(sents[:int(max_sentences)] if max_sentences else sents)
             if txt:
                 parts.append(txt[:600])

@@ -31,6 +31,11 @@ class EngineProfile:
     build_target: str
     roots: dict[str, str] = field(default_factory=dict)  # scripts, tests, scenes, models, textures, audio, builds
     notes: str = ""
+    # how the integration step exposes the playable scene, and the QC check types for running/building it
+    # ("" = no checker yet: NOT_VERIFIED)
+    scene_hint: str = ""
+    run_check: str = ""
+    build_check: str = ""
     # Optional argv per step (compile/test/build/capture); "{project}" and "{exe}" are substituted.
     commands: dict[str, list[str]] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
@@ -64,6 +69,7 @@ class EngineProfile:
             "build_contract": self.build_contract, "build_target": self.build_target,
             # QC check type for the mesh: GLB is inspected for real; other formats have no checker yet
             "mesh_check": "glb" if self.mesh_media_type == "model/gltf-binary" else "mesh_unverified",
+            "scene_hint": self.scene_hint, "run_check": self.run_check, "build_check": self.build_check,
         }
         t.update(self.roots)
         return t
@@ -112,6 +118,13 @@ ENGINES: dict[str, EngineProfile] = {
         build_media_type="application/zip", build_contract="build.web", build_target="Static web (Vite)",
         roots={"scripts": "src/game", "tests": "tests", "scenes": "src/scenes", "models": "public/models",
                "textures": "public/textures", "audio": "public/audio", "builds": "dist"},
+        scene_hint=("Module scene phải `export function start(container: HTMLElement): void`: tạo renderer "
+                    "(WebGPU, lùi về WebGL2), camera, ánh sáng, mặt đất phủ texture /textures/environment.png, nạp "
+                    "/models/Player/player.glb và /models/Npc/npc.glb bằng GLTFLoader (three/examples/jsm/loaders/"
+                    "GLTFLoader.js), gắn điều khiển nhân vật, spawner, cơ chế chính và HUD từ các module đầu vào, rồi "
+                    "chạy vòng lặp requestAnimationFrame. SHAMS tự tạo index.html và src/main.ts gọi start(); không "
+                    "viết hai file đó."),
+        run_check="web_smoke", build_check="web_zip",
         notes="WebGPURenderer, tự lùi về WebGL2 khi trình duyệt không có WebGPU. Build Vite, test Vitest, "
               "smoke test + screenshot bằng Playwright headless."),
 }

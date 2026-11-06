@@ -166,7 +166,7 @@ def test_registry_binds_roles_and_generates_workers(ollama):
     s = {"models": {"ollama": {"base_url": ollama.url}, "roles": ROLES}}
     reg = models.ModelRegistry(s)
     by = {b.role: b for b in reg.bindings()}
-    assert all(b.ok for b in by.values()), [b.as_dict() for b in by.values()]
+    assert all(b.ok for r, b in by.items() if r != "build"), [b.as_dict() for b in by.values()]
     assert by["scene3d"].model_id == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0" and by["scene3d"].how == "fuzzy"
     ws = {w["id"]: w for w in reg.workers()}
     assert "worker.role.embedding" not in ws                     # retrieval role: no scheduler worker
@@ -181,7 +181,7 @@ def test_registry_reports_missing_and_down():
     s = {"models": {"ollama": {"base_url": "http://127.0.0.1:9"}, "roles": {"coder": {"model": "x"}}}}
     models._CACHE.clear()
     b = models.ModelRegistry(s).binding("coder")
-    assert b.status == "down" and not models.ModelRegistry(s).workers()
+    assert b.status == "down" and not [w for w in models.ModelRegistry(s).workers() if w["id"] != "worker.role.build"]
     s2 = {"models": {"roles": {"image": {}}}}
     assert models.ModelRegistry(s2).binding("image").status == "not_configured"
 
@@ -342,6 +342,10 @@ def test_comfy_worker_puts_text_brief_first_and_vlm_sees_it(tmp_path):
     w.run(ctx, {"worker_id": "w", "kind": "tool"})
     assert seen["prompt"].startswith("plain white background. A man in his 30s. Short dark hair, jeans.")
     assert "garden" not in seen["prompt"] and "Third" not in seen["prompt"] and "prompt_prefix" not in seen
+    brief.write_text("A man in his late 20s with hair styled neatly. Rendered in a garden style.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["style", "garden"]}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("A man in his late 20s with hair styled neatly.")    # whole words only
 
 
 def test_visual_checker_frees_the_vision_model():
