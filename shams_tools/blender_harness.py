@@ -60,11 +60,28 @@ def _frame_camera(scene, meshes):
     cam = bpy.data.objects.new("SHAMS_Camera", cam_data)
     scene.collection.objects.link(cam)
     direction = Vector((1.0, -1.2, 0.8)).normalized()
-    cam.location = center + direction * radius * 2.8
+    cam.location = center + direction * radius * 3.2
     cam.rotation_euler = (center - cam.location).to_track_quat("-Z", "Y").to_euler()
     cam_data.clip_end = max(1000.0, radius * 20)
     scene.camera = cam
     return True
+
+
+def _ensure_uvs(meshes):
+    """Meshes built vertex by vertex often have no UV map; game engines need one. Smart UV Project fills it."""
+    added = []
+    for o in meshes:
+        if o.data.uv_layers:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        o.select_set(True)
+        bpy.context.view_layer.objects.active = o
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.smart_project()
+        bpy.ops.object.mode_set(mode="OBJECT")
+        added.append(o.name)
+    return added
 
 
 def main():
@@ -94,7 +111,9 @@ def main():
             report["stage"] = "render"
             if not meshes:
                 raise RuntimeError("render evidence impossible: the scene has no mesh objects")
-            report["camera_added"] = scene.camera is None and _frame_camera(scene, meshes)
+            # evidence must show the subject: SHAMS frames its own camera on the meshes (a script camera that
+            # misses the object would make the render, and the visual QC on it, worthless)
+            report["camera_added"] = _frame_camera(scene, meshes)
             scene.render.engine = spec.get("engine") or "BLENDER_WORKBENCH"
             if scene.render.engine == "BLENDER_WORKBENCH":
                 scene.display.shading.light = "STUDIO"
@@ -111,6 +130,8 @@ def main():
             scene.render.filepath = spec["render"]
             bpy.ops.render.render(write_still=True)
         if spec.get("glb"):
+            report["stage"] = "uv"
+            report["uv_added"] = _ensure_uvs(meshes)
             report["stage"] = "export"
             bpy.ops.export_scene.gltf(filepath=spec["glb"], export_format="GLB", export_apply=True)
         report["ok"] = True

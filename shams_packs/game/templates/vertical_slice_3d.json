@@ -312,9 +312,9 @@
         },
         {
           "id": "ac.player_look",
-          "description": "Hình dáng khớp mô tả nhân vật trong yêu cầu",
+          "description": "Ảnh preview cho thấy rõ một nhân vật hình người đứng (đầu, thân, tay, chân), đúng mô tả nhân vật trong yêu cầu",
           "kind": "visual",
-          "required": false,
+          "required": true,
           "check": {
             "type": "vlm",
             "min_score": 6
@@ -365,6 +365,15 @@
             "min_size_m": 0.3,
             "max_size_m": 3
           }
+        },
+        {
+          "id": "ac.npc_look",
+          "description": "Ảnh preview cho thấy rõ một nhân vật hình người đứng (đầu, thân, tay, chân)",
+          "kind": "visual",
+          "check": {
+            "type": "vlm",
+            "min_score": 6
+          }
         }
       ],
       "priority": 40,
@@ -380,7 +389,7 @@
     {
       "task_id": "task.environment_texture",
       "title": "Texture môi trường",
-      "description": "Texture môi trường",
+      "description": "seamless tileable top-down ground texture, natural ground surface such as grass, soil or a stone path, flat even lighting, orthographic view from directly above, no objects, no people, no buildings, no horizon, no perspective",
       "capability": "image.texture",
       "depends_on": [],
       "inputs": [],
@@ -403,6 +412,15 @@
             "max_width": 2048,
             "max_height": 2048,
             "min_width": 64
+          }
+        },
+        {
+          "id": "ac.texture_look",
+          "description": "A flat, tileable ground texture seen from directly above (no scene, no horizon, no people, no buildings)",
+          "kind": "visual",
+          "check": {
+            "type": "vlm",
+            "min_score": 6
           }
         }
       ],

@@ -129,7 +129,7 @@ def test_fix_upstream_creates_repair_task(make_studio):
 
 def test_not_verified_guided_vs_autonomous(tmp_path):
     crit = [{"id": "ac.compiles", "description": "c", "kind": "compile"},
-            {"id": "ac.looks_right", "description": "v", "kind": "visual"}]
+            {"id": "ac.looks_right", "description": "v", "kind": "semantic"}]
     for mode, expected in (("guided", S.HUMAN_REVIEW), ("autonomous", S.ACCEPTED)):
         d = tmp_path / mode
         Studio.init_project(d, PID, "g", mode=mode, mock_mode=True)

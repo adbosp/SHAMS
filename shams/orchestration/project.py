@@ -35,7 +35,7 @@ from shams.orchestration import task_runner
 
 MODES = ("collaborative", "guided", "autonomous")
 CRITICAL_KINDS = {"compile", "unit_test", "integration_test"}
-MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric")
+MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric", "visual")
 
 
 DB_FILE = "shams.sqlite"

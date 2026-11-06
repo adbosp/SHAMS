@@ -202,6 +202,10 @@ def test_game_template_criteria_have_real_checks():
         assert crit["ac.player_look"]["check"]["type"] == "vlm"
         assert any(o["media_type"] == "image/png" for o in t["task.player_model"]["outputs"])
         assert "Chỉ dựng MỘT mesh" in t["task.npc_model"]["description"]
+        assert crit["ac.player_look"].get("required", True) is True
+        assert any(c["id"] == "ac.npc_look" for c in t["task.npc_model"]["acceptance_criteria"])
+        tx = t["task.environment_texture"]
+        assert "tileable" in tx["description"] and any(c["id"] == "ac.texture_look" for c in tx["acceptance_criteria"])
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")

@@ -33,7 +33,7 @@ ROLES = {"planner": {"model": "qwen3.5:9b"}, "coder": {"model": "qwen2.5-coder:1
 
 
 # --------------------------------------------------------------------------- helpers
-def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False) -> Path:
+def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False, nodes=None) -> Path:
     pos = struct.pack("<9f", 0, 0, 0, scale, 0, 0, 0, scale, 0)
     uvs = struct.pack("<6f", 0, 0, 1, 0, 0, 1)
     binary = pos + (uvs if uv else b"")
@@ -46,7 +46,7 @@ def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False) -> Path:
                          ([{"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2"}] if uv else []),
             "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}], "textures": [{"source": 0}],
             "images": [{"uri": "x.png"}],
-            "meshes": [{"primitives": [{"attributes": attrs, "material": 0}]}], "nodes": [{"mesh": 0}]}
+            "meshes": [{"primitives": [{"attributes": attrs, "material": 0}]}], "nodes": nodes or [{"mesh": 0}]}
     js = json.dumps(gltf).encode()
     js += b" " * ((4 - len(js) % 4) % 4)
     binary += b"\0" * ((4 - len(binary) % 4) % 4)
@@ -814,3 +814,14 @@ def test_blender_script_model_is_swapped_not_stacked(tmp_path):
     w.build = lambda *a: (log.append(("build", w.blender_model)) or ({"ok": True}, "", {}))
     w._build_swapped({}, tmp_path, {}, "blender")
     assert log == [("unload", "small3d"), ("build", "coder14b"), ("unload", "coder14b")]
+
+
+def test_glb_size_uses_node_transforms(tmp_path):
+    """Blender exports objects with node scale/translation; the size check must see the world size."""
+    g = make_glb(tmp_path / "s.glb", scale=1.0, nodes=[{"mesh": 0, "scale": [0.5, 1.7, 1], "translation": [3, 0, 0]}])
+    size = assets.parse_glb(g)["bbox"]["size"]
+    assert abs(size[0] - 0.5) < 1e-6 and abs(size[1] - 1.7) < 1e-6
+    g2 = make_glb(tmp_path / "t.glb", scale=1.0,
+                  nodes=[{"children": [1], "translation": [0, 1, 0]}, {"mesh": 0}, {"mesh": 0, "translation": [2, 0, 0]}])
+    b = assets.parse_glb(g2)["bbox"]
+    assert abs(b["size"][0] - 3.0) < 1e-6 and abs(b["min"][1] - 0.0) < 1e-6 and abs(b["max"][1] - 2.0) < 1e-6

@@ -19,6 +19,61 @@ class AssetError(ValueError):
 
 
 # --------------------------------------------------------------------------- GLB
+def _mat_mul(a: list[float], b: list[float]) -> list[float]:
+    """4x4 column-major (glTF order) product a*b."""
+    return [sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4)) for c in range(4) for r in range(4)]
+
+
+def _node_matrix(n: dict) -> list[float]:
+    if "matrix" in n:
+        return [float(x) for x in n["matrix"]]
+    tx, ty, tz = n.get("translation", [0, 0, 0])
+    x, y, z, w = n.get("rotation", [0, 0, 0, 1])
+    sx, sy, sz = n.get("scale", [1, 1, 1])
+    r = [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w),
+         2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w),
+         2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)]
+    return [r[0] * sx, r[1] * sx, r[2] * sx, 0, r[3] * sy, r[4] * sy, r[5] * sy, 0,
+            r[6] * sz, r[7] * sz, r[8] * sz, 0, tx, ty, tz, 1]
+
+
+def _world_bbox(gltf: dict, acc: list[dict]) -> tuple[list[float], list[float]] | None:
+    """Bounding box of every mesh instance in the scene graph, in world space (metres)."""
+    nodes, meshes = gltf.get("nodes", []), gltf.get("meshes", [])
+    if not nodes:
+        return None
+    scenes = gltf.get("scenes") or []
+    if scenes:
+        roots = scenes[gltf.get("scene", 0) if gltf.get("scene", 0) < len(scenes) else 0].get("nodes", [])
+    else:
+        children = {c for n in nodes for c in n.get("children", [])}
+        roots = [i for i in range(len(nodes)) if i not in children]
+    lo, hi = [math.inf] * 3, [-math.inf] * 3
+    ident = [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
+    stack, seen = [(i, ident) for i in roots], 0
+    while stack and seen < 100000:
+        i, parent = stack.pop()
+        seen += 1
+        if not 0 <= i < len(nodes):
+            continue
+        n = nodes[i]
+        m = _mat_mul(parent, _node_matrix(n))
+        mi = n.get("mesh")
+        if mi is not None and 0 <= mi < len(meshes):
+            for p in meshes[mi].get("primitives", []):
+                pa = acc[p["attributes"]["POSITION"]] if "POSITION" in p.get("attributes", {}) else {}
+                if "min" not in pa or "max" not in pa:
+                    continue
+                for cx in (pa["min"][0], pa["max"][0]):
+                    for cy in (pa["min"][1], pa["max"][1]):
+                        for cz in (pa["min"][2], pa["max"][2]):
+                            w = [m[r] * cx + m[4 + r] * cy + m[8 + r] * cz + m[12 + r] for r in range(3)]
+                            lo = [min(a, b) for a, b in zip(lo, w)]
+                            hi = [max(a, b) for a, b in zip(hi, w)]
+        stack.extend((c, m) for c in n.get("children", []))
+    return None if lo[0] == math.inf else (lo, hi)
+
+
 def parse_glb(path: str | Path) -> dict:
     """Validate the container and summarise geometry. Raises AssetError on a broken file."""
     data = Path(path).read_bytes()
@@ -81,6 +136,9 @@ def parse_glb(path: str | Path) -> dict:
             tris += n // 3 if mode == 4 else max(0, n - 2) if mode in (5, 6) else 0
     if prims == 0:
         has_uv = has_normals = False
+    world = _world_bbox(gltf, acc)                        # node transforms applied (scale, rotation, translation)
+    if world:
+        lo, hi = world
     bbox = None if lo[0] == math.inf else {"min": lo, "max": hi, "size": [h - l for l, h in zip(lo, hi)]}
     mats = gltf.get("materials", [])
     textured = any("baseColorTexture" in (m.get("pbrMetallicRoughness") or {}) for m in mats)

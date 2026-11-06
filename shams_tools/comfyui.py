@@ -290,7 +290,7 @@ class ComfyUIImageWorker:
         task = ctx["task"]
         tparams = dict(task.get("params") or {})
         prompt = tparams.pop("prompt", None) or task.get("description") or task["title"]
-        if ctx.get("goal") and not task.get("preset"):
+        if ctx.get("goal") and not task.get("preset") and not str(task.get("capability", "")).startswith("image.texture"):
             prompt = f"{prompt}. Context: {ctx['goal']}"
         params = {**self.params, **tparams, "prompt": prompt}
         if self.content_policy.get("adult"):          # checked again here: defence in depth
