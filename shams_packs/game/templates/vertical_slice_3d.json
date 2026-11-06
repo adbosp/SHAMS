@@ -67,7 +67,7 @@
       "task_id": "task.player_controller",
       "title": "Điều khiển nhân vật chính 3D",
       "description": "Điều khiển nhân vật chính 3D",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -127,7 +127,7 @@
       "task_id": "task.spawner",
       "title": "Hệ thống sinh đối tượng trong màn chơi",
       "description": "Hệ thống sinh đối tượng trong màn chơi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -181,7 +181,7 @@
       "task_id": "task.core_mechanic",
       "title": "Cơ chế gameplay cốt lõi",
       "description": "Cơ chế gameplay cốt lõi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.player_controller",
         "task.spawner",
@@ -247,7 +247,7 @@
       "task_id": "task.hud",
       "title": "HUD trạng thái người chơi",
       "description": "HUD trạng thái người chơi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.core_mechanic",
         "task.project_scaffold",
@@ -565,7 +565,7 @@
       "task_id": "task.integration_slice1",
       "title": "Tích hợp vertical slice 1",
       "description": "Ghép mọi phần đã làm thành một màn chơi chạy được. ${scene_hint}",
-      "capability": "integration",
+      "capability": "integration.game",
       "depends_on": [
         "task.player_controller",
         "task.spawner",

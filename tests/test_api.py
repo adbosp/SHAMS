@@ -117,7 +117,7 @@ def test_accepted_playable_build_is_announced_and_served(tmp_path, monkeypatch):
     assert c.get("/play/nope/", follow_redirects=False).status_code == 404
 
 
-def test_delete_project_moves_it_to_trash(tmp_path):
+def test_delete_project_removes_it_permanently(tmp_path):
     c = TestClient(create_app(tmp_path / "ws"))
     s = c.post("/api/projects", json={"name": "keep me"}).json()
     s = c.post("/api/projects", json={"name": "drop me"}).json()
@@ -125,6 +125,6 @@ def test_delete_project_moves_it_to_trash(tmp_path):
     assert {p["id"] for p in s["projects"]} >= {drop}
     s = c.post("/api/projects/delete", json={"id": drop}).json()
     assert drop not in {p["id"] for p in s["projects"]} and s["project"].get("id") != drop
-    trashed = list((tmp_path / "ws" / "_trash").iterdir())
-    assert len(trashed) == 1 and (trashed[0] / "project.json").exists()
+    assert not (tmp_path / "ws" / "_trash").exists()
+    assert len([d for d in (tmp_path / "ws").iterdir() if (d / "project.json").exists()]) == 1
     assert c.post("/api/projects/delete", json={"id": drop}).status_code == 404

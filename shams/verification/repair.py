@@ -125,10 +125,16 @@ class RepairRouter:
             else:
                 plan = {"strategy": "retry_with_context", "notes": a["explanation"]}
         if n_fail >= 3 and plan["strategy"] in {"fix_in_place", "retry_with_context"}:
-            alt = [w for w in self.nodes.candidates(task["capability"]) if w.worker_id != task.get("provider_hint")]
-            if len(alt) > 1:
-                plan = {"strategy": "switch_worker", "notes": f"try {alt[1].worker_id}"}
-                self.db.update_task_json(task["task_id"], {"provider_hint": alt[1].worker_id})
+            ranked = self.nodes.ranked(task["capability"])
+            current = task.get("provider_hint") or (ranked[0].worker_id if ranked else None)
+            tried = {current, ranked[0].worker_id} if ranked else {current}     # specialised one ran first
+            alt = [w for w in ranked if w.worker_id not in tried]
+            if alt:                     # next best fit, e.g. the general coder after the specialised one
+                plan = {"strategy": "switch_worker", "notes": f"try {alt[0].worker_id}"}
+                extra = int(getattr(self.policy, "switch_worker_attempts", 2))
+                task["max_attempts"] = max(task.get("max_attempts", 3), task["attempt"] + 1 + extra)
+                self.db.update_task_json(task["task_id"], {"provider_hint": alt[0].worker_id,
+                                                           "max_attempts": task["max_attempts"]})
             elif n_fail >= 4 and self.policy.allow_external:
                 plan = {"strategy": "escalate_external", "notes": "local workers exhausted"}
         failure["repair_plan"] = {"target_task_id": task["task_id"], **plan}

@@ -104,6 +104,14 @@ def covers(capabilities: list[str], capability: str) -> bool:
     return any(c.endswith(".*") and capability.startswith(c[:-1]) for c in capabilities)
 
 
+def specificity(capabilities: list[str], capability: str) -> int:
+    """How closely a worker's capabilities fit: an exact entry beats any family; a longer family prefix
+    (``code.game.*``) beats a shorter one (``code.*``). 0 = not covered."""
+    if capability in capabilities:
+        return 10_000
+    return max((len(c) for c in capabilities if c.endswith(".*") and capability.startswith(c[:-1])), default=0)
+
+
 class NodeRegistry:
     def __init__(self, nodes: list[dict] | None = None, workers: list[dict] | None = None):
         self.nodes: dict[str, dict] = {}
@@ -161,6 +169,24 @@ class NodeRegistry:
                     and w.entry.get("health", {}).get("status", "ok") != "down"):
                 out.append(w)
         return out
+
+    def ranked(self, capability: str) -> list[Worker]:
+        """Candidates, the most specific first (stable for equal fit)."""
+        return sorted(self.candidates(capability), key=lambda w: -specificity(w.capabilities, capability))
+
+    def preferred(self, task: dict) -> list[Worker]:
+        """Workers the scheduler may lease a task to: the one named by the task's provider_hint (set when the
+        repair router switches worker), otherwise the most specific fit, so a specialised role
+        (``code.game.*``) takes its tasks ahead of a general one (``code.*``)."""
+        cands = self.ranked(task["capability"])
+        hint = task.get("provider_hint")
+        hinted = [w for w in cands if w.worker_id == hint]
+        if hinted:
+            return hinted
+        if not cands:
+            return []
+        best = specificity(cands[0].capabilities, task["capability"])
+        return [w for w in cands if specificity(w.capabilities, task["capability"]) == best]
 
     def lanes_for(self, w: Worker) -> list[Lane]:
         need = int(w.entry["runtime"].get("vram_mb_est", 0))

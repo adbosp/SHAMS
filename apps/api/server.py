@@ -203,22 +203,26 @@ class StudioService:
         return self.state()
 
     def delete_project(self, pid: str) -> dict:
-        """Move a project folder to <workspace>/_trash/ (recoverable by copying it back). The open project is
-        closed first, so its database and run loop let go of the files."""
+        """Delete a project folder permanently (the UI asks for confirmation first). The open project is closed
+        first, so its database and run loop let go of the files."""
         import shutil
+        import stat
         p = next((p for p in self.projects() if p["id"] == pid or p["folder"] == pid), None)
         if not p:
             raise HTTPException(404, f"no project {pid!r} in {self.workspace}")
         src = Path(p["dir"])
+        if src.resolve().parent != self.workspace.resolve():
+            raise HTTPException(400, "only project folders directly inside the workspace can be deleted")
         if self.dir and Path(self.dir).resolve() == src.resolve():
             self.close_project()
-        trash = self.workspace / "_trash"
-        trash.mkdir(exist_ok=True)
-        dest = trash / f"{src.name}-{time.strftime('%Y%m%d-%H%M%S')}"
+
+        def writable(func, path, _exc):          # Windows: read-only files (e.g. git objects) block rmtree
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
         try:
-            shutil.move(str(src), str(dest))
+            shutil.rmtree(src, onerror=writable)
         except OSError as e:
-            raise HTTPException(409, f"could not move {src.name} to _trash: {e}")
+            raise HTTPException(409, f"could not delete {src.name}: {e}")
         return self.state()
 
     def close_project(self) -> dict:

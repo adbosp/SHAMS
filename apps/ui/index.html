@@ -572,7 +572,7 @@ async function openProject(id){
 async function deleteProject(id){
   const p = S.projects.find(x => x.id === id);
   if (!p) return;
-  if (!confirm(`Xoá dự án "${p.goal || p.folder}"?\n\nThư mục ${p.folder} được chuyển vào _trash trong workspace; muốn lấy lại thì chép nó ra ngoài.`)) return;
+  if (!confirm(`Xoá VĨNH VIỄN dự án "${p.goal || p.folder}"?\n\nToàn bộ thư mục ${p.folder} (code, model, ảnh, lịch sử chạy) sẽ bị xoá và không lấy lại được.`)) return;
   try { S = await api("/api/projects/delete", {id}); if (!S.project || !S.project.id) view = "chat"; } catch (e) { alert(e.message); }
   render(true);
 }

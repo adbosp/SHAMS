@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+- Game code goes to the 3D/game model: built-in role `game_coder` (capabilities `code.game.*`, `integration.game`) runs on the `scene3d` model unless set on its own. The game template's gameplay, HUD and integration tasks use `${game_code}` / `integration.game`. The scheduler leases a task to the most specific worker (or the one named by `provider_hint`); after 3 failures the repair router switches to the next best fit (the general coder) and grants 2 more attempts instead of stopping at HUMAN_REVIEW.
+
 - Game template simplified (12 tasks): no SDXL concept images and no Stable Fast 3D. The 3D scene model builds both characters and the play area as JSON primitives (`mesh.procedural`, `builder: json`) from the character brief; the ground texture task is replaced by `task.environment_model` (`models/Environment/environment.glb`). The 3D model now receives text inputs (briefs) in its prompt. Web scene hint uses relative asset paths.
 - Play link: `/play/<task>/` redirects to a per-build static server on 127.0.0.1 that serves the game from its root, so absolute asset paths (`/models/...`) load too.
-- App: delete a project from the workspace list (trash icon); the folder moves to `<workspace>/_trash/` and can be copied back.
+- App: delete a project from the workspace list (trash icon, confirmation dialog). Deletion is permanent.
 
 - App: when a build task with a playable copy is accepted, SHAMS posts a local link in the project chat (`/play/<task>/` on the app's own server) with a "Chơi thử game" button and opens it in the browser (`general.open_game`, default on). A build accepted by hand while a check failed is announced with a warning naming the failed checks.
 - Web scene hint: WebGLRenderer (the model used `THREE.WebGPU`, which does not exist, and the game showed a black screen), load both characters, camera above and looking down, stronger lights, HUD attached to the container.

@@ -17,7 +17,9 @@ def test_template_instantiates_valid_plan_for_each_engine(engine):
     assert d["template"] == f"vertical_slice_3d@{engine}"
     assert "${" not in str(d)
     code = [t for t in d["tasks"] if t["capability"].startswith("code.")]
-    assert code and all(t["capability"] == p.code_capability for t in code)
+    game_cap = "code.game." + p.code_capability.split(".", 1)[-1]
+    assert code and all(t["capability"] in (p.code_capability, game_cap) for t in code)
+    assert {t["task_id"] for t in code if t["capability"] == game_cap} >= {"task.player_controller", "task.hud"}
     scopes = [s for t in code for s in t.get("workspace_scope", [])]
     assert scopes and all(s.startswith(p.roots["scripts"]) or s.startswith(p.roots["tests"])
                           or s.startswith(p.roots["scenes"]) for s in scopes)

@@ -62,7 +62,8 @@ class EngineProfile:
     def tokens(self) -> dict[str, str]:
         t = {
             "engine": self.name, "engine_display": self.display, "language": self.language,
-            "code": self.code_capability, "build": self.build_capability, "test": self.test_capability,
+            "code": self.code_capability, "game_code": "code.game." + self.code_capability.split(".", 1)[-1],
+            "build": self.build_capability, "test": self.test_capability,
             "script_mt": self.script_media_type, "script_contract": self.script_contract,
             "test_contract": self.test_contract, "scene_mt": self.scene_media_type,
             "scene_contract": self.scene_contract, "mesh_mt": self.mesh_media_type,

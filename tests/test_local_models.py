@@ -1072,3 +1072,34 @@ def test_scene3d_json_prompt_includes_the_text_inputs(tmp_path):
                     "acceptance_criteria": []}}
     user = json.loads(w._json_messages(ctx, 20000)[1]["content"])
     assert user["inputs"] == [{"name": "brief.npc", "text": brief.read_text(encoding="utf-8")}]
+
+
+def test_game_code_goes_to_the_3d_model_first_then_the_coder(tmp_path):
+    from shams.models import ModelRegistry
+    from shams.nodes.registry import NodeRegistry
+    disc = {"status": "ok", "loaded": [], "models": [
+        {"name": "qwen2.5-coder:14b", "capabilities": ["completion"], "size_mb": 9000},
+        {"name": "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0", "capabilities": ["completion"], "size_mb": 4500}]}
+    reg = ModelRegistry({"models": {"roles": {"coder": {"model": "qwen2.5-coder:14b"},
+                                              "scene3d": {"model": "Qwen3.5-4B-3D-Coder:Q8_0"}}}}, ollama=disc)
+    b = reg.binding("game_coder")
+    assert b.ok and b.model_id == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0"
+    ws = {w["id"]: w for w in reg.workers()}
+    assert "code.game.*" in ws["worker.role.game_coder"]["capabilities"]
+
+
+def test_scheduler_prefers_the_most_specific_worker_and_repair_switches_to_the_next():
+    from shams.nodes.registry import NodeRegistry, normalize_worker
+    reg = NodeRegistry.from_dict({
+        "node": [{"id": "node.local", "kind": "local", "cpu_slots": 2, "gpus": [{"index": 0, "vram_mb": 12000}]}],
+        "worker": [{"id": "worker.role.coder", "node": "node.local", "kind": "llm_agent", "provider": "ollama",
+                    "model": "coder", "capabilities": ["code.*", "integration.*"]},
+                   {"id": "worker.role.game_coder", "node": "node.local", "kind": "llm_agent", "provider": "ollama",
+                    "model": "game", "capabilities": ["code.game.*", "integration.game"]}]})
+    task = {"capability": "code.game.web_typescript"}
+    assert [w.worker_id for w in reg.preferred(task)] == ["worker.role.game_coder"]
+    assert [w.worker_id for w in reg.ranked("code.game.web_typescript")] == ["worker.role.game_coder",
+                                                                             "worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({**task, "provider_hint": "worker.role.coder"})] == ["worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({"capability": "code.web_typescript"})] == ["worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({"capability": "integration.game"})] == ["worker.role.game_coder"]

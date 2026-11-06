@@ -35,6 +35,11 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
     "scene3d": {"label": "3D Scene / Procedural", "backend": "ollama", "kind": "llm_agent", "impl": "scene3d",
                 "capabilities": ["scene.*", "mesh.procedural", "mesh.text_to_3d"],
                 "needs": ["completion"], "num_ctx": 16384},
+    # game code (gameplay, scene, HUD) goes to the 3D/game model by default; the general coder takes over
+    # after the repair router switches worker. Uses the scene3d model unless the role is set on its own.
+    "game_coder": {"label": "Game Code (3D/gameplay)", "backend": "ollama", "kind": "llm_agent",
+                   "capabilities": ["code.game.*", "integration.game"], "needs": ["completion"],
+                   "num_ctx": 16384, "inherit_model": "scene3d"},
     "visual_qc": {"label": "Visual QC", "backend": "ollama", "kind": "inference",
                   "capabilities": ["visual_review", "visual_review.*"], "needs": ["vision"], "num_ctx": 8192},
     "embedding": {"label": "Embedding / Retrieval", "backend": "ollama", "kind": "inference", "worker": False,
@@ -239,6 +244,12 @@ class ModelRegistry:
         roles = dict(self.cfg.get("roles") or {})
         for role, dcfg in DEFAULT_ROLES.items():
             roles.setdefault(role, dict(dcfg))
+        for role, spec in ROLE_SPECS.items():          # e.g. game_coder runs on the scene3d model
+            src = spec.get("inherit_model")
+            if src and role not in roles and src in roles:
+                scfg = roles[src] if isinstance(roles[src], dict) else {"model": roles[src]}
+                if scfg.get("model") and scfg.get("enabled", True) is not False:
+                    roles[role] = {"model": scfg["model"], "inherited_from": src}
         for role, rcfg in roles.items():
             rcfg = dict(rcfg or {}) if not isinstance(rcfg, str) else {"model": rcfg}
             spec = ROLE_SPECS.get(role, {"backend": rcfg.get("backend", "ollama")})
