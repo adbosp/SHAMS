@@ -376,7 +376,7 @@ def blender_physics(rep: dict, single_asset: bool = False) -> list[str]:
     if not boxes:
         return []
     out = scene_json.box_problems(boxes, axis="z")
-    return out + (scene_json.detached_parts(boxes) if single_asset else [])
+    return out + (scene_json.detached_parts(boxes, gaps=rep.get("gaps")) if single_asset else [])
 
 
 def check_blender_import(c: dict, outputs: list[dict], settings: dict) -> tuple[str, str]:

@@ -835,3 +835,21 @@ def test_single_asset_parts_must_touch():
     probs = detached_parts([body, head, leg])
     assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
     assert detached_parts([body, leg]) == []
+
+
+def test_detached_head_found_with_real_gaps_where_boxes_touch():
+    """Regression from ROPY-PC: the head's box touched the arms' boxes, so a 5 cm head gap passed."""
+    from shams_tools.blender import blender_physics
+    objs = {"Head": ([-0.15, -0.15, 0.65], [0.15, 0.15, 0.95]), "Torso": ([-0.1, -0.1, 0.0], [0.1, 0.1, 0.6]),
+            "Arm_Right": ([0.15, -0.05, 0.3], [0.25, 0.05, 0.7]), "Arm_Left": ([-0.25, -0.05, 0.3], [-0.15, 0.05, 0.7]),
+            "Leg_Right": ([0.03, -0.07, -0.25], [0.17, 0.07, 0.45]), "Leg_Left": ([-0.17, -0.07, -0.25], [-0.03, 0.07, 0.45])}
+    rep = {"objects": [{"name": n, "type": "MESH", "bbox": [lo, hi]} for n, (lo, hi) in objs.items()]}
+    assert not any("not attached" in p for p in blender_physics(rep, single_asset=True))   # boxes alone miss it
+    names = sorted(objs)
+    gaps = {f"{a}|{b}": 0.0 for i, a in enumerate(names) for b in names[i + 1:]}
+    for k in list(gaps):
+        if "Head" in k:
+            gaps[k] = 0.05 if "Torso" in k else 0.08
+    rep["gaps"] = gaps
+    probs = [p for p in blender_physics(rep, single_asset=True) if "not attached" in p]
+    assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]

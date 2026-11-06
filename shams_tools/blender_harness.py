@@ -42,6 +42,38 @@ def _stats(scene):
     return objs
 
 
+def _gaps(meshes, limit=40, samples=1500):
+    """Real surface distance between every pair of meshes (world space, metres; 0 = touching or overlapping).
+    Bounding boxes are not enough: the box of a sphere touches things the sphere never reaches."""
+    from mathutils.bvhtree import BVHTree
+    if len(meshes) < 2 or len(meshes) > limit:
+        return None
+    dg = bpy.context.evaluated_depsgraph_get()
+    data = {}
+    for o in meshes:
+        me = o.evaluated_get(dg).to_mesh()
+        verts = [o.matrix_world @ v.co for v in me.vertices]
+        polys = [tuple(p.vertices) for p in me.polygons]
+        o.evaluated_get(dg).to_mesh_clear()
+        if not verts or not polys:
+            continue
+        step = max(1, len(verts) // samples)
+        data[o.name] = (BVHTree.FromPolygons(verts, polys), verts[::step])
+    out = {}
+    names = sorted(data)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            ta, va = data[a]
+            tb, vb = data[b]
+            if ta.overlap(tb):
+                d = 0.0
+            else:
+                d = min([r[3] for r in (tb.find_nearest(v) for v in va) if r[0] is not None] +
+                        [r[3] for r in (ta.find_nearest(v) for v in vb) if r[0] is not None] or [math.inf])
+            out[f"{a}|{b}"] = round(d, 4)
+    return out
+
+
 def _bbox(meshes):
     lo, hi = Vector((math.inf,) * 3), Vector((-math.inf,) * 3)
     for o in meshes:
@@ -107,6 +139,10 @@ def main():
         if meshes:
             lo, hi = _bbox(meshes)
             report["bbox"] = {"min": list(lo), "max": list(hi), "size": list(hi - lo)}
+            try:
+                report["gaps"] = _gaps(meshes)
+            except Exception as e:  # noqa: BLE001 - a measurement must not fail the build
+                report["gaps_error"] = f"{type(e).__name__}: {e}"
         if spec.get("render"):
             report["stage"] = "render"
             if not meshes:

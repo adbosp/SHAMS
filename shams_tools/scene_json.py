@@ -308,22 +308,32 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
     return box_problems(boxes, tol)
 
 
-def detached_parts(boxes: list, tol: float = 0.01) -> list[str]:
-    """One asset must be one connected piece: every part has to touch (or overlap) the main body. Bounding boxes
-    closer than ``tol`` count as touching. Returns one problem per part that floats free, with the gap."""
+def detached_parts(boxes: list, tol: float = 0.01, gaps: dict | None = None) -> list[str]:
+    """One asset must be one connected piece: every part has to touch (or overlap) the main body. ``gaps`` are
+    real surface distances by "a|b" name pair (from the Blender harness); without them bounding boxes closer
+    than ``tol`` count as touching. Returns one problem per part that floats free, with the gap."""
     if len(boxes) < 2:
         return []
     def gap(a, b):
+        if gaps is not None:
+            k = "|".join(sorted((a[0]["name"], b[0]["name"])))
+            if k in gaps:
+                return float(gaps[k])
         return max(max(b[1][k] - a[2][k], a[1][k] - b[2][k], 0.0) for k in range(3))
     vol = lambda b: max(b[2][0] - b[1][0], 1e-6) * max(b[2][1] - b[1][1], 1e-6) * max(b[2][2] - b[1][2], 1e-6)  # noqa: E731
-    main = max(range(len(boxes)), key=lambda i: vol(boxes[i]))
-    group, frontier = {main}, [main]
-    while frontier:
-        i = frontier.pop()
-        for j in range(len(boxes)):
-            if j not in group and gap(boxes[i], boxes[j]) <= tol:
-                group.add(j)
-                frontier.append(j)
+    comps, left = [], set(range(len(boxes)))
+    while left:                                   # connected groups of touching parts
+        start = left.pop()
+        comp, frontier = {start}, [start]
+        while frontier:
+            i = frontier.pop()
+            for j in list(left):
+                if gap(boxes[i], boxes[j]) <= tol:
+                    left.discard(j)
+                    comp.add(j)
+                    frontier.append(j)
+        comps.append(comp)
+    group = max(comps, key=lambda c: sum(vol(boxes[i]) for i in c))   # the body = the biggest connected group
     out = []
     for j in range(len(boxes)):
         if j not in group:
