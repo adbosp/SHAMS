@@ -753,3 +753,64 @@ def test_llm_worker_reply_without_declared_outputs_is_a_task_failure(tmp_path):
     files, h = w.run(ctx, ref)
     assert files == [] and h["status"] == "FAILED" and "wrong.id" in h["blocked_reason"]
     assert (tmp_path / "task.a" / "a1" / "_model_reply.txt").read_text(encoding="utf-8").startswith("{")
+
+
+def test_tool_call_written_as_text_is_executed():
+    from shams.workers import text_tool_call
+    names = {"research__web_search"}
+    c = text_tool_call('{\n "name": "research__web_search",\n "arguments": {"query": "three.js"}\n}', names)
+    assert c["name"] == "research__web_search" and c["arguments"] == {"query": "three.js"}
+    assert text_tool_call('{"function": {"name": "research__web_search", "arguments": "{\\"query\\": \\"x\\"}"}}',
+                          names)["arguments"] == {"query": "x"}
+    assert text_tool_call('{"files": [], "summary": "s", "name": "research__web_search"}', names) is None
+    assert text_tool_call('{"name": "other", "arguments": {}}', names) is None
+    assert text_tool_call("plain words", names) is None
+
+
+def test_llm_worker_runs_text_tool_call_then_writes_files(tmp_path):
+    from shams.workers import LLMWorker
+    calls = []
+
+    class P:
+        name, supports_tools = "fake", True
+        def __init__(self):
+            self.n = 0
+        def chat_tools(self, msgs, *, model, tools, **o):
+            self.n += 1
+            if self.n == 1:
+                return {"text": '{"name": "research__web_search", "arguments": {"query": "q"}}', "tool_calls": [],
+                        "assistant": {"role": "assistant", "content": ""}}
+            return {"text": json.dumps({"files": [{"logical_id": "code.a", "content": "x = 1"}], "summary": "ok",
+                                        "status": "READY_FOR_QC"}), "tool_calls": [], "assistant": {}}
+        def tool_results(self, results):
+            return [{"role": "tool", "content": t} for _, t in results]
+
+    class M:
+        def tools(self, servers):
+            return [{"name": "research__web_search", "server": "research", "input_schema": {"type": "object"}}]
+        def call(self, name, args, catalog):
+            calls.append((name, args))
+            return {"text": "results", "is_error": False}
+        research = type("R", (), {"enabled": True})()
+
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    w = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P(), mcp=M())
+    files, h = w.run(ctx, {"worker_id": "worker.x", "model": "m"})
+    assert calls == [("research__web_search", {"query": "q"})]
+    assert h["status"] == "READY_FOR_QC" and [f["logical_id"] for f in files] == ["code.a"]
+
+
+def test_blender_script_model_is_swapped_not_stacked(tmp_path):
+    from shams_tools.blender import Scene3DWorker
+    log = []
+
+    class P:
+        def unload(self, m):
+            log.append(("unload", m))
+    w = Scene3DWorker(entry={"worker": {"model": "small3d"}, "provider_config": {"blender_model": "coder14b"}},
+                      attempts_root=tmp_path, provider=P())
+    w.build = lambda *a: (log.append(("build", w.blender_model)) or ({"ok": True}, "", {}))
+    w._build_swapped({}, tmp_path, {}, "blender")
+    assert log == [("unload", "small3d"), ("build", "coder14b"), ("unload", "coder14b")]

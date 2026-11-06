@@ -63,6 +63,11 @@ Rules:
 - Prefer primitives, modifiers (bevel, array, mirror, solidify) and bmesh over huge vertex lists. Stay within the polygon budget.
 - Add a camera that frames the subject and at least one light.
 - This is Python for Blender (bpy), NOT JavaScript/three.js: no `new`, `const`, `let`, `THREE.`, semicolons or braces.
+- Blender API facts (Blender 4/5): bpy.ops.mesh.primitive_* operators already create UV maps (calc_uvs=True), so
+  build from primitives and do not unwrap by hand; bmesh.ops has NO uv_unwrap. bmesh.ops.create_icosphere /
+  create_uvsphere / create_cone take radius (radius1/radius2 for cones), never diameter. After adding or removing
+  bmesh elements call bm.verts.ensure_lookup_table() (and edges/faces) before indexing them. Prefer bpy.ops
+  primitives + modifiers; use bmesh only when needed.
 Example of the expected style (a different subject):
 ```python
 import bpy
@@ -181,6 +186,24 @@ class Scene3DWorker:
         payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": SCENE_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
+
+    def _build_swapped(self, ctx: dict, work: Path, want: dict, route: str):
+        """When a separate model writes the Blender script, unload the worker's own model first and the script
+        model afterwards: the scheduler leased VRAM for one model, so two must never sit on the GPU together."""
+        other = self.blender_model and self.blender_model != self.model and hasattr(self.provider, "unload")
+        if other:
+            try:
+                self.provider.unload(self.model)
+            except Exception:  # noqa: BLE001 - not loaded is fine
+                pass
+        try:
+            return self.build(ctx, work, want, route)
+        finally:
+            if other:
+                try:
+                    self.provider.unload(self.blender_model)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def generate_script(self, messages: list[dict]) -> tuple[str | None, str, dict]:
         r = providers.timed_chat(self.provider, messages, self.blender_model, **self.chat_options)
@@ -308,10 +331,10 @@ class Scene3DWorker:
                 builder, work = "blender", adir / "_blender"
                 work.mkdir(exist_ok=True)
                 want = {"glb": str(work / "scene.glb") if want["glb"] else None, "render": str(work / "render.png")}
-                rep, script, u2 = self.build(ctx, work, want, route)
+                rep, script, u2 = self._build_swapped(ctx, work, want, route)
                 usage = {k: usage[k] + u2[k] for k in usage}
         else:
-            rep, script, usage = self.build(ctx, work, want, route)
+            rep, script, usage = self._build_swapped(ctx, work, want, route)
             decisions.append({"decision": "procedural geometry via Blender Python", "reason": "complex scene"})
         decisions += [{"decision": f"fix round {e['round']}", "reason": e["result"]} for e in self.log if e["result"] != "ok"]
         if not rep.get("ok"):

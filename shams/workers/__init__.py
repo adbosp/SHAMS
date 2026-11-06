@@ -92,6 +92,29 @@ def extract_json(text: str) -> dict:
     raise ValueError("no JSON object in model reply")
 
 
+def text_tool_call(text: str, names: set[str]) -> dict | None:
+    """A tool call the model wrote as plain JSON text ({"name": <tool>, "arguments": {...}}) instead of using
+    the tool-call channel. Returns {"id", "name", "arguments"} or None (also for a normal final answer)."""
+    try:
+        obj = extract_json(text or "")
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or "files" in obj:
+        return None
+    if isinstance(obj.get("function"), dict):            # {"function": {"name", "arguments"}}
+        obj = obj["function"]
+    name = obj.get("name") or obj.get("tool")
+    args = obj.get("arguments", obj.get("parameters", obj.get("input", {})))
+    if name not in names or not isinstance(args, (dict, str)):
+        return None
+    if isinstance(args, str):
+        try:
+            args = json.loads(args or "{}")
+        except json.JSONDecodeError:
+            return None
+    return {"id": f"text_{name}", "name": name, "arguments": args}
+
+
 class LLMWorker:
     def __init__(self, *, entry: dict, attempts_root: Path, provider: Any,
                  read_blob: Callable[[str], Path] | None = None, system_prompt: str | None = None,
@@ -205,8 +228,16 @@ class LLMWorker:
         self.tool_log = []
         for round_ in range(self.max_tool_rounds + 1):
             tools = catalog if round_ < self.max_tool_rounds else []
+            if not tools and round_:
+                msgs.append({"role": "user", "content": "No more tool calls. Reply now with the final JSON object "
+                                                        "(with the files) only."})
             r = self.provider.chat_tools(msgs, model=self.model, tools=tools, **self.chat_options)
             tin, tout = tin + r.get("tokens_in", 0), tout + r.get("tokens_out", 0)
+            if not r["tool_calls"] and tools:
+                written = text_tool_call(r["text"], {t["name"] for t in tools})
+                if written:                  # small local models often write the call as plain JSON text
+                    r = {**r, "tool_calls": [written],
+                         "assistant": {"role": "assistant", "content": r["text"]}}
             if not r["tool_calls"]:
                 return {"text": r["text"], "tokens_in": tin, "tokens_out": tout,
                         "wall_seconds": round(time.monotonic() - t0, 3)}

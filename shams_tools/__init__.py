@@ -72,6 +72,13 @@ def _scene3d_hook(reg, w: dict) -> None:
         mid, _how = match_model(want, names, dict(reg.cfg.get("aliases") or {}))
         if mid:
             w["config"]["blender_model"] = mid
+            # the lease must cover the bigger of the two models (they are swapped, never loaded together)
+            from shams.models import estimate_vram_mb
+            info = next((m for m in reg.ollama().get("models", []) if m["name"] == mid), {})
+            size_mb = int(info.get("size_mb") or int(info.get("size", 0)) // (1 << 20))
+            need = estimate_vram_mb(size_mb, w["config"].get("num_ctx"))
+            if size_mb and need > int(w.get("vram_mb") or 0):
+                w["vram_mb"] = need
 
 
 def _probe_blender(settings: dict) -> dict:

@@ -86,6 +86,11 @@ class DirectChatWorker:
             tools = catalog if round_ < self.max_tool_rounds else []
             r = self.provider.chat_tools(msgs, model=self.model, tools=tools)
             tin, tout = tin + r.get("tokens_in", 0), tout + r.get("tokens_out", 0)
+            if not r["tool_calls"] and tools:
+                from shams.workers import text_tool_call
+                written = text_tool_call(r["text"], {t["name"] for t in tools})
+                if written:                  # a tool call written as plain JSON text
+                    r = {**r, "tool_calls": [written], "assistant": {"role": "assistant", "content": r["text"]}}
             if not r["tool_calls"]:
                 return {"text": r["text"], "tokens_in": tin, "tokens_out": tout}
             msgs.append(r["assistant"])

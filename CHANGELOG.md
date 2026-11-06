@@ -15,6 +15,8 @@
 - A model reply without any declared output is a task failure (repair loop) and the raw reply is kept as `_model_reply.txt`; an invalid handoff fails the attempt instead of stopping the run loop, also on resume.
 - The app no longer resumes an unfinished project when it opens it; a "Tiếp tục chạy" button does that. Missing-worker notes use the scheduler's capability matching.
 - Fixed the app crash (access violation): the event store closed its SQLite connection while another thread was reading it during a project switch. Closing now waits for readers, reads after close raise a clean error, project switches run one at a time and the UI state retries.
+- A tool call the model writes as plain JSON text is recognised and executed (local models often do this); the last tool round asks for the final answer.
+- Scene3D: when a separate model writes Blender scripts, the two models are swapped on the GPU, never loaded together, and the lease covers the larger one. The Blender prompt lists common API pitfalls.
 - PNG checks reject random-noise images (neighbour/std "roughness"); self-test 9e adds visual QC.
 - Read-only web research tools for models (public web only, untrusted-content marking, URL log).
 - Simple 3D scenes: the 3D model writes scene JSON and SHAMS builds the GLB and a render without Blender. Blender is used for complex scenes.
