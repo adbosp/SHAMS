@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Research cho worker và Direct Mode: tìm kiếm SearXNG với fallback DuckDuckGo/Bing RSS, đọc và đối chiếu nguồn công khai, ghi URL thực sự đọc, cùng browser chỉ đọc tùy chọn. Transport kiểm từng redirect trước khi kết nối và ghim IP đã xác minh. Xem `docs/RESEARCH.md`.
+
 - Web UI: chat văn bản theo từng cuộc trò chuyện, chọn model, lưu lịch sử trên trình duyệt và giữ ngữ cảnh khi hỏi tiếp. Luồng chat web không gọi công cụ và không mở màn hình điều phối dự án.
 
 - 3D briefs: the planner turns the request into detailed English build descriptions before the 3D model runs: each character (height, hair, skin, every clothing item with colour) and the play area (`brief.environment`: ground, props with counts, sizes, colours, layout). Vietnamese slang such as 'cưa gái' is explained as flirting, not a saw.

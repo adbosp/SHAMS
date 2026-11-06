@@ -22,6 +22,7 @@ import re
 import os
 import subprocess
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
@@ -197,7 +198,11 @@ class LLMWorker:
         research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False \
             and (ctx["task"].get("params") or {}).get("research") is not False      # a task can opt out
         if self.mcp is not None and (self.mcp_servers or research) and getattr(self.provider, "supports_tools", False):
-            r = self._chat_with_tools(messages, research=research)
+            session = getattr(getattr(self.mcp, "research", None), "session", nullcontext)
+            with session() if research else nullcontext() as run:
+                r = self._chat_with_tools(messages, research=research)
+                if run:
+                    self.tool_log.extend({"tool": "web source", "summary": url} for url in run.sources)
         else:
             r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
@@ -257,10 +262,15 @@ class LLMWorker:
         msgs = list(messages)
         msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\nYou may call the provided tools to inspect or change "
                    "external systems before replying. When done, reply with the JSON object only."}
+        if research:
+            from shams.research import RESEARCH_PROMPT
+            msgs[0]["content"] += "\n" + RESEARCH_PROMPT
         tin = tout = 0
         self.tool_log = []
         for round_ in range(self.max_tool_rounds + 1):
             tools = catalog if round_ < self.max_tool_rounds else []
+            if hasattr(self.mcp, "available"):
+                tools = self.mcp.available(tools)
             if not tools and round_:
                 msgs.append({"role": "user", "content": "No more tool calls. Reply now with the final JSON object "
                                                         "(with the files) only."})
@@ -277,7 +287,7 @@ class LLMWorker:
             msgs.append(r["assistant"])
             results = []
             for call in r["tool_calls"]:
-                res = self.mcp.call(call["name"], call["arguments"], catalog)
+                res = self.mcp.call(call["name"], call["arguments"], tools)
                 text = res["text"][:MAX_INPUT_CHARS]
                 results.append((call, ("ERROR: " if res["is_error"] else "") + text))
                 self.tool_log.append({"tool": call["name"], "denied": res.get("denied", False),

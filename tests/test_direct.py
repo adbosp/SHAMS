@@ -104,25 +104,96 @@ def test_research_refuses_local_and_private_addresses(ollama):
     assert "denied" in deny.call("research__web_fetch", {"url": "https://www.example.com/"})["text"]
     allow = Research({"enabled": True, "allow_domains": ["wikipedia.org"]})
     assert "allow_domains" in allow.call("research__web_fetch", {"url": "https://example.com/"})["text"]
-    assert Research({}).tools() == [] and len(r.tools()) == 2
+    assert Research({}).tools() == [] and len(r.tools()) == 3
 
 
 def test_research_parses_results_and_marks_web_text_untrusted(monkeypatch):
     r = Research({"enabled": True, "search_url": "https://searx.example/search?q={query}&format=json"})
     seen = []
-    def fake_get(url, search=False):
+    def fake_get(url, **kwargs):
         seen.append(url)
         if "searx" in url:
-            return json.dumps({"results": [{"title": "T", "url": "https://a.example/x", "content": "S"}]}), "application/json"
-        return "<html><head><title>x</title></head><body><script>bad()</script><p>Hello</p><p>World</p></body></html>", "text/html"
+            return b'{"results":[{"title":"T","url":"https://a.example/x","content":"S"}]}', "application/json", url, 200
+        return b"<html><head><title>x</title></head><body><script>bad()</script><p>Hello</p><p>World</p></body></html>", "text/html", url, 200
     monkeypatch.setattr(r, "_get", fake_get)
     out = r.call("research__web_search", {"query": "blender bpy"})
     assert "q=blender+bpy" in seen[0] and "https://a.example/x" in out["text"] and out["text"].startswith("[UNTRUSTED")
     page = r.call("research__web_fetch", {"url": "https://a.example/x"})["text"]
     assert "Hello" in page and "bad()" not in page
     box = ToolBox(None, r)
-    assert [t["name"] for t in box.tools(None)] == ["research__web_search", "research__web_fetch"]
+    assert [t["name"] for t in box.tools(None)] == ["research__web_search", "research__web_scrape", "research__web_research"]
     assert r.log[0]["urls"] == ["https://a.example/x"]
+
+
+def test_research_fallback_and_turn_budget(monkeypatch):
+    r = Research({"enabled": True, "max_calls": 2})
+    attempts = []
+
+    def fake_get(url, **kwargs):
+        attempts.append(url)
+        if "8888" in url:
+            raise ConnectionError("service down")
+        if "duckduckgo" in url:
+            return b"bot check", "text/html", url, 202
+        if "bing.com" in url:
+            rss = b"<rss><channel><item><title>T</title><link>https://public.example/page</link></item></channel></rss>"
+            return rss, "application/rss+xml", url, 200
+        return b"<main>Verified content</main>", "text/html", url, 200
+
+    monkeypatch.setattr(r, "_get", fake_get)
+    box = ToolBox(None, r)
+    catalog = box.tools(None) + [{"name": "change_files", "server": "mcp"}]
+    with r.session() as run:
+        out = box.call("research__web_search", {"query": "query"}, catalog)
+        assert "[Bing RSS]" in out["text"]
+        assert box.call("change_files", {}, catalog)["denied"]
+        assert "Verified content" in box.call("research__web_scrape", {"url": "https://public.example/page"}, catalog)["text"]
+        assert list(run.sources) == ["https://public.example/page"]
+        assert box.available(catalog) == []
+        assert box.call("research__web_search", {"query": "another"}, catalog)["is_error"]
+    assert len(attempts) == 4
+    with r.session() as run:
+        assert run.sources == {} and box.available(catalog) == catalog
+
+
+def test_research_checks_redirect_before_second_network_request():
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            paths.append(self.path)
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/private")
+            self.end_headers()
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f"http://127.0.0.1:{server.server_port}/search?q={{query}}"
+        r = Research({"enabled": True, "search_url": endpoint, "fallback_search_urls": []})
+        try:
+            result = r.call("research__web_search", {"query": "test"})
+            assert result["is_error"] and paths == ["/search?q=test"]
+        finally:
+            server.shutdown()
+
+
+def test_research_rejects_mixed_dns_results_before_opening_socket(monkeypatch):
+    from shams import research_http
+
+    monkeypatch.setattr(research_http.socket, "getaddrinfo", lambda *a, **k: [
+        (None, None, None, None, ("8.8.8.8", 443)), (None, None, None, None, ("100.64.0.1", 443)),
+    ])
+
+    def never_connect(*args, **kwargs):
+        pytest.fail("no connection may be attempted with a non-public DNS answer")
+
+    monkeypatch.setattr(research_http.socket, "create_connection", never_connect)
+    r = Research({"enabled": True})
+    assert r.call("research__web_scrape", {"url": "https://some.example/"})["is_error"]
 
 
 # --------------------------------------------------------------------------- Direct Mode end to end (fakes)

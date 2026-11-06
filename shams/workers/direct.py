@@ -7,10 +7,12 @@ provider supports tool calling, the model may use the read-only web tools (and M
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
 from shams import providers
+from shams.research import RESEARCH_PROMPT
 from shams.workers import MAX_INPUT_CHARS, base_handoff, output_plan
 
 PARAM_MAP = {"temperature": "temperature", "max_tokens": "num_predict", "num_ctx": "num_ctx"}
@@ -53,15 +55,21 @@ class DirectChatWorker:
         messages.extend(params.get("_chat_history", []))
         messages.append({"role": "user", "content": prompt})
         t0 = time.monotonic()
+        sources = {}
         try:
             if "_chat_history" not in params and self._use_tools(params):
-                r = self._chat_with_tools(messages, params)
+                session = getattr(getattr(self.mcp, "research", None), "session", nullcontext)
+                with session() as run:
+                    r = self._chat_with_tools(messages, params)
+                    sources = run.sources if run else {}
             else:
                 r = self.provider.chat(messages, model=self.model, **self._options(params))
         except providers.ProviderError as e:
             return [], base_handoff(ctx, worker_ref, "FAILED", "provider error", blocked_reason=f"provider error: {e}"[:500],
                                     known_issues=[{"issue": str(e)[:800], "severity": "high"}])
         text = r.get("text", "")
+        if text.strip() and sources:
+            text += "\n\n### Trang đã đọc\n" + "\n".join(f"- <{url}>" for url in sources)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
                  "wall_seconds": round(time.monotonic() - t0, 3)}
         files = []
@@ -71,6 +79,7 @@ class DirectChatWorker:
                 Path(o["abs"]).write_text(text, encoding="utf-8")
                 files.append(o)
         decisions = [{"decision": f"used tool {t['tool']}", "reason": t["summary"]} for t in self.tool_log]
+        decisions.extend({"decision": "read web source", "reason": url} for url in sources)
         status = "READY_FOR_QC" if text.strip() else "FAILED"
         return files, base_handoff(ctx, worker_ref, status, text[:300] or "empty reply", usage=usage,
                                    decisions=decisions,
@@ -81,11 +90,18 @@ class DirectChatWorker:
         if params.get("research", self.research_default) is False:
             catalog = [t for t in catalog if t.get("server") != "research"]
         msgs = list(messages)
+        if any(t.get("server") == "research" for t in catalog):
+            if msgs[0]["role"] == "system":
+                msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\n" + RESEARCH_PROMPT}
+            else:
+                msgs.insert(0, {"role": "system", "content": RESEARCH_PROMPT})
         tin = tout = 0
         self.tool_log = []
         for round_ in range(self.max_tool_rounds + 1):
             tools = catalog if round_ < self.max_tool_rounds else []
-            r = self.provider.chat_tools(msgs, model=self.model, tools=tools)
+            if hasattr(self.mcp, "available"):
+                tools = self.mcp.available(tools)
+            r = self.provider.chat_tools(msgs, model=self.model, tools=tools, **self._options(params))
             tin, tout = tin + r.get("tokens_in", 0), tout + r.get("tokens_out", 0)
             if not r["tool_calls"] and tools:
                 from shams.workers import text_tool_call
@@ -97,7 +113,7 @@ class DirectChatWorker:
             msgs.append(r["assistant"])
             results = []
             for call in r["tool_calls"]:
-                res = self.mcp.call(call["name"], call["arguments"], catalog)
+                res = self.mcp.call(call["name"], call["arguments"], tools)
                 text = res["text"][:MAX_INPUT_CHARS]
                 results.append((call, ("ERROR: " if res["is_error"] else "") + text))
                 self.tool_log.append({"tool": call["name"], "summary": (str(call["arguments"]) + " -> " + text[:120])[:200]})

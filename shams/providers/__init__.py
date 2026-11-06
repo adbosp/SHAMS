@@ -234,13 +234,14 @@ class Ollama(OpenAICompatible):
         ignores num_ctx and runs with Ollama's small default context, which cuts long task prompts)."""
         if not self.native:
             return super().chat_tools(messages, model=model, tools=tools, **opts)
+        think = opts.pop("think", self.think)
         options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
         if self.num_ctx and "num_ctx" not in options:
             options["num_ctx"] = self.num_ctx
         body: dict[str, Any] = {"model": model, "messages": [dict(m) for m in messages], "stream": False,
                                 "keep_alive": self.keep_alive, "options": options}
-        if self.think is not None:
-            body["think"] = self.think
+        if think is not None:
+            body["think"] = think
         if tools:
             body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
                                                                "parameters": t["input_schema"]}} for t in tools]
