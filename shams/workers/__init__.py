@@ -68,6 +68,8 @@ def base_handoff(ctx: dict, worker_ref: dict, status: str, summary: str, *, deci
 SYSTEM_PROMPT = """You are a specialist worker inside SHAMS, an AI manufacturing pipeline that builds software and games.
 You receive one task as JSON. Produce every declared output, honouring domain_context (stack, engine, language, folders), paths and acceptance criteria.
 If prior_failures is not empty, fix exactly what they describe.
+Tools such as web search are optional help: when they find nothing, write the outputs from your own knowledge.
+Use "BLOCKED" only when the task is impossible without something the user must provide, never because a search was empty.
 Reply with ONE JSON object and nothing else:
 {"files": [{"logical_id": "<declared logical_id>", "content": "<full file content>"}],
  "summary": "<2-4 sentences for the next worker>",
@@ -190,8 +192,17 @@ class LLMWorker:
                                     known_issues=[{"issue": f"schema violation: {e}", "severity": "high"}],
                                     usage=usage, blocked_reason=f"schema violation: {e}")
         if reply.get("status") == "BLOCKED":
+            why = str(reply.get("blocked_reason") or "worker blocked")
+            if not any(isinstance(f, dict) and f.get("content") for f in reply.get("files") or []):
+                # a text model that gives up writes nothing: a failed attempt (repair loop), not a dead end that
+                # stops every task after this one
+                return [], base_handoff(ctx, worker_ref, "FAILED", reply.get("summary", "") or "model gave up",
+                                        known_issues=[{"issue": f"model declared BLOCKED without writing the outputs: "
+                                                                f"{why}. Write them from your own knowledge.",
+                                                       "severity": "high"}],
+                                        usage=usage, blocked_reason=why[:500])
             return [], base_handoff(ctx, worker_ref, "BLOCKED", reply.get("summary", ""),
-                                    usage=usage, blocked_reason=str(reply.get("blocked_reason") or "worker blocked"))
+                                    usage=usage, blocked_reason=why)
         by_id = {f.get("logical_id"): f.get("content", "") for f in reply.get("files", []) if isinstance(f, dict)}
         files = []
         for o in plan:

@@ -105,14 +105,14 @@ def _bbox(meshes):
     return lo, hi
 
 
-def _frame_camera(scene, meshes):
+def _frame_camera(scene, meshes, direction=None):
     lo, hi = _bbox(meshes)
     center = (lo + hi) / 2
     radius = max((hi - lo).length / 2, 0.1)
     cam_data = bpy.data.cameras.new("SHAMS_Camera")
     cam = bpy.data.objects.new("SHAMS_Camera", cam_data)
     scene.collection.objects.link(cam)
-    direction = Vector((1.0, -1.2, 0.8)).normalized()
+    direction = Vector(direction or (1.0, -1.2, 0.8)).normalized()
     cam.location = center + direction * radius * 3.2
     cam.rotation_euler = (center - cam.location).to_track_quat("-Z", "Y").to_euler()
     cam_data.clip_end = max(1000.0, radius * 20)
@@ -172,7 +172,7 @@ def main():
                 raise RuntimeError("render evidence impossible: the scene has no mesh objects")
             # evidence must show the subject: SHAMS frames its own camera on the meshes (a script camera that
             # misses the object would make the render, and the visual QC on it, worthless)
-            report["camera_added"] = _frame_camera(scene, meshes)
+            report["camera_added"] = _frame_camera(scene, meshes, spec.get("camera_dir"))
             scene.render.engine = spec.get("engine") or "BLENDER_WORKBENCH"
             if scene.render.engine == "BLENDER_WORKBENCH":
                 scene.display.shading.light = "STUDIO"

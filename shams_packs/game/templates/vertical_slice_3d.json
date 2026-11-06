@@ -281,7 +281,7 @@
     {
       "task_id": "task.character_brief",
       "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
-      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
+      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -360,17 +360,18 @@
       "acceptance_criteria": [
         {
           "id": "ac.player_concept_valid",
-          "description": "PNG hợp lệ",
+          "description": "PNG hợp lệ, nhân vật không chạm mép ảnh (không bị cắt chân, cắt đầu)",
           "kind": "schema",
           "check": {
             "type": "image",
             "min_width": 256,
-            "min_height": 256
+            "min_height": 256,
+            "max_edge_subject": 0.02
           }
         },
         {
           "id": "ac.player_concept_look",
-          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body from head to feet is visible; front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
+          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body is visible: top of the head AND both feet with shoes are inside the image (cut at the knees or thighs fails); front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
           "kind": "visual",
           "check": {
             "type": "vlm",
@@ -421,7 +422,7 @@
       "acceptance_criteria": [
         {
           "id": "ac.player_mesh_valid",
-          "description": "Poly ≤ 20k, có UV, scale đúng, đúng một người (rộng ≤ 0.9 × cao)",
+          "description": "Poly ≤ 20k, có UV, scale đúng, đúng một người (rộng ≤ 0.7 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
@@ -430,12 +431,12 @@
             "require_uv": true,
             "min_size_m": 0.5,
             "max_size_m": 3,
-            "max_width_to_height": 0.9
+            "max_width_to_height": 0.7
           }
         },
         {
           "id": "ac.player_look",
-          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
+          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), có đủ đầu, thân, hai tay và hai chân tới bàn chân (thiếu chân hay cụt ở đùi là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
           "kind": "visual",
           "required": true,
           "check": {
@@ -497,17 +498,18 @@
       "acceptance_criteria": [
         {
           "id": "ac.npc_concept_valid",
-          "description": "PNG hợp lệ",
+          "description": "PNG hợp lệ, nhân vật không chạm mép ảnh (không bị cắt chân, cắt đầu)",
           "kind": "schema",
           "check": {
             "type": "image",
             "min_width": 256,
-            "min_height": 256
+            "min_height": 256,
+            "max_edge_subject": 0.02
           }
         },
         {
           "id": "ac.npc_concept_look",
-          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body from head to feet is visible; front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
+          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body is visible: top of the head AND both feet with shoes are inside the image (cut at the knees or thighs fails); front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
           "kind": "visual",
           "check": {
             "type": "vlm",
@@ -558,7 +560,7 @@
       "acceptance_criteria": [
         {
           "id": "ac.npc_mesh_valid",
-          "description": "Poly ≤ 3k, có UV, đúng một người (rộng ≤ 0.9 × cao)",
+          "description": "Poly ≤ 3k, có UV, đúng một người (rộng ≤ 0.7 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
@@ -567,12 +569,12 @@
             "require_uv": true,
             "min_size_m": 0.3,
             "max_size_m": 3,
-            "max_width_to_height": 0.9
+            "max_width_to_height": 0.7
           }
         },
         {
           "id": "ac.npc_look",
-          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
+          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), có đủ đầu, thân, hai tay và hai chân tới bàn chân (thiếu chân hay cụt ở đùi là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
           "kind": "visual",
           "check": {
             "type": "vlm",

@@ -119,10 +119,13 @@ class StableFast3DWorker:
     def __init__(self, *, entry: dict, attempts_root: Path, provider: Any = None,
                  read_blob: Callable[[str], Path] | None = None, **_: Any):
         cfg = entry.get("provider_config", {})
-        self.provider = provider or StableFast3D(**{k: v for k, v in cfg.items() if k not in ("blender", "impl")})
+        self.provider = provider or StableFast3D(**{k: v for k, v in cfg.items()
+                                                    if k not in ("blender", "impl", "preview_dir")})
         self.attempts_root, self.read_blob = Path(attempts_root), read_blob
         self.force = bool(cfg.get("force", False))
         self.blender = cfg.get("blender")
+        # SF3D meshes face the other way from Blender's front: the default camera saw their back
+        self.preview_dir = list(cfg.get("preview_dir") or (-1.0, 1.2, 0.8))
         self.model = "stable-fast-3d"
 
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
@@ -168,7 +171,7 @@ class StableFast3DWorker:
             work.mkdir(parents=True, exist_ok=True)
             spec = {"import_glb": str(r["glb"]), "fit_height": float(height) if height else None,
                     "glb": glb_out["abs"] if glb_out else None, "render": png_out["abs"] if png_out else None,
-                    "resolution": 512}
+                    "resolution": 512, "camera_dir": self.preview_dir}
             for o in (glb_out, png_out):
                 if o:
                     Path(o["abs"]).parent.mkdir(parents=True, exist_ok=True)

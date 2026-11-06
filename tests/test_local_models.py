@@ -471,7 +471,7 @@ def test_game_template_characters_go_concept_then_image_to_3d():
         assert m["params"]["height_m"] == 1.7
         assert c["depends_on"] == ["task.character_brief"] and c["inputs"][0]["logical_id"] == f"brief.{who}"
         assert "turnaround" in c["params"]["negative"] and "character sheet" in c["params"]["negative"]
-        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.9
+        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.7
         assert "ĐÚNG MỘT" in [x for x in m["acceptance_criteria"] if x["id"] == f"ac.{who}_look"][0]["description"]
     b = t["task.character_brief"]
     assert b["capability"].startswith("plan.") and {o["media_type"] for o in b["outputs"]} == {"text/plain"}
@@ -963,3 +963,41 @@ def test_detached_head_found_with_real_gaps_where_boxes_touch():
     rep["gaps"] = gaps
     probs = [p for p in blender_physics(rep, single_asset=True) if "not attached" in p]
     assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
+
+
+def test_llm_worker_giving_up_without_outputs_is_a_failed_attempt(tmp_path):
+    from shams.workers import LLMWorker
+
+    class P:
+        name = "fake"
+        def chat(self, messages, *, model, **o):
+            assert "never because a search was empty" in messages[0]["content"]
+            return {"text": json.dumps({"files": [], "summary": "no search results", "status": "BLOCKED",
+                                        "blocked_reason": "No relevant web search results found"})}
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    files, h = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P()).run(
+        ctx, {"worker_id": "worker.x", "model": "m"})
+    assert files == [] and h["status"] == "FAILED" and "own knowledge" in h["known_issues"][0]["issue"]
+
+
+def _png(path: Path, w: int, h: int, pixel) -> Path:
+    rows = b"".join(b"\x00" + b"".join(bytes(pixel(x, y)) for x in range(w)) for y in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    return path
+
+
+def test_png_edge_check_catches_a_cropped_subject(tmp_path):
+    grey = (200, 200, 200)
+    def person(top, bottom):
+        return lambda x, y: ((40 + (x * 7) % 90, 60, 120) if 24 <= x < 40 and top <= y < bottom else grey)
+    whole = _png(tmp_path / "whole.png", 64, 64, person(6, 58))          # head to feet inside the frame
+    cut = _png(tmp_path / "cut.png", 64, 64, person(6, 64))              # legs run off the bottom edge
+    assert assets.check_png(whole, {"max_edge_subject": 0.02})[0] == "PASS"
+    v, d = assets.check_png(cut, {"max_edge_subject": 0.02})
+    assert v == "FAIL" and "bottom" in d and "cropped" in d
+    assert assets.png_info(cut, edges=True)["edge_subject"]["top"] == 0

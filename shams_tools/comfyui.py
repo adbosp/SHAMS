@@ -348,6 +348,9 @@ class ComfyUIImageWorker:
             files.append(o)
         return files, base_handoff(ctx, worker_ref, "READY_FOR_QC", f"ComfyUI {self.workflow}: {len(files)} image(s)",
                                    usage={"wall_seconds": r["seconds"]},
-                                   decisions=[{"decision": f"workflow {self.workflow}", "reason": json.dumps(r["params"])[:300]}])
+                                   decisions=[{"decision": f"workflow {self.workflow}", "reason": json.dumps(r["params"])[:300]},
+                                              {"decision": "prompt", "reason": params["prompt"][:1500]},
+                                              {"decision": "negative prompt",
+                                               "reason": str(params.get("negative", ""))[:800]}])
 
 

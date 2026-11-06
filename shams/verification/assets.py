@@ -188,8 +188,9 @@ def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- PNG
-def png_info(path: str | Path) -> dict:
-    """Size, colour type and pixel statistics of an 8-bit non-interlaced PNG."""
+def png_info(path: str | Path, edges: bool = False) -> dict:
+    """Size, colour type and pixel statistics of an 8-bit non-interlaced PNG. ``edges``: also measure how much
+    of each border band differs from the background colour (the corners), see ``edge_subject``."""
     data = Path(path).read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise AssetError("not a PNG file")
@@ -220,6 +221,11 @@ def png_info(path: str | Path) -> dict:
     step = max(1, h // 128)
     adj_sum = 0.0                                       # neighbour differences: noise vs. a real picture
     adj_n = 0
+    band = max(2, min(w, h) // 50)
+    rows_top: list[list[tuple]] = []
+    rows_bottom: list[list[tuple]] = []
+    cols_left: list[tuple] = []
+    cols_right: list[tuple] = []
     for y in range(h):
         f = raw[y * (stride + 1)]
         line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
@@ -238,6 +244,17 @@ def png_info(path: str | Path) -> dict:
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
         prev = line
+        if edges:
+            cc = 3 if ch >= 3 else 1
+            px = lambda x: tuple(line[x * ch: x * ch + cc])          # noqa: E731
+            xs = range(0, w, max(1, w // 256))
+            if y < band:
+                rows_top.append([px(x) for x in xs])
+            if y >= h - band:
+                rows_bottom.append([px(x) for x in xs])
+            if y % max(1, h // 256) == 0:
+                cols_left += [px(x) for x in range(band)]
+                cols_right += [px(x) for x in range(w - band, w)]
         if y % step == 0:
             colour_ch = 3 if ch >= 3 else 1
             lum = [sum(line[x * ch: x * ch + colour_ch]) / colour_ch for x in range(w)]
@@ -256,15 +273,25 @@ def png_info(path: str | Path) -> dict:
     # noise), 0.01-0.08 for real photos and renders measured on ROPY-PC
     rough = (adj_sum / adj_n) / std if adj_n and std > 0 else 0.0
     info.update(mean=round(mean, 2), std=round(std, 2), distinct_colours=len(colours), roughness=round(rough, 3))
+    if edges and rows_top and rows_bottom:
+        corners = [rows_top[0][0], rows_top[0][-1], rows_bottom[-1][0], rows_bottom[-1][-1]]
+        bg = tuple(sorted(c[i] for c in corners)[1] for i in range(len(corners[0])))   # robust to one odd corner
+        def frac(pxs):
+            pxs = list(pxs)
+            return round(sum(1 for p in pxs if max(abs(a - b) for a, b in zip(p, bg)) > 40) / max(len(pxs), 1), 3)
+        info["edge_subject"] = {"top": frac(p for r in rows_top for p in r),
+                                "bottom": frac(p for r in rows_bottom for p in r),
+                                "left": frac(cols_left), "right": frac(cols_right)}
     return info
 
 
 def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
     """check: min/max_width, min/max_height, power_of_two, min_std (not blank), min_colours,
-    max_roughness + min_noise_difference (not random noise)."""
+    max_roughness + min_noise_difference (not random noise), max_edge_subject (share of each border band that
+    differs from the background: a subject on a plain background must not be cut off)."""
     c = check or {}
     try:
-        i = png_info(path)
+        i = png_info(path, edges="max_edge_subject" in c)
     except (AssetError, OSError, zlib.error, struct.error) as e:
         return "FAIL", f"image invalid: {e}"
     errs = []
@@ -284,6 +311,10 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
         if i["roughness"] > float(c.get("max_roughness", 0.25)) and \
                 i["roughness"] * i["std"] > float(c.get("min_noise_difference", 10.0)):
             errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
+    if "max_edge_subject" in c and "edge_subject" in i:
+        cut = [side for side, f in i["edge_subject"].items() if f > float(c["max_edge_subject"])]
+        if cut:
+            errs.append("subject touches the image border (" + ", ".join(cut) + "): cropped, e.g. feet cut off")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
                                                f"{i['roughness']}" if "std" in i else "")
     return ("FAIL", "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)

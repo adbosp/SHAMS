@@ -52,7 +52,7 @@ class _SF3DBackend:
     def worker(self, reg, b) -> dict:
         c = dict(reg.tools.get("stable_fast_3d") or {})
         cfg = {k: v for k, v in c.items() if k in ("repo", "python", "weights", "device", "texture_resolution",
-                                                   "remesh", "timeout", "env", "force")}
+                                                   "remesh", "timeout", "env", "force", "preview_dir")}
         cfg["impl"] = "sf3d"
         from shams_tools.blender import blender_from
         bl = blender_from(reg.settings)
@@ -129,7 +129,7 @@ def register() -> None:
     workers.register_worker("scene3d", blender.Scene3DWorker)
     workers.register_worker("comfyui_image", comfyui.ComfyUIImageWorker)
     workers.register_worker("sf3d", sf3d.StableFast3DWorker)
-    workers.worker_only_keys("blender", "blender_timeout", "blender_model")
+    workers.worker_only_keys("blender", "blender_timeout", "blender_model", "preview_dir")
     models.register_backend("comfyui", _ComfyBackend())
     models.register_backend("stable_fast_3d", _SF3DBackend())
     models.register_role_hook("scene3d", _scene3d_hook)
