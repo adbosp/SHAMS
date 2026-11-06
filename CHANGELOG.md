@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Autonomous mode runs to the end without approvals and is the default for new projects (`general.default_mode`). A task out of repair attempts is accepted with its last outputs by `autopilot` (event payload lists the failed checks; the play link warns about them); criteria without a checker no longer stop it. A task that produced no output at all still waits in HUMAN_REVIEW. Guided and collaborative modes are unchanged.
+
 - Game code goes to the 3D/game model: built-in role `game_coder` (capabilities `code.game.*`, `integration.game`) runs on the `scene3d` model unless set on its own. The game template's gameplay, HUD and integration tasks use `${game_code}` / `integration.game`. The scheduler leases a task to the most specific worker (or the one named by `provider_hint`); after 3 failures the repair router switches to the next best fit (the general coder) and grants 2 more attempts instead of stopping at HUMAN_REVIEW.
 
 - Game template simplified (12 tasks): no SDXL concept images and no Stable Fast 3D. The 3D scene model builds both characters and the play area as JSON primitives (`mesh.procedural`, `builder: json`) from the character brief; the ground texture task is replaced by `task.environment_model` (`models/Environment/environment.glb`). The 3D model now receives text inputs (briefs) in its prompt. Web scene hint uses relative asset paths.

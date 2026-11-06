@@ -255,7 +255,7 @@ class StudioService:
             d, i = self.workspace / f"{base}_{i}", i + 1
         pid = d.name.replace("-", "_")
         try:
-            Studio.init_project(d, pid, goal, mode=mode or s["general"].get("default_mode") or "guided",
+            Studio.init_project(d, pid, goal, mode=mode or s["general"].get("default_mode") or "autonomous",
                                 mock_mode=self._mock_default(s) if mock is None else mock,
                                 domain=domain or s["general"].get("default_domain"), domain_config=options or {})
         except (KeyError, ValueError) as e:
@@ -474,7 +474,7 @@ class StudioService:
             return {**base, "project": {"id": None, "name": "Dự án mới", "domain": pack.name,
                                         "domain_display": pack.display, "setup": f"{pack.display} · {pack.describe(cfg)}",
                                         "selected": sel, "dir": None},
-                    "mode": s["general"].get("default_mode", "guided"), "mock_mode": self._mock_default(s),
+                    "mode": s["general"].get("default_mode", "autonomous"), "mock_mode": self._mock_default(s),
                     "progress": {"done": 0, "total": 0}, "chat": [], "tasks": [], "active": None, "next_worker": None,
                     "nodes": [], "workers": [], "models": [], "artifacts": [], "qc": [], "console": [], "review": []}
         labels = st.pack.worker_labels()

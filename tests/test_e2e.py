@@ -147,3 +147,12 @@ def test_side_effect_ledger_is_idempotent(make_studio):
     for _ in range(3):
         st.db.side_effect("publish:build:a0", "task.build_game", 0, "publish", lambda: calls.append(1) or {"ok": 1})
     assert calls == [1]
+
+
+def test_autonomous_mode_accepts_a_task_out_of_repairs_and_runs_on(make_studio):
+    st = make_studio({"task.spawner": MockDefect("ac.spawner_tests", fail_attempts=99)}, mode="autonomous")
+    s = st.run()
+    assert s["done"] and st.db.state("task.spawner") == S.ACCEPTED
+    assert st.db.state("task.core_mechanic") == S.ACCEPTED          # dependents ran on
+    ev = [e for e in st.db.events(subject_id="task.spawner") if e["type"] == "human.decided"]
+    assert ev and "ac.spawner_tests" in str(ev[-1]) and "autopilot" in str(ev[-1])

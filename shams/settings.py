@@ -43,7 +43,7 @@ PERMISSION_MODES = ("default", "full_access", "read_only")
 MOCK_MODES = ("auto", "on", "off")
 
 DEFAULTS: dict[str, Any] = {
-    "general": {"language": "vi", "default_mode": "guided", "default_domain": None, "mock": "auto",
+    "general": {"language": "vi", "default_mode": "autonomous", "default_domain": None, "mock": "auto",
                 "open_browser": True, "open_game": True, "max_tool_rounds": 8, "allow_adult_content": False},
     "permissions": {"mode": "default", "allow": [], "deny": []},
     "connections": {},

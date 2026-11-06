@@ -169,12 +169,16 @@ def test_init_refuses_existing_project(tmp_path):
 def test_run_exit_codes(tmp_path):
     from apps.cli.main import main
     d = str(tmp_path / "p")
-    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "autonomous"]) == 0
+    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "guided"]) == 0
     assert main(["run", d]) == 2                       # no plan yet
-    assert main(["plan", d]) == 0
+    assert main(["plan", d, "--approve", "t"]) == 0
     assert main(["run", d, "--defect", "task.core_module:" + _first_criterion(d, "task.core_module") + ":9"]) == 1
     assert main(["decide", d, "task.core_module", "accept"]) == 0
     assert main(["run", d]) == 0
+    a = str(tmp_path / "auto")                         # autonomous: a task out of repairs does not stop the run
+    assert main(["init", a, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "autonomous"]) == 0
+    assert main(["plan", a]) == 0
+    assert main(["run", a, "--defect", "task.core_module:" + _first_criterion(a, "task.core_module") + ":9"]) == 0
 
 
 def _first_criterion(d, task_id):
