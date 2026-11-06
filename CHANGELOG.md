@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- 3D briefs: the planner turns the request into detailed English build descriptions before the 3D model runs: each character (height, hair, skin, every clothing item with colour) and the play area (`brief.environment`: ground, props with counts, sizes, colours, layout). Vietnamese slang such as 'cưa gái' is explained as flirting, not a saw.
+
 - Settings > Chung: switches for 18+ presets (`general.allow_adult_content`) and opening a finished game (`general.open_game`). Direct Mode links to the switch instead of asking to edit JSON.
 
 - Direct Mode is a chat: each run is a turn (prompt, then the model's reply), with the model picker and parameters in the composer (Enter sends). Outputs show inline: images, video and audio play in the chat, other files are download cards. Markdown is rendered and code is framed with its language and a copy button, in Direct Mode and in the project chat.

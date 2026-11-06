@@ -477,10 +477,14 @@ def test_game_template_characters_are_built_by_the_3d_model_from_a_brief():
         m = t[f"task.{who}_model"]
         assert m["capability"] == "mesh.procedural" and m["params"]["builder"] == "json"
         assert m["depends_on"] == ["task.character_brief"] and m["inputs"][0]["logical_id"] == f"brief.{who}"
-        assert m["params"]["height_m"] == 1.7 and "1.7 m" in m["description"]
+        assert m["params"]["height_m"] == 1.7 and "1.65 to 1.75 m" in m["description"]
         assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.9
     e = t["task.environment_model"]
     assert e["capability"] == "mesh.procedural" and e["outputs"][0]["logical_id"] == "asset.environment.mesh"
+    assert e["depends_on"] == ["task.character_brief"] and e["inputs"][0]["logical_id"] == "brief.environment"
+    b = t["task.character_brief"]
+    assert {o["logical_id"] for o in b["outputs"]} == {"brief.player", "brief.npc", "brief.environment"}
+    assert "KHÔNG phải cái cưa" in b["description"]
     integ = t["task.integration_slice1"]
     assert "task.environment_model" in integ["depends_on"]
     assert any(i["logical_id"] == "asset.environment.mesh" for i in integ["inputs"])
