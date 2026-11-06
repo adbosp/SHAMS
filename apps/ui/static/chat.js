@@ -196,9 +196,17 @@ function discardThread(thread) {
 }
 
 $("delete-dialog").onclose = () => {
-  const thread = pendingDelete;
   pendingDelete = null;
-  if ($("delete-dialog").returnValue !== "delete" || !threads.includes(thread)) return;
+};
+
+$("delete-dialog").querySelector("form").onsubmit = event => {
+  if (event.submitter?.value !== "delete") return;
+  event.preventDefault();
+  const thread = pendingDelete;
+  if (!threads.includes(thread)) {
+    $("delete-dialog").close();
+    return;
+  }
   let saved;
   try {
     saved = savedHistory();
@@ -207,6 +215,7 @@ $("delete-dialog").onclose = () => {
   } catch (_) {
     saveError = "Trình duyệt không lưu được thao tác xóa.";
     syncComposer();
+    $("delete-dialog").close();
     return;
   }
   try {
@@ -219,6 +228,7 @@ $("delete-dialog").onclose = () => {
   }
   discardThread(thread);
   syncComposer();
+  $("delete-dialog").close();
   $("new-chat").focus();
 };
 
@@ -378,7 +388,8 @@ $("close-sidebar").onclick = $("scrim").onclick = () => { sidebar(false); $("ope
 $("new-chat").onclick = () => selectThread(null);
 mobile.addEventListener("change", () => sidebar(!mobile.matches));
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && mobile.matches && !$("shell").classList.contains("closed")) $("scrim").click();
+  if (event.key === "Escape" && !$("delete-dialog").open && mobile.matches &&
+      !$("shell").classList.contains("closed")) $("scrim").click();
 });
 $("suggestions").onclick = event => {
   if (!event.target.matches(".suggestion")) return;
