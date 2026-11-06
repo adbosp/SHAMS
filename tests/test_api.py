@@ -24,6 +24,8 @@ def test_ui_page_is_branded_shams(tmp_path):
     r = c.get("/")
     assert r.status_code == 200
     assert "<title>SHAMS</title>" in r.text and "AI GAME STUDIO" not in r.text.upper()
+    assert '<dialog class="delete-dialog"' in r.text
+    assert 'value="cancel" autofocus' in r.text and 'value="delete"' in r.text
 
 
 def test_chat_creates_plan_and_runs_to_done(tmp_path):

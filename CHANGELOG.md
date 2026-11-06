@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web Chat có nút xóa từng cuộc trò chuyện khỏi lịch sử trình duyệt, với xác nhận trước khi xóa và đồng bộ thao tác xóa giữa các tab.
+
 - Web Chat dùng system prompt riêng với giờ máy chủ, hướng dẫn định dạng và câu hỏi tiếp nối. Model Ollama hỗ trợ tool calling có thể tra cứu chỉ đọc khi Research bật, tiếp tục stream câu trả lời và hiển thị danh sách trang đã đọc.
 
 - Web Chat hiển thị câu trả lời từng đoạn khi Ollama đang sinh chữ. Model trả một lần có hiệu ứng hiện dần ngắn, và lịch sử vẫn lưu câu trả lời hoàn chỉnh.

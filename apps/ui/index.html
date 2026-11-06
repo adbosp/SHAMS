@@ -55,7 +55,17 @@ a { color: var(--accent); }
 .new-chat:hover, .suggestion:hover { background: var(--hover); }
 .history-title { padding: 0 9px; margin: 26px 0 7px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .history { flex: 1; overflow-y: auto; min-height: 0; }
-.thread { width: 100%; display: block; text-align: left; font-size: 14px; padding: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-row { display: flex; align-items: center; gap: 3px; margin-block: 2px; }
+.thread { flex: 1; min-width: 0; text-align: left; font-size: 14px; padding: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.delete-thread { width: 38px; height: 38px; flex: none; color: var(--muted); }
+.delete-thread:is(:hover, :focus-visible) { color: var(--danger); }
+.delete-dialog { width: min(420px, calc(100% - 28px)); padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: var(--canvas); color: var(--ink); }
+.delete-dialog::backdrop { background: #0007; }
+.delete-dialog h2 { font-size: 18px; margin: 0 0 8px; }
+.delete-dialog p { margin: 0 0 18px; color: var(--muted); overflow-wrap: anywhere; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.dialog-actions button { border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; background: var(--canvas); }
+.dialog-actions .confirm-delete { color: var(--canvas); background: var(--danger); border-color: var(--danger); font-weight: 600; }
 .history-empty { padding: 8px 9px; font-size: 13px; color: var(--muted); }
 .sidebar-footer { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 13px 7px 0; color: var(--muted); font-size: 12px; }
 .dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; }
@@ -119,6 +129,7 @@ main.welcome .empty { margin: 0 auto; }
   main.welcome .topbar { left: 0; }
   .conversation, .composer-area { width: calc(100% - 24px); }
   .user-message { max-width: 90%; }
+  .delete-thread { width: 44px; height: 44px; }
 }
 </style>
 </head>
@@ -164,6 +175,14 @@ main.welcome .empty { margin: 0 auto; }
     </div>
   </main>
 </div>
-<script src="/static/chat.js?v=3" defer></script>
+<dialog class="delete-dialog" id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+  <h2 id="delete-title">Xóa cuộc trò chuyện?</h2>
+  <p id="delete-description">Cuộc trò chuyện sẽ bị xóa khỏi lịch sử trên trình duyệt này.</p>
+  <form method="dialog" class="dialog-actions">
+    <button type="submit" value="cancel" autofocus>Hủy</button>
+    <button type="submit" class="confirm-delete" value="delete">Xóa cuộc trò chuyện</button>
+  </form>
+</dialog>
+<script src="/static/chat.js?v=4" defer></script>
 </body>
 </html>
