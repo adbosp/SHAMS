@@ -7,6 +7,7 @@ MCP servers and real hardware are exposed under /api/settings, /api/connections,
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -14,12 +15,13 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from shams import __version__, contracts, hardware, packs, providers
 from shams import settings as settings_mod
 from shams.mcp import MCPManager
+from shams.events.store import StoreClosed
 from shams.mock.worker import MockWorker
 from shams.orchestration.project import Shams as Studio
 from shams.scheduling.gate import GPU_GATE
@@ -141,6 +143,7 @@ class StudioService:
                 first = Path(projects[0]["dir"])
         self.mock_delay, self.template = mock_delay, template
         self.lock = threading.RLock()
+        self._open_lock = threading.Lock()
         self.running = False
         self._stop = False
         self._thread: threading.Thread | None = None
@@ -148,6 +151,11 @@ class StudioService:
         self.dir: Path | None = None
         self.chat: list[dict] = []
         self.draft = {"domain": None, "options": {}}
+        self.base_url = "http://127.0.0.1:8765"      # serve() sets the real address
+        self.open_game = False                       # serve() turns this on: open a finished game in the browser
+        self.announce = False                        # off while the service is still being set up
+        self._play_servers: dict[str, object] = {}   # playable build folder -> its static server
+        self._play_lock = threading.Lock()
         if first:
             self.open(first)
 
@@ -167,7 +175,15 @@ class StudioService:
                         "mock": cfg.get("mock_mode", False), "mtime": pj.parent.stat().st_mtime})
         return sorted(out, key=lambda p: -p["mtime"])
 
-    def open(self, project_dir: Path) -> None:
+    def open(self, project_dir: Path, resume: bool = False) -> None:
+        """Open a project. An unfinished project is NOT resumed on its own (opening the app must not spend
+        model time on an old project); the user presses "Tiếp tục chạy" (POST /api/run) or passes resume."""
+        with self._open_lock:                   # one switch at a time; repeated clicks must not pile up
+            if self.studio is not None and self.dir == Path(project_dir) and not resume:
+                return                          # already open
+            self._open(project_dir, resume)
+
+    def _open(self, project_dir: Path, resume: bool) -> None:
         self.stop()
         with self.lock:
             if self.studio:
@@ -176,7 +192,9 @@ class StudioService:
             self.studio = Studio(self.dir, mock=MockWorker(self.dir / "attempts", delay_s=self.mock_delay))
             self.chat_file = self.dir / "chat.json"
             self.chat = json.loads(self.chat_file.read_text(encoding="utf-8")) if self.chat_file.exists() else []
-        if self.studio.db.tasks() and not self.studio.status()["done"]:
+            go = resume and bool(self.studio.db.tasks()) and not self.studio.status()["done"]
+        self.announce_playable()
+        if go:                                  # decided under the lock: another open() may follow at once
             self.start()
 
     def open_by_id(self, pid: str) -> dict:
@@ -184,6 +202,34 @@ class StudioService:
         if not p:
             raise HTTPException(404, f"no project {pid!r} in {self.workspace}")
         self.open(Path(p["dir"]))
+        return self.state()
+
+    def delete_project(self, pid: str, by: str = "ui") -> dict:
+        """Delete a project folder permanently (the UI asks for confirmation first). The open project is closed
+        first, so its database and run loop let go of the files."""
+        import shutil
+        import stat
+        p = next((p for p in self.projects() if p["id"] == pid or p["folder"] == pid), None)
+        if not p:
+            raise HTTPException(404, f"no project {pid!r} in {self.workspace}")
+        src = Path(p["dir"])
+        if src.resolve().parent != self.workspace.resolve():
+            raise HTTPException(400, "only project folders directly inside the workspace can be deleted")
+        if self.dir and Path(self.dir).resolve() == src.resolve():
+            self.close_project()
+
+        def writable(func, path, _exc):          # Windows: read-only files (e.g. git objects) block rmtree
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        logd = self.workspace / "_logs"
+        logd.mkdir(parents=True, exist_ok=True)
+        with open(logd / "deletions.log", "a", encoding="utf-8") as f:   # permanent: keep a trace of who/when
+            f.write(json.dumps({"ts": contracts.now_iso(), "project": p["id"], "folder": src.name,
+                                "goal": p.get("goal", ""), "by": by}, ensure_ascii=False) + "\n")
+        try:
+            shutil.rmtree(src, onerror=writable)
+        except OSError as e:
+            raise HTTPException(409, f"could not delete {src.name}: {e}")
         return self.state()
 
     def close_project(self) -> dict:
@@ -199,9 +245,11 @@ class StudioService:
         m = s["general"].get("mock", "auto")
         if m != "auto":
             return m == "on"
-        from shams.models import merge_role_workers     # same worker list the project will load (roles too)
+        from shams.models import DEFAULT_ROLES, WORKER_PREFIX, merge_role_workers   # same list the project loads
         try:
-            return not merge_role_workers(s)
+            # tools that need no setup (default roles, e.g. the web build) do not make a project "real"
+            return not [w for w in merge_role_workers(s)
+                        if w.get("id") not in {WORKER_PREFIX + r for r in DEFAULT_ROLES}]
         except Exception:  # noqa: BLE001 - an unreachable model server means test mode, not a crash
             return True
 
@@ -214,7 +262,7 @@ class StudioService:
             d, i = self.workspace / f"{base}_{i}", i + 1
         pid = d.name.replace("-", "_")
         try:
-            Studio.init_project(d, pid, goal, mode=mode or s["general"].get("default_mode") or "guided",
+            Studio.init_project(d, pid, goal, mode=mode or s["general"].get("default_mode") or "autonomous",
                                 mock_mode=self._mock_default(s) if mock is None else mock,
                                 domain=domain or s["general"].get("default_domain"), domain_config=options or {})
         except (KeyError, ValueError) as e:
@@ -252,11 +300,98 @@ class StudioService:
                     if self.studio is None:
                         break
                     progressed = self.studio.step()
+                self.announce_playable()
                 if not progressed:
                     break
                 time.sleep(0.05)
+        except Exception as e:  # noqa: BLE001 - a crashed run loop must be visible, not a silent stop
+            import traceback
+            tb = traceback.format_exc()
+            if self.dir:
+                logd = self.workspace / "_logs"
+                logd.mkdir(parents=True, exist_ok=True)
+                with open(logd / "run_loop_errors.log", "a", encoding="utf-8") as f:
+                    f.write(f"\n=== {contracts.now_iso()} {self.dir.name}\n{tb}")
+                self.chat.append({"role": "director", "ts": contracts.now_iso(),
+                                  "text": f"Vòng chạy dừng vì lỗi: {type(e).__name__}: {e}. Xem _logs/run_loop_errors.log."})
+                self._save_chat()
         finally:
             self.running = False
+
+    # ------------------------------------------------------------------ playable builds
+    def playable(self) -> dict[str, dict]:
+        """Accepted tasks whose worker left a playable copy (handoff decision "playable build" naming a folder
+        with index.html): {task_id: {"dir", "attempt", "failed"}}."""
+        out: dict[str, dict] = {}
+        st = self.studio
+        if st is None:
+            return out
+        try:
+            for t in st.db.tasks({S.ACCEPTED}):
+                h = st.db.handoff(t["task_id"]) or {}
+                for d in h.get("decisions") or []:
+                    if d.get("decision") == "playable build":
+                        root = Path(str(d.get("reason") or ""))
+                        if (root / "index.html").is_file():
+                            reps = [r for r in st.db.qc_reports(t["task_id"]) if r.get("attempt") == h.get("attempt")]
+                            crit = reps[-1].get("criteria") or [] if reps else []
+                            failed = [c["criterion_id"] for c in crit if c.get("verdict") == "FAIL"]
+                            out[t["task_id"]] = {"dir": root, "attempt": h.get("attempt"), "failed": failed}
+        except StoreClosed:
+            return {}
+        return out
+
+    def game_server(self, root: Path) -> str:
+        """Start (once per folder) a static server on 127.0.0.1 for a playable build; returns its base URL."""
+        import functools
+        import http.server
+        key = str(Path(root).resolve())
+        with self._play_lock:
+            srv = self._play_servers.get(key)
+            if srv is None:
+                class Handler(http.server.SimpleHTTPRequestHandler):
+                    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
+                                      ".js": "text/javascript", ".mjs": "text/javascript",
+                                      ".glb": "model/gltf-binary", ".wasm": "application/wasm"}
+
+                    def log_message(self, *a):
+                        pass
+
+                    def end_headers(self):
+                        self.send_header("Cache-Control", "no-store")
+                        super().end_headers()
+                srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=key))
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                self._play_servers[key] = srv
+        return f"http://127.0.0.1:{srv.server_address[1]}/"
+
+    def play_url(self, task_id: str) -> str:
+        return f"{self.base_url}/play/{task_id}/"
+
+    def announce_playable(self) -> None:
+        """Once per accepted build: post the local link in the project chat and open it in the browser."""
+        if not self.announce:
+            return
+        try:
+            builds = self.playable()
+        except Exception:  # noqa: BLE001 - announcing must never stop the run loop
+            return
+        done = {m.get("play") for m in self.chat if m.get("play")}
+        new = [(tid, b) for tid, b in builds.items() if f"{tid}@{b['attempt']}" not in done]
+        for tid, b in new:
+            url = self.play_url(tid)
+            if b.get("failed"):
+                text = (f"Game đã build và được duyệt tay, nhưng kiểm tra chưa đạt: {', '.join(b['failed'])}. "
+                        f"Game có thể lỗi khi chạy (ví dụ màn hình đen). Mở tại {url} (file nằm ở {b['dir']}).")
+            else:
+                text = f"Game đã build xong và qua kiểm tra. Chơi thử tại {url} (file nằm ở {b['dir']})."
+            self.chat.append({"role": "director", "ts": contracts.now_iso(), "play": f"{tid}@{b['attempt']}",
+                              "url": url, "text": text})
+            if self.open_game:
+                import webbrowser
+                threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+        if new:
+            self._save_chat()
 
     # ------------------------------------------------------------------ chat
     def _save_chat(self) -> None:
@@ -298,8 +433,8 @@ class StudioService:
                     reply += (" Project này chạy chế độ thử (không gọi model AI). Thêm model trong Settings → "
                               "Model & API để chạy thật.")
                 else:
-                    missing = sorted({t["capability"] for t in st.db.tasks()} - {c for w in st.nodes.workers.values()
-                                                                                for c in w.capabilities})
+                    missing = sorted({t["capability"] for t in st.db.tasks()       # same matching as the scheduler
+                                      if not st.nodes.candidates(t["capability"])})
                     if missing:
                         reply += " Chưa có worker cho: " + ", ".join(missing) + " (Settings → Model & API)."
                 self.chat.append({"role": "director", "text": reply, "ts": contracts.now_iso(), "live": True})
@@ -328,6 +463,16 @@ class StudioService:
                 for p in sorted(packs.all_packs(), key=lambda p: (p.name != packs.DEFAULT_DOMAIN, p.name))]
 
     def state(self) -> dict:
+        """UI state. A project switch can close the open project mid-read; that is retried, never fatal."""
+        for _ in range(20):
+            try:
+                return self._state()
+            except StoreClosed:
+                time.sleep(0.1)
+        return {"app": "SHAMS", "version": __version__, "connected": True, "switching": True,
+                "running": self.running, "projects": self.projects()}
+
+    def _state(self) -> dict:
         hw = self.hardware_view()
         base = {"app": "SHAMS", "version": __version__, "packs": self._packs(), "connected": True,
                 "workspace": str(self.workspace), "projects": self.projects(), "hardware": hw, "vram": hw["vram"],
@@ -341,7 +486,7 @@ class StudioService:
             return {**base, "project": {"id": None, "name": "Dự án mới", "domain": pack.name,
                                         "domain_display": pack.display, "setup": f"{pack.display} · {pack.describe(cfg)}",
                                         "selected": sel, "dir": None},
-                    "mode": s["general"].get("default_mode", "guided"), "mock_mode": self._mock_default(s),
+                    "mode": s["general"].get("default_mode", "autonomous"), "mock_mode": self._mock_default(s),
                     "progress": {"done": 0, "total": 0}, "chat": [], "tasks": [], "active": None, "next_worker": None,
                     "nodes": [], "workers": [], "models": [], "artifacts": [], "qc": [], "console": [], "review": []}
         labels = st.pack.worker_labels()
@@ -432,6 +577,7 @@ class StudioService:
                 self.studio.human_decide(d.task_id, d.decision, d.note)
             except (ValueError, KeyError) as e:
                 raise HTTPException(400, str(e))
+        self.announce_playable()
         self.start()
         return self.state()
 
@@ -625,6 +771,7 @@ class DirectService:
 
 def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | None = None) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
+    svc.announce = True
     app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
     direct = DirectService(svc.workspace)
@@ -640,6 +787,15 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
         if f.parent != STATIC_DIR or not f.is_file():
             raise HTTPException(404, "not found")
         return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+
+    @app.get("/play/{task_id}/{path:path}")
+    def play(task_id: str, path: str = ""):
+        """Stable link to a playable build. The game is served from the ROOT of its own local port, so the
+        model's absolute asset paths (/models/...) work as well as relative ones."""
+        b = svc.playable().get(task_id)
+        if not b:
+            raise HTTPException(404, "no playable build for this task")
+        return RedirectResponse(svc.game_server(Path(b["dir"])) + path, status_code=307)
 
     @app.get("/favicon.ico")
     def favicon():
@@ -677,6 +833,10 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     @app.post("/api/projects")
     def new_project(body: ProjectIn):
         return svc.new_project(body)
+
+    @app.post("/api/projects/delete")
+    def delete_project(body: OpenIn):
+        return svc.delete_project(body.id)
 
     @app.post("/api/projects/open")
     def open_project(body: OpenIn):
@@ -742,13 +902,19 @@ def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: floa
     app = create_app(path, mock_delay, token=token)
     if open_browser is None:
         open_browser = bool(settings_mod.load(None)["general"].get("open_browser", True))
+    svc = app.state.svc
+    svc.base_url = f"http://{host}:{port}"
+    svc.open_game = bool(settings_mod.load(None)["general"].get("open_game", True))
+    svc.announce_playable()             # a game built in an earlier session is announced (and opened) now
     if open_browser:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     app.state.server = server                       # /api/desktop/shutdown stops it gracefully
-    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace})", flush=True)
+    crash = enable_crash_log(app.state.svc.workspace)
+    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace}, crash log: {crash})",
+          flush=True)
     if ready_line:
         print(json.dumps({"shams_backend": "starting", "port": port, "pid": __import__("os").getpid()}), flush=True)
     try:
@@ -756,3 +922,21 @@ def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: floa
     finally:
         app.state.svc.stop()
         app.state.desktop.store.close()
+
+
+def enable_crash_log(workspace: Path) -> Path:
+    """A native crash (access violation in the interpreter or an extension) leaves no Python traceback; the
+    fault handler writes the stack of every thread to a file so the cause can be found afterwards."""
+    import faulthandler
+    d = Path(workspace) / "_logs"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "crash.log"
+    f = open(path, "a", encoding="utf-8")          # noqa: SIM115 - must stay open for the process lifetime
+    f.write(f"\n=== SHAMS {__version__} started {contracts.now_iso()} pid {os.getpid()} ===\n")
+    f.flush()
+    faulthandler.enable(file=f, all_threads=True)
+    _CRASH_FILES.append(f)
+    return path
+
+
+_CRASH_FILES: list = []

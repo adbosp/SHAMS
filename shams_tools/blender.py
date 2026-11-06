@@ -63,6 +63,11 @@ Rules:
 - Prefer primitives, modifiers (bevel, array, mirror, solidify) and bmesh over huge vertex lists. Stay within the polygon budget.
 - Add a camera that frames the subject and at least one light.
 - This is Python for Blender (bpy), NOT JavaScript/three.js: no `new`, `const`, `let`, `THREE.`, semicolons or braces.
+- Blender API facts (Blender 4/5): bpy.ops.mesh.primitive_* operators already create UV maps (calc_uvs=True), so
+  build from primitives and do not unwrap by hand; bmesh.ops has NO uv_unwrap. bmesh.ops.create_icosphere /
+  create_uvsphere / create_cone take radius (radius1/radius2 for cones), never diameter. After adding or removing
+  bmesh elements call bm.verts.ensure_lookup_table() (and edges/faces) before indexing them. Prefer bpy.ops
+  primitives + modifiers; use bmesh only when needed.
 Example of the expected style (a different subject):
 ```python
 import bpy
@@ -135,6 +140,21 @@ def run_blender(blender: str, spec: dict, workdir: Path, timeout: float) -> dict
     return rep
 
 
+SINGLE_ASSET = ("Build ONLY the one asset named in 'task' and 'description'. 'project_background' describes the "
+                "whole project for context only: do NOT build its ground, environment, buildings or other "
+                "characters. One object (or one group of parts forming it), real-world size, standing on the "
+                "origin, within the polygon budget.")
+
+
+def scoped_payload(ctx: dict, task: dict, payload: dict) -> dict:
+    """An asset task (capability mesh.*) gets the project goal only as background, so the model builds the one
+    asset instead of the whole project scene."""
+    if str(task.get("capability", "")).startswith("mesh."):
+        payload = {"scope": SINGLE_ASSET, **payload}
+        payload["project_background"] = payload.pop("goal", "")
+    return payload
+
+
 class Scene3DWorker:
     """LLM (a coding model) writes Blender Python; Blender runs it headless; errors go back to the model
     for up to ``max_fix_rounds`` fixes inside one attempt. Outputs by media type: model/gltf-binary (GLB),
@@ -163,8 +183,27 @@ class Scene3DWorker:
                                            if c.get("check", {}).get("max_triangles")), 50000),
                    "upstream_summaries": ctx.get("upstream_summaries", []),
                    "prior_failures": ctx.get("prior_failures", [])}
+        payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": SCENE_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
+
+    def _build_swapped(self, ctx: dict, work: Path, want: dict, route: str):
+        """When a separate model writes the Blender script, unload the worker's own model first and the script
+        model afterwards: the scheduler leased VRAM for one model, so two must never sit on the GPU together."""
+        other = self.blender_model and self.blender_model != self.model and hasattr(self.provider, "unload")
+        if other:
+            try:
+                self.provider.unload(self.model)
+            except Exception:  # noqa: BLE001 - not loaded is fine
+                pass
+        try:
+            return self.build(ctx, work, want, route)
+        finally:
+            if other:
+                try:
+                    self.provider.unload(self.blender_model)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def generate_script(self, messages: list[dict]) -> tuple[str | None, str, dict]:
         r = providers.timed_chat(self.provider, messages, self.blender_model, **self.chat_options)
@@ -204,7 +243,7 @@ class Scene3DWorker:
                 if rep.get("ok") and rep.get("mesh_objects", 0) == 0:
                     rep = {**rep, "ok": False, "error": "The script ran but created no mesh objects."}
                 if rep.get("ok"):
-                    issues = blender_physics(rep)
+                    issues = blender_physics(rep, single_asset=str(ctx["task"].get("capability", "")).startswith("mesh."))
                     if not issues or round_ == self.max_fix_rounds:
                         rep["warnings"] = issues
                         rep["fix_rounds"] = list(self.log)
@@ -227,8 +266,25 @@ class Scene3DWorker:
                    "description": params.get("prompt") or task.get("description", ""),
                    "acceptance_criteria": [c["description"] for c in task["acceptance_criteria"]],
                    "polygon_budget": budget, "prior_failures": ctx.get("prior_failures", [])}
+        texts = self._input_texts(ctx)
+        if texts:
+            payload["inputs"] = texts                        # e.g. the character description from a brief task
+        payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": scene_json.SCENE_JSON_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
+
+    def _input_texts(self, ctx: dict) -> list[dict]:
+        out = []
+        for i in ctx.get("inputs", []):
+            if not str(i.get("media_type", "")).startswith("text/plain"):
+                continue
+            try:
+                src = Path(self.read_blob(i["sha256"])) if self.read_blob and i.get("sha256") else Path(i["path"])
+                out.append({"name": i.get("name") or i.get("logical_id"),
+                            "text": src.read_text(encoding="utf-8", errors="replace")[:2000]})
+            except (OSError, KeyError, TypeError):
+                continue
+        return out
 
     def build_json(self, ctx: dict, work: Path, want: dict[str, str | None], budget: int) -> tuple[dict, str, dict]:
         """Model writes a scene description -> SHAMS validates, builds GLB, renders -> fix loop."""
@@ -291,10 +347,10 @@ class Scene3DWorker:
                 builder, work = "blender", adir / "_blender"
                 work.mkdir(exist_ok=True)
                 want = {"glb": str(work / "scene.glb") if want["glb"] else None, "render": str(work / "render.png")}
-                rep, script, u2 = self.build(ctx, work, want, route)
+                rep, script, u2 = self._build_swapped(ctx, work, want, route)
                 usage = {k: usage[k] + u2[k] for k in usage}
         else:
-            rep, script, usage = self.build(ctx, work, want, route)
+            rep, script, usage = self._build_swapped(ctx, work, want, route)
             decisions.append({"decision": "procedural geometry via Blender Python", "reason": "complex scene"})
         decisions += [{"decision": f"fix round {e['round']}", "reason": e["result"]} for e in self.log if e["result"] != "ok"]
         if not rep.get("ok"):
@@ -325,14 +381,18 @@ class Scene3DWorker:
 
 
 
-def blender_physics(rep: dict) -> list[str]:
-    """Same physical checks as JSON scenes, on the world bounding boxes Blender reported (Z up -> Y up)."""
+def blender_physics(rep: dict, single_asset: bool = False) -> list[str]:
+    """Same physical checks as JSON scenes, on the world bounding boxes Blender reported (Z up -> Y up).
+    A single asset (one character, one prop) must also be one connected piece."""
     boxes = []
     for o in rep.get("objects", []):
         if o.get("type") == "MESH" and o.get("bbox"):
             lo, hi = o["bbox"]
             boxes.append(({"name": o["name"], "shape": "mesh"}, [lo[0], lo[2], lo[1]], [hi[0], hi[2], hi[1]]))
-    return scene_json.box_problems(boxes, axis="z") if boxes else []
+    if not boxes:
+        return []
+    out = scene_json.box_problems(boxes, axis="z")
+    return out + (scene_json.detached_parts(boxes, gaps=rep.get("gaps")) if single_asset else [])
 
 
 def check_blender_import(c: dict, outputs: list[dict], settings: dict) -> tuple[str, str]:

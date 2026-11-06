@@ -12,7 +12,7 @@ the format Claude Code and other MCP clients use).
 
 Keys::
 
-    general      language, default_mode, default_domain, mock ("auto" | "on" | "off"), open_browser,
+    general      language, default_mode, default_domain, mock ("auto" | "on" | "off"), open_browser, open_game,
                  max_tool_rounds
     permissions  mode ("default" | "full_access" | "read_only"), allow [...], deny [...]
                  patterns match tool names like "mcp__github__create_issue" or "mcp__fs__*"
@@ -43,8 +43,8 @@ PERMISSION_MODES = ("default", "full_access", "read_only")
 MOCK_MODES = ("auto", "on", "off")
 
 DEFAULTS: dict[str, Any] = {
-    "general": {"language": "vi", "default_mode": "guided", "default_domain": None, "mock": "auto",
-                "open_browser": True, "max_tool_rounds": 8, "allow_adult_content": False},
+    "general": {"language": "vi", "default_mode": "autonomous", "default_domain": None, "mock": "auto",
+                "open_browser": True, "open_game": True, "max_tool_rounds": 8, "allow_adult_content": False},
     "permissions": {"mode": "default", "allow": [], "deny": []},
     "connections": {},
     "nodes": [],

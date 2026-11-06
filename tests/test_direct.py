@@ -110,7 +110,7 @@ def test_research_refuses_local_and_private_addresses(ollama):
 def test_research_parses_results_and_marks_web_text_untrusted(monkeypatch):
     r = Research({"enabled": True, "search_url": "https://searx.example/search?q={query}&format=json"})
     seen = []
-    def fake_get(url):
+    def fake_get(url, search=False):
         seen.append(url)
         if "searx" in url:
             return json.dumps({"results": [{"title": "T", "url": "https://a.example/x", "content": "S"}]}), "application/json"

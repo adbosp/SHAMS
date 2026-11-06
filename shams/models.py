@@ -35,6 +35,12 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
     "scene3d": {"label": "3D Scene / Procedural", "backend": "ollama", "kind": "llm_agent", "impl": "scene3d",
                 "capabilities": ["scene.*", "mesh.procedural", "mesh.text_to_3d"],
                 "needs": ["completion"], "num_ctx": 16384},
+    # optional specialised game-code model (gameplay, scene, HUD): only when models.roles.game_coder is set.
+    # Without it the general coder takes code.game.* tasks (user choice 2026-11-06: the 4B 3D model wrote
+    # plans instead of code). When set, the coder takes over after the repair router switches worker.
+    "game_coder": {"label": "Game Code (3D/gameplay)", "backend": "ollama", "kind": "llm_agent",
+                   "capabilities": ["code.game.*", "integration.game"], "needs": ["completion"],
+                   "num_ctx": 16384},
     "visual_qc": {"label": "Visual QC", "backend": "ollama", "kind": "inference",
                   "capabilities": ["visual_review", "visual_review.*"], "needs": ["vision"], "num_ctx": 8192},
     "embedding": {"label": "Embedding / Retrieval", "backend": "ollama", "kind": "inference", "worker": False,
@@ -42,7 +48,16 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
     # backends for these two come from extensions (settings: "backend": "<name>")
     "image": {"label": "Image generation", "backend": None, "kind": "tool", "capabilities": ["image.*"]},
     "image_to_3d": {"label": "Image-to-3D", "backend": None, "kind": "tool", "capabilities": ["mesh.image_to_3d"]},
+    "build": {"label": "Build & run tools", "backend": None, "kind": "tool", "capabilities": ["build.*"]},
 }
+
+# role -> config used when the user's settings do not mention the role (extensions add tools that need no
+# setup, e.g. a build tool that runs from a SHAMS toolchain folder); "enabled": false in settings turns it off
+DEFAULT_ROLES: dict[str, dict[str, Any]] = {}
+
+
+def register_default_role(role: str, cfg: dict[str, Any]) -> None:
+    DEFAULT_ROLES[role] = dict(cfg)
 
 WORKER_PREFIX = "worker.role."
 
@@ -227,7 +242,16 @@ class ModelRegistry:
     def bindings(self) -> list[RoleBinding]:
         out = []
         aliases = dict(self.cfg.get("aliases") or {})
-        for role, rcfg in (self.cfg.get("roles") or {}).items():
+        roles = dict(self.cfg.get("roles") or {})
+        for role, dcfg in DEFAULT_ROLES.items():
+            roles.setdefault(role, dict(dcfg))
+        for role, spec in ROLE_SPECS.items():          # e.g. game_coder runs on the scene3d model
+            src = spec.get("inherit_model")
+            if src and role not in roles and src in roles:
+                scfg = roles[src] if isinstance(roles[src], dict) else {"model": roles[src]}
+                if scfg.get("model") and scfg.get("enabled", True) is not False:
+                    roles[role] = {"model": scfg["model"], "inherited_from": src}
+        for role, rcfg in roles.items():
             rcfg = dict(rcfg or {}) if not isinstance(rcfg, str) else {"model": rcfg}
             spec = ROLE_SPECS.get(role, {"backend": rcfg.get("backend", "ollama")})
             backend = rcfg.get("backend") or spec.get("backend")

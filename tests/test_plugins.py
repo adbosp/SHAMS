@@ -132,7 +132,7 @@ def make_real(tmp_path, base_url, provider="ollama", engine="web", checkers=None
 def test_full_run_with_local_model_server_and_command_tool(tmp_path, server):
     st = make_real(tmp_path, server.url)
     s = st.run()
-    assert s["done"] and s["counts"] == {"ACCEPTED": 11}
+    assert s["done"] and s["counts"] == {"ACCEPTED": 12}
     assert {r["body"]["model"] for r in server.requests} == {"coder-model:7b"}
     assert all(r["path"] == "/api/chat" for r in server.requests)          # Ollama native chat (think off)
     # Ollama got an explicit load (keep_alive) and a final unload (keep_alive 0) from the Model Lifecycle
@@ -235,7 +235,7 @@ def test_custom_provider_and_worker_by_reference(tmp_path):
     assert Path(st.artifacts.blob_path(ref["sha256"])).read_text() == "hello"
 
 
-def test_registered_checker_drives_qc(tmp_path, server):
+def test_registered_checker_drives_qc(tmp_path, server, monkeypatch):
     seen = []
 
     def compile_checker(kind, criterion, contents):
@@ -248,7 +248,11 @@ def test_registered_checker_drives_qc(tmp_path, server):
         d = tmp_path / "proj"
         Studio.init_project(d, "real_game", "g", mode="autonomous", engine={"name": "web"})
         st = Studio(d, nodes=real_nodes(tmp_path, server.url))      # checkers come from the registry
-        st.qc.checkers.update({k: passing for k in ("unit_test", "integration_test")})
+        # fake workers write text for every output, so the real asset checks (GLB, PNG, vision) are replaced too
+        st.qc.checkers.update({k: passing for k in ("unit_test", "integration_test", "schema", "visual", "exists")})
+        from shams.verification.checkers import CHECK_TYPES
+        for t in ("web_zip", "web_smoke"):                  # fake text outputs are not a real web build
+            monkeypatch.setitem(CHECK_TYPES, t, lambda c, outputs, settings=None: ("PASS", "fake"))
         st.load_plan(instantiate("vertical_slice_3d", "real_game", "g", engine="web"))
         assert st.run()["done"]
         assert [r["verdict"] for r in st.db.qc_reports("task.hud")] == ["FAIL", "PASS"]
@@ -310,3 +314,30 @@ def test_example_nodes_toml_parses():
 def test_short_worker_form_rejects_unknown_keys():
     with pytest.raises(ValueError, match="unknown keys"):
         normalize_worker({"id": "w", "node": "n", "capabilities": ["code.x"], "api_key": "sk-123"})
+
+
+class EmptyWorker:
+    """Claims READY_FOR_QC but produces nothing (a model that answered with no usable files)."""
+    def __init__(self, *, entry, attempts_root, **_):
+        pass
+
+    def run(self, ctx, worker_ref):
+        return [], workers.base_handoff(ctx, worker_ref, "READY_FOR_QC", "nothing")
+
+
+def test_empty_handoff_fails_the_attempt_not_the_controller(tmp_path):
+    caps = sorted({t["capability"] for t in instantiate("vertical_slice_3d", "real_game", "g", engine="godot")["tasks"]})
+    reg = NodeRegistry.from_dict({
+        "node": [{"id": "node.cloud", "kind": "external", "rate_limit_per_min": 1000}],
+        "worker": [{"id": "worker.empty", "node": "node.cloud", "lane": "external", "capabilities": caps,
+                    "config": {"impl": "test_plugins:EmptyWorker"}}]})
+    d = tmp_path / "p"
+    Studio.init_project(d, "real_game", "g", mode="autonomous", engine={"name": "godot"})
+    st = Studio(d, nodes=reg, checkers=dict(CHECKERS))
+    st.load_plan(instantiate("vertical_slice_3d", "real_game", "g", engine="godot"))
+    for _ in range(6):                       # must not raise ContractError
+        if not st.step():
+            break
+    types = [r["type"] for r in st.db.q("SELECT type FROM events")]
+    assert "task.worker_failed" in types
+    assert st.db.state("task.project_scaffold") != "RUNNING"

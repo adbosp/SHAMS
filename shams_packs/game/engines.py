@@ -31,6 +31,12 @@ class EngineProfile:
     build_target: str
     roots: dict[str, str] = field(default_factory=dict)  # scripts, tests, scenes, models, textures, audio, builds
     notes: str = ""
+    # how the integration step exposes the playable scene, and the QC check types for running/building it
+    # ("" = no checker yet: NOT_VERIFIED)
+    scene_hint: str = ""
+    test_hint: str = ""      # how unit tests must be written for this engine's test runner
+    run_check: str = ""
+    build_check: str = ""
     # Optional argv per step (compile/test/build/capture); "{project}" and "{exe}" are substituted.
     commands: dict[str, list[str]] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
@@ -56,12 +62,16 @@ class EngineProfile:
     def tokens(self) -> dict[str, str]:
         t = {
             "engine": self.name, "engine_display": self.display, "language": self.language,
-            "code": self.code_capability, "build": self.build_capability, "test": self.test_capability,
+            "code": self.code_capability, "game_code": "code.game." + self.code_capability.split(".", 1)[-1],
+            "build": self.build_capability, "test": self.test_capability,
             "script_mt": self.script_media_type, "script_contract": self.script_contract,
             "test_contract": self.test_contract, "scene_mt": self.scene_media_type,
             "scene_contract": self.scene_contract, "mesh_mt": self.mesh_media_type,
             "mesh_contract": self.mesh_contract, "build_mt": self.build_media_type,
             "build_contract": self.build_contract, "build_target": self.build_target,
+            # QC check type for the mesh: GLB is inspected for real; other formats have no checker yet
+            "mesh_check": "glb" if self.mesh_media_type == "model/gltf-binary" else "mesh_unverified",
+            "scene_hint": self.scene_hint, "test_hint": self.test_hint, "run_check": self.run_check, "build_check": self.build_check,
         }
         t.update(self.roots)
         return t
@@ -110,7 +120,22 @@ ENGINES: dict[str, EngineProfile] = {
         build_media_type="application/zip", build_contract="build.web", build_target="Static web (Vite)",
         roots={"scripts": "src/game", "tests": "tests", "scenes": "src/scenes", "models": "public/models",
                "textures": "public/textures", "audio": "public/audio", "builds": "dist"},
-        notes="WebGPURenderer, tự lùi về WebGL2 khi trình duyệt không có WebGPU. Build Vite, test Vitest, "
+        scene_hint=("Module scene phải `export function start(container: HTMLElement): void`: tạo "
+                    "`new THREE.WebGLRenderer({ antialias: true })` (không dùng `THREE.WebGPU`, thuộc tính đó không "
+                    "tồn tại trong `three`), gắn renderer.domElement vào container; camera phối cảnh đặt cao và chếch "
+                    "nhìn xuống nhân vật (ví dụ position (0, 6, 10), lookAt nhân vật); HemisphereLight cộng "
+                    "DirectionalLight đủ sáng. Nạp bằng GLTFLoader (three/examples/jsm/loaders/GLTFLoader.js) BA file, "
+                    "dùng đường dẫn TƯƠNG ĐỐI (không có dấu / ở đầu): ./models/Environment/environment.glb (bối "
+                    "cảnh, đã có sẵn mặt đất), ./models/Player/player.glb và ./models/Npc/npc.glb; thêm cả ba vào "
+                    "scene và đặt NPC cách người chơi vài mét. Gắn điều khiển nhân "
+                    "vật, spawner, cơ chế chính và HUD từ các module đầu vào (phần tử HUD phải được gắn vào "
+                    "container), rồi chạy vòng lặp requestAnimationFrame. SHAMS tự tạo index.html và src/main.ts "
+                    "gọi start(); không viết hai file đó."),
+        test_hint=("Test viết cho Vitest: `import { describe, it, expect, vi } from \"vitest\"`, mock bằng `vi.fn()` / "
+                   "`vi.spyOn()`, không dùng `jest`. File test đặt cùng thư mục với module nó test và import bằng "
+                   "đường dẫn tương đối `./TenModule`."),
+        run_check="web_smoke", build_check="web_zip",
+        notes="WebGLRenderer (WebGPU là tuỳ chọn về sau). Build Vite, test Vitest, "
               "smoke test + screenshot bằng Playwright headless."),
 }
 

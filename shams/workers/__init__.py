@@ -18,6 +18,7 @@ The Mock Worker (shams.mock) uses the same interface.
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import time
@@ -68,6 +69,8 @@ def base_handoff(ctx: dict, worker_ref: dict, status: str, summary: str, *, deci
 SYSTEM_PROMPT = """You are a specialist worker inside SHAMS, an AI manufacturing pipeline that builds software and games.
 You receive one task as JSON. Produce every declared output, honouring domain_context (stack, engine, language, folders), paths and acceptance criteria.
 If prior_failures is not empty, fix exactly what they describe.
+Tools such as web search are optional help: when they find nothing, write the outputs from your own knowledge.
+Use "BLOCKED" only when the task is impossible without something the user must provide, never because a search was empty.
 Reply with ONE JSON object and nothing else:
 {"files": [{"logical_id": "<declared logical_id>", "content": "<full file content>"}],
  "summary": "<2-4 sentences for the next worker>",
@@ -75,6 +78,23 @@ Reply with ONE JSON object and nothing else:
  "known_issues": ["<anything incomplete>"],
  "status": "READY_FOR_QC" | "BLOCKED",
  "blocked_reason": "<only when BLOCKED>"}"""
+
+
+_EXPORT = re.compile(r"^\s*export\s+(default\s+)?(?:abstract\s+)?(class|function\*?|const|let|var|interface|type|enum)?"
+                     r"\s*([A-Za-z_$][\w$]*)?", re.M)
+
+
+def module_exports(code: str) -> list[str]:
+    """The export lines of a JS/TS module, e.g. ["export default class PlayerController", "export const SPEED"],
+    so the next worker imports them the right way."""
+    out = []
+    for m in _EXPORT.finditer(code):
+        line = code[m.start():code.find("\n", m.start()) if "\n" in code[m.start():] else len(code)].strip()
+        if re.match(r"export\s*(type\s*)?\{", line):         # export { a, b } [from "..."]
+            out.append(line.rstrip(";")[:160])
+        else:
+            out.append(line.split("{")[0].split("=")[0].strip()[:120])
+    return out[:40]
 
 
 def extract_json(text: str) -> dict:
@@ -90,6 +110,29 @@ def extract_json(text: str) -> dict:
             pass
         i = text.find("{", i + 1)
     raise ValueError("no JSON object in model reply")
+
+
+def text_tool_call(text: str, names: set[str]) -> dict | None:
+    """A tool call the model wrote as plain JSON text ({"name": <tool>, "arguments": {...}}) instead of using
+    the tool-call channel. Returns {"id", "name", "arguments"} or None (also for a normal final answer)."""
+    try:
+        obj = extract_json(text or "")
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or "files" in obj:
+        return None
+    if isinstance(obj.get("function"), dict):            # {"function": {"name", "arguments"}}
+        obj = obj["function"]
+    name = obj.get("name") or obj.get("tool")
+    args = obj.get("arguments", obj.get("parameters", obj.get("input", {})))
+    if name not in names or not isinstance(args, (dict, str)):
+        return None
+    if isinstance(args, str):
+        try:
+            args = json.loads(args or "{}")
+        except json.JSONDecodeError:
+            return None
+    return {"id": f"text_{name}", "name": name, "arguments": args}
 
 
 class LLMWorker:
@@ -118,6 +161,9 @@ class LLMWorker:
                 p = self.read_blob(i["sha256"])
                 if p.exists():
                     item["content"] = p.read_text(encoding="utf-8", errors="replace")[:MAX_INPUT_CHARS]
+                    ex = module_exports(item["content"])
+                    if ex:                                # how to import it: default vs named exports
+                        item["exports"] = ex
             out.append(item)
         return out
 
@@ -141,20 +187,26 @@ class LLMWorker:
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
 
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
-        _, plan = output_plan(ctx, self.attempts_root)
+        adir, plan = output_plan(ctx, self.attempts_root)
         binary = [o["logical_id"] for o in plan if not is_text(o["media_type"])]
         if binary:
             return [], base_handoff(ctx, worker_ref, "BLOCKED", f"cannot produce binary outputs {binary}",
                                     blocked_reason=f"{worker_ref['worker_id']} only writes text; route "
                                                    f"{binary} to a generator (command/plugin) worker")
         messages = self.prompt(ctx, plan)
-        research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False
+        research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False \
+            and (ctx["task"].get("params") or {}).get("research") is not False      # a task can opt out
         if self.mcp is not None and (self.mcp_servers or research) and getattr(self.provider, "supports_tools", False):
-            r = self._chat_with_tools(messages)
+            r = self._chat_with_tools(messages, research=research)
         else:
             r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
                  "wall_seconds": r.get("wall_seconds", 0.0)}
+        try:                                  # the raw reply stays with the attempt, for diagnosis
+            adir.mkdir(parents=True, exist_ok=True)
+            (adir / "_model_reply.txt").write_text(r.get("text") or "", encoding="utf-8")
+        except OSError:
+            pass
         try:
             reply = extract_json(r["text"])
         except ValueError as e:
@@ -162,8 +214,17 @@ class LLMWorker:
                                     known_issues=[{"issue": f"schema violation: {e}", "severity": "high"}],
                                     usage=usage, blocked_reason=f"schema violation: {e}")
         if reply.get("status") == "BLOCKED":
+            why = str(reply.get("blocked_reason") or "worker blocked")
+            if not any(isinstance(f, dict) and f.get("content") for f in reply.get("files") or []):
+                # a text model that gives up writes nothing: a failed attempt (repair loop), not a dead end that
+                # stops every task after this one
+                return [], base_handoff(ctx, worker_ref, "FAILED", reply.get("summary", "") or "model gave up",
+                                        known_issues=[{"issue": f"model declared BLOCKED without writing the outputs: "
+                                                                f"{why}. Write them from your own knowledge.",
+                                                       "severity": "high"}],
+                                        usage=usage, blocked_reason=why[:500])
             return [], base_handoff(ctx, worker_ref, "BLOCKED", reply.get("summary", ""),
-                                    usage=usage, blocked_reason=str(reply.get("blocked_reason") or "worker blocked"))
+                                    usage=usage, blocked_reason=why)
         by_id = {f.get("logical_id"): f.get("content", "") for f in reply.get("files", []) if isinstance(f, dict)}
         files = []
         for o in plan:
@@ -173,6 +234,13 @@ class LLMWorker:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(str(by_id[o["logical_id"]]), encoding="utf-8")
             files.append(o)
+        if plan and not files:                # nothing usable: a task failure (repair loop), not an empty handoff
+            got = sorted(str(k) for k in by_id)
+            issue = (f"missing output: the reply had none of the declared outputs "
+                     f"{[o['logical_id'] for o in plan]}" + (f"; it returned {got}" if got else "; it returned no files"))
+            return [], base_handoff(ctx, worker_ref, "FAILED", str(reply.get("summary", ""))[:300] or issue,
+                                    known_issues=[{"issue": issue, "severity": "high"}], usage=usage,
+                                    blocked_reason=issue)
         decisions = list(reply.get("decisions") or [])
         decisions += [{"decision": f"used tool {t['tool']}" + (" (denied)" if t["denied"] else ""),
                        "reason": t["summary"]} for t in self.tool_log]
@@ -180,11 +248,11 @@ class LLMWorker:
                                    decisions=decisions, known_issues=reply.get("known_issues"),
                                    usage=usage)
 
-    def _chat_with_tools(self, messages: list[dict]) -> dict:
+    def _chat_with_tools(self, messages: list[dict], research: bool = True) -> dict:
         """Agent loop: the model may call MCP tools (subject to Permissions) before its final JSON reply."""
         t0 = time.monotonic()
         catalog = self.mcp.tools(self.mcp_servers)
-        if self.research is False:
+        if self.research is False or not research:
             catalog = [t for t in catalog if t.get("server") != "research"]
         msgs = list(messages)
         msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\nYou may call the provided tools to inspect or change "
@@ -193,8 +261,16 @@ class LLMWorker:
         self.tool_log = []
         for round_ in range(self.max_tool_rounds + 1):
             tools = catalog if round_ < self.max_tool_rounds else []
+            if not tools and round_:
+                msgs.append({"role": "user", "content": "No more tool calls. Reply now with the final JSON object "
+                                                        "(with the files) only."})
             r = self.provider.chat_tools(msgs, model=self.model, tools=tools, **self.chat_options)
             tin, tout = tin + r.get("tokens_in", 0), tout + r.get("tokens_out", 0)
+            if not r["tool_calls"] and tools:
+                written = text_tool_call(r["text"], {t["name"] for t in tools})
+                if written:                  # small local models often write the call as plain JSON text
+                    r = {**r, "tool_calls": [written],
+                         "assistant": {"role": "assistant", "content": r["text"]}}
             if not r["tool_calls"]:
                 return {"text": r["text"], "tokens_in": tin, "tokens_out": tout,
                         "wall_seconds": round(time.monotonic() - t0, 3)}

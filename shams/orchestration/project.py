@@ -35,7 +35,7 @@ from shams.orchestration import task_runner
 
 MODES = ("collaborative", "guided", "autonomous")
 CRITICAL_KINDS = {"compile", "unit_test", "integration_test"}
-MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric")
+MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric", "visual")
 
 
 DB_FILE = "shams.sqlite"
@@ -384,7 +384,9 @@ class Shams:
         task = self.db.task(task_id)
         self.db.transition(task_id, S.REPAIR_REQUIRED, event, "task_runner", {"error": detail[:300]})
         failure = self.classifier.classify(task, attempt, detail, source, [])
-        return self.repair.route(failure)
+        out = self.repair.route(failure)
+        self._autopilot(task_id)
+        return out
 
     # ------------------------------------------------------------------ QC routing
     def run_qc(self, task_id: str, *, revalidation: bool = False) -> dict:
@@ -406,16 +408,16 @@ class Shams:
                 self.db.transition(task_id, S.REPAIR_REQUIRED, "qc.failed", "qc",
                                    {"failure_id": failure["failure_id"], "stage": rep.get("stopped_at_stage")})
             self.repair.route(failure)
+            self._autopilot(task_id)
             return rep
         self.db.save_qc(rep)
         unverified = [c for c in rep["criteria"] if c["verdict"] == "NOT_VERIFIED"]
         if rep["verdict"] == "NOT_VERIFIED":
-            kinds = {k["kind"] for k in task["acceptance_criteria"]
-                     if k["id"] in {u["criterion_id"] for u in unverified}}
-            if not (self.mode == "autonomous" and not kinds & CRITICAL_KINDS):
+            if self.mode != "autonomous":
                 self.db.transition(task_id, S.HUMAN_REVIEW, "qc.not_verified", "qc",
                                    {"criteria": [u["criterion_id"] for u in unverified]})
                 return rep
+            # autonomous: no checker is not a reason to stop; the gap stays visible in the event payload
         self._accept(task_id, handoff, "qc.passed", "qc",
                      {"gate": rep["gate"], "not_verified": [u["criterion_id"] for u in unverified]},
                      refresh_handoff=revalidation)
@@ -433,6 +435,23 @@ class Shams:
             self.db.transition(task_id, S.ACCEPTED, event, actor, payload)
         if superseded:
             self.impact.on_superseded(superseded)
+
+    def _autopilot(self, task_id: str) -> None:
+        """Autonomous mode never waits for a person: a task that used up its repair attempts is accepted with
+        its last produced outputs and marked as accepted with failed checks, so the run goes on to the end.
+        A task that never produced an output (no worker, tool missing) stays in HUMAN_REVIEW."""
+        if self.mode != "autonomous" or self.db.state(task_id) != S.HUMAN_REVIEW:
+            return
+        task = self.db.task(task_id)
+        handoff = next((h for a in range(task["attempt"], -1, -1)
+                        if (h := self.db.handoff(task_id, a)) and h.get("outputs")), None)
+        if handoff is None:
+            return
+        failed = sorted({c["criterion_id"] for r in self.db.qc_reports(task_id) if r.get("attempt") == handoff["attempt"]
+                         for c in r.get("criteria") or [] if c.get("verdict") == "FAIL"})
+        self._accept(task_id, handoff, "human.decided", "autopilot",
+                     {"decision": "accept", "note": "autonomous mode: accepted with failed checks",
+                      "failed_checks": failed, "attempt": handoff["attempt"]})
 
     # ------------------------------------------------------------------ human review (ADR-112)
     def human_decide(self, task_id: str, decision: str, note: str = "") -> None:

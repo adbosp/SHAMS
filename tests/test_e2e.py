@@ -12,7 +12,7 @@ def test_full_vertical_slice_runs_to_done(make_studio):
     st = make_studio()
     s = st.run()
     assert s["done"], s["counts"]
-    assert s["counts"] == {"ACCEPTED": 11}
+    assert s["counts"] == {"ACCEPTED": 12}
     for t in st.db.tasks():
         h = st.db.handoff(t["task_id"])
         assert h and h["status"] == "READY_FOR_QC"
@@ -104,7 +104,7 @@ def test_upstream_change_marks_consumers_stale_then_revalidates(make_studio):
     new = st.artifacts.accepted("code.player_controller")["sha256"]
     assert new != old and st.artifacts.get(old)["state"] == "SUPERSEDED"
     invalidated = {e["subject_id"] for e in st.db.events() if e["type"] == "task.invalidated"}
-    assert invalidated == {"task.core_mechanic", "task.integration_slice1"}
+    assert invalidated == {"task.core_mechanic", "task.hud", "task.integration_slice1", "task.build_game"}
     revalidated = {e["subject_id"] for e in st.db.events() if e["type"] == "task.revalidate"}
     assert revalidated == invalidated
     # STALE tasks were re-QC'd, not re-executed (ADR-110)
@@ -129,7 +129,7 @@ def test_fix_upstream_creates_repair_task(make_studio):
 
 def test_not_verified_guided_vs_autonomous(tmp_path):
     crit = [{"id": "ac.compiles", "description": "c", "kind": "compile"},
-            {"id": "ac.looks_right", "description": "v", "kind": "visual"}]
+            {"id": "ac.looks_right", "description": "v", "kind": "semantic"}]
     for mode, expected in (("guided", S.HUMAN_REVIEW), ("autonomous", S.ACCEPTED)):
         d = tmp_path / mode
         Studio.init_project(d, PID, "g", mode=mode, mock_mode=True)
@@ -147,3 +147,12 @@ def test_side_effect_ledger_is_idempotent(make_studio):
     for _ in range(3):
         st.db.side_effect("publish:build:a0", "task.build_game", 0, "publish", lambda: calls.append(1) or {"ok": 1})
     assert calls == [1]
+
+
+def test_autonomous_mode_accepts_a_task_out_of_repairs_and_runs_on(make_studio):
+    st = make_studio({"task.spawner": MockDefect("ac.spawner_tests", fail_attempts=99)}, mode="autonomous")
+    s = st.run()
+    assert s["done"] and st.db.state("task.spawner") == S.ACCEPTED
+    assert st.db.state("task.core_mechanic") == S.ACCEPTED          # dependents ran on
+    ev = [e for e in st.db.events(subject_id="task.spawner") if e["type"] == "human.decided"]
+    assert ev and "ac.spawner_tests" in str(ev[-1]) and "autopilot" in str(ev[-1])

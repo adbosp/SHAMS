@@ -308,6 +308,41 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
     return box_problems(boxes, tol)
 
 
+def detached_parts(boxes: list, tol: float = 0.01, gaps: dict | None = None) -> list[str]:
+    """One asset must be one connected piece: every part has to touch (or overlap) the main body. ``gaps`` are
+    real surface distances by "a|b" name pair (from the Blender harness); without them bounding boxes closer
+    than ``tol`` count as touching. Returns one problem per part that floats free, with the gap."""
+    if len(boxes) < 2:
+        return []
+    def gap(a, b):
+        if gaps is not None:
+            k = "|".join(sorted((a[0]["name"], b[0]["name"])))
+            if k in gaps:
+                return float(gaps[k])
+        return max(max(b[1][k] - a[2][k], a[1][k] - b[2][k], 0.0) for k in range(3))
+    vol = lambda b: max(b[2][0] - b[1][0], 1e-6) * max(b[2][1] - b[1][1], 1e-6) * max(b[2][2] - b[1][2], 1e-6)  # noqa: E731
+    comps, left = [], set(range(len(boxes)))
+    while left:                                   # connected groups of touching parts
+        start = left.pop()
+        comp, frontier = {start}, [start]
+        while frontier:
+            i = frontier.pop()
+            for j in list(left):
+                if gap(boxes[i], boxes[j]) <= tol:
+                    left.discard(j)
+                    comp.add(j)
+                    frontier.append(j)
+        comps.append(comp)
+    group = max(comps, key=lambda c: sum(vol(boxes[i]) for i in c))   # the body = the biggest connected group
+    out = []
+    for j in range(len(boxes)):
+        if j not in group:
+            d = min(gap(boxes[j], boxes[i]) for i in group)
+            out.append(f"{boxes[j][0]['name']} is not attached to the body ({round(d * 100)} cm gap to the nearest "
+                       f"part): move or resize it so it touches or slightly overlaps the part it belongs to")
+    return out
+
+
 def box_problems(boxes: list, tol: float = 0.02, axis: str = "y") -> list[str]:
     """World bounding boxes (``obj`` with name/shape/rotation, lo, hi; Y up) -> problems with the fix spelled out:
     * a smaller object whose centre sits over a larger support and whose bottom is inside it (sinking);

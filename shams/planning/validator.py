@@ -143,7 +143,8 @@ def instantiate(template: str | None, project_id: str, goal: str, plan_id: str |
     missing = sorted(set(re.findall(r"\$\{(\w+)\}", text)) - set(tokens))
     if missing:
         raise KeyError(f"template {path.stem} uses tokens the {pack.name} configuration lacks: {missing}")
-    text = re.sub(r"\$\{(\w+)\}", lambda m: tokens[m.group(1)], text)
+    # tokens land inside JSON strings: escape quotes, backslashes and newlines (json.dumps without the outer quotes)
+    text = re.sub(r"\$\{(\w+)\}", lambda m: json.dumps(str(tokens[m.group(1)]), ensure_ascii=False)[1:-1], text)
     dag = json.loads(text)
     dag["project_id"] = project_id
     dag["plan_id"] = plan_id or f"plan.{project_id}"

@@ -274,15 +274,39 @@ class MissingResources(ProviderError):
 class ComfyUIImageWorker:
     """Fills a ComfyUI workflow (task title/description as the prompt) and writes the image outputs."""
 
-    def __init__(self, *, entry: dict, attempts_root: Path, provider: Any = None, **_: Any):
+    def __init__(self, *, entry: dict, attempts_root: Path, provider: Any = None,
+                 read_blob: Any = None, **_: Any):
         cfg = entry.get("provider_config", {})
         self.provider = provider or ComfyUI(**{k: v for k, v in cfg.items() if k in ("base_url", "workflows", "timeout", "launch", "launch_cwd", "autostart")})
         self.workflow = cfg.get("workflow") or entry["worker"].get("model") or "sdxl_lightning_4step"
         self.params = dict(cfg.get("params") or {})
         self.attempts_root = Path(attempts_root)
+        self.read_blob = read_blob
         self.model = entry["worker"].get("model") or self.workflow
         self.content_policy = dict(cfg.get("content_policy") or {})
         self.preset = cfg.get("preset")
+
+    def _brief(self, ctx: dict, skip: list[str] | None = None, max_sentences: int | None = None) -> str:
+        """Text inputs (text/plain, text/markdown) describe the subject in words the image model understands.
+        ``skip``: sentences containing any of these words are dropped (e.g. a background the task forbids)."""
+        parts = []
+        for i in ctx.get("inputs", []):
+            if not str(i.get("media_type", "")).startswith("text/"):
+                continue
+            try:
+                src = Path(self.read_blob(i["sha256"])) if self.read_blob and i.get("sha256") else Path(i["path"])
+                txt = src.read_text(encoding="utf-8", errors="replace")
+            except (OSError, KeyError, TypeError):
+                continue
+            txt = " ".join(l.strip().lstrip("#*-> ").strip() for l in txt.splitlines() if l.strip())
+            if skip or max_sentences:
+                import re
+                pats = [re.compile(r"\b" + re.escape(w.strip()) + r"\b", re.I) for w in skip or [] if w.strip()]
+                sents = [x for x in re.split(r"(?<=[.!?])\s+", txt) if not any(p.search(x) for p in pats)]
+                txt = " ".join(sents[:int(max_sentences)] if max_sentences else sents)
+            if txt:
+                parts.append(txt[:600])
+        return " ".join(parts)
 
     def run(self, ctx: dict, worker_ref: dict) -> tuple[list[dict], dict]:
         from shams import policy
@@ -290,8 +314,14 @@ class ComfyUIImageWorker:
         task = ctx["task"]
         tparams = dict(task.get("params") or {})
         prompt = tparams.pop("prompt", None) or task.get("description") or task["title"]
-        if ctx.get("goal") and not task.get("preset"):
+        brief = self._brief(ctx, tparams.pop("brief_skip", None), tparams.pop("brief_max_sentences", None))
+        prefix = tparams.pop("prompt_prefix", None)
+        if brief:                                     # a written subject (e.g. an art brief) comes first
+            prompt = f"{brief.rstrip('.')}. {prompt}"
+        elif ctx.get("goal") and not task.get("preset") and not str(task.get("capability", "")).startswith("image.texture"):
             prompt = f"{prompt}. Context: {ctx['goal']}"
+        if prefix:                                    # what must win (e.g. a plain background) goes before all
+            prompt = f"{prefix} {prompt}"
         params = {**self.params, **tparams, "prompt": prompt}
         if self.content_policy.get("adult"):          # checked again here: defence in depth
             try:
@@ -322,6 +352,9 @@ class ComfyUIImageWorker:
             files.append(o)
         return files, base_handoff(ctx, worker_ref, "READY_FOR_QC", f"ComfyUI {self.workflow}: {len(files)} image(s)",
                                    usage={"wall_seconds": r["seconds"]},
-                                   decisions=[{"decision": f"workflow {self.workflow}", "reason": json.dumps(r["params"])[:300]}])
+                                   decisions=[{"decision": f"workflow {self.workflow}", "reason": json.dumps(r["params"])[:300]},
+                                              {"decision": "prompt", "reason": params["prompt"][:1500]},
+                                              {"decision": "negative prompt",
+                                               "reason": str(params.get("negative", ""))[:800]}])
 
 

@@ -19,6 +19,61 @@ class AssetError(ValueError):
 
 
 # --------------------------------------------------------------------------- GLB
+def _mat_mul(a: list[float], b: list[float]) -> list[float]:
+    """4x4 column-major (glTF order) product a*b."""
+    return [sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4)) for c in range(4) for r in range(4)]
+
+
+def _node_matrix(n: dict) -> list[float]:
+    if "matrix" in n:
+        return [float(x) for x in n["matrix"]]
+    tx, ty, tz = n.get("translation", [0, 0, 0])
+    x, y, z, w = n.get("rotation", [0, 0, 0, 1])
+    sx, sy, sz = n.get("scale", [1, 1, 1])
+    r = [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w),
+         2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w),
+         2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)]
+    return [r[0] * sx, r[1] * sx, r[2] * sx, 0, r[3] * sy, r[4] * sy, r[5] * sy, 0,
+            r[6] * sz, r[7] * sz, r[8] * sz, 0, tx, ty, tz, 1]
+
+
+def _world_bbox(gltf: dict, acc: list[dict]) -> tuple[list[float], list[float]] | None:
+    """Bounding box of every mesh instance in the scene graph, in world space (metres)."""
+    nodes, meshes = gltf.get("nodes", []), gltf.get("meshes", [])
+    if not nodes:
+        return None
+    scenes = gltf.get("scenes") or []
+    if scenes:
+        roots = scenes[gltf.get("scene", 0) if gltf.get("scene", 0) < len(scenes) else 0].get("nodes", [])
+    else:
+        children = {c for n in nodes for c in n.get("children", [])}
+        roots = [i for i in range(len(nodes)) if i not in children]
+    lo, hi = [math.inf] * 3, [-math.inf] * 3
+    ident = [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
+    stack, seen = [(i, ident) for i in roots], 0
+    while stack and seen < 100000:
+        i, parent = stack.pop()
+        seen += 1
+        if not 0 <= i < len(nodes):
+            continue
+        n = nodes[i]
+        m = _mat_mul(parent, _node_matrix(n))
+        mi = n.get("mesh")
+        if mi is not None and 0 <= mi < len(meshes):
+            for p in meshes[mi].get("primitives", []):
+                pa = acc[p["attributes"]["POSITION"]] if "POSITION" in p.get("attributes", {}) else {}
+                if "min" not in pa or "max" not in pa:
+                    continue
+                for cx in (pa["min"][0], pa["max"][0]):
+                    for cy in (pa["min"][1], pa["max"][1]):
+                        for cz in (pa["min"][2], pa["max"][2]):
+                            w = [m[r] * cx + m[4 + r] * cy + m[8 + r] * cz + m[12 + r] for r in range(3)]
+                            lo = [min(a, b) for a, b in zip(lo, w)]
+                            hi = [max(a, b) for a, b in zip(hi, w)]
+        stack.extend((c, m) for c in n.get("children", []))
+    return None if lo[0] == math.inf else (lo, hi)
+
+
 def parse_glb(path: str | Path) -> dict:
     """Validate the container and summarise geometry. Raises AssetError on a broken file."""
     data = Path(path).read_bytes()
@@ -81,6 +136,9 @@ def parse_glb(path: str | Path) -> dict:
             tris += n // 3 if mode == 4 else max(0, n - 2) if mode in (5, 6) else 0
     if prims == 0:
         has_uv = has_normals = False
+    world = _world_bbox(gltf, acc)                        # node transforms applied (scale, rotation, translation)
+    if world:
+        lo, hi = world
     bbox = None if lo[0] == math.inf else {"min": lo, "max": hi, "size": [h - l for l, h in zip(lo, hi)]}
     mats = gltf.get("materials", [])
     textured = any("baseColorTexture" in (m.get("pbrMetallicRoughness") or {}) for m in mats)
@@ -92,7 +150,7 @@ def parse_glb(path: str | Path) -> dict:
 
 def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
     """check: min_vertices, max_triangles, require_uv, require_texture, require_material,
-    min_size_m / max_size_m (largest bbox side, glTF units are metres)."""
+    min_size_m / max_size_m (largest bbox side, glTF units are metres), max_width_to_height (Y-up)."""
     c = check or {}
     try:
         g = parse_glb(path)
@@ -117,6 +175,10 @@ def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
             errs.append(f"largest side {big:.3f} m < {c['min_size_m']} m (scale?)")
         elif "max_size_m" in c and big > float(c["max_size_m"]):
             errs.append(f"largest side {big:.3f} m > {c['max_size_m']} m (scale?)")
+        sx, sy, sz = g["bbox"]["size"]
+        if "max_width_to_height" in c and sy > 0 and max(sx, sz) / sy > float(c["max_width_to_height"]):
+            errs.append(f"width {max(sx, sz):.2f} m is {max(sx, sz) / sy:.2f}x the height {sy:.2f} m "
+                        f"(> {c['max_width_to_height']}: several objects side by side?)")
     elif c.get("min_size_m") or c.get("max_size_m"):
         errs.append("POSITION accessor lacks min/max, cannot check scale")
     summary = (f"{g['meshes']} mesh, {g['vertices']} verts, {g['triangles']} tris, {g['materials']} materials, "
@@ -126,8 +188,32 @@ def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- PNG
-def png_info(path: str | Path) -> dict:
-    """Size, colour type and pixel statistics of an 8-bit non-interlaced PNG."""
+def _edge_subject(rows_top, rows_bottom, cols_left, cols_right, h: int) -> dict:
+    """Share of each border band that differs from the background. The background along a border is the
+    straight blend of that border's two corner colours, so a studio gradient (lighter floor) is not a subject."""
+    def med(pxs):
+        return tuple(sorted(p[i] for p in pxs)[len(pxs) // 2] for i in range(len(pxs[0])))
+    k = max(1, len(rows_top[0]) // 16)
+    tl, tr = med([p for r in rows_top for p in r[:k]]), med([p for r in rows_top for p in r[-k:]])
+    bl, br = med([p for r in rows_bottom for p in r[:k]]), med([p for r in rows_bottom for p in r[-k:]])
+    def blend(a, b, t):
+        return tuple(x + (y - x) * t for x, y in zip(a, b))
+    def off(p, bg):
+        return max(abs(a - b) for a, b in zip(p, bg)) > 40
+    def frac_rows(rows, a, b):
+        n = len(rows[0])
+        hits = [off(p, blend(a, b, x / max(n - 1, 1))) for r in rows for x, p in enumerate(r)]
+        return round(sum(hits) / max(len(hits), 1), 3)
+    def frac_cols(cols, a, b):
+        hits = [off(p, blend(a, b, y / max(h - 1, 1))) for y, ps in cols for p in ps]
+        return round(sum(hits) / max(len(hits), 1), 3)
+    return {"top": frac_rows(rows_top, tl, tr), "bottom": frac_rows(rows_bottom, bl, br),
+            "left": frac_cols(cols_left, tl, bl), "right": frac_cols(cols_right, tr, br)}
+
+
+def png_info(path: str | Path, edges: bool = False) -> dict:
+    """Size, colour type and pixel statistics of an 8-bit non-interlaced PNG. ``edges``: also measure how much
+    of each border band differs from the background colour (the corners), see ``edge_subject``."""
     data = Path(path).read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise AssetError("not a PNG file")
@@ -158,6 +244,11 @@ def png_info(path: str | Path) -> dict:
     step = max(1, h // 128)
     adj_sum = 0.0                                       # neighbour differences: noise vs. a real picture
     adj_n = 0
+    band = max(2, min(w, h) // 50)
+    rows_top: list[list[tuple]] = []
+    rows_bottom: list[list[tuple]] = []
+    cols_left: list[tuple[int, list[tuple]]] = []
+    cols_right: list[tuple[int, list[tuple]]] = []
     for y in range(h):
         f = raw[y * (stride + 1)]
         line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
@@ -176,6 +267,17 @@ def png_info(path: str | Path) -> dict:
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
         prev = line
+        if edges:
+            cc = 3 if ch >= 3 else 1
+            px = lambda x: tuple(line[x * ch: x * ch + cc])          # noqa: E731
+            xs = range(0, w, max(1, w // 256))
+            if y < band:
+                rows_top.append([px(x) for x in xs])
+            if y >= h - band:
+                rows_bottom.append([px(x) for x in xs])
+            if y % max(1, h // 256) == 0:
+                cols_left.append((y, [px(x) for x in range(band)]))
+                cols_right.append((y, [px(x) for x in range(w - band, w)]))
         if y % step == 0:
             colour_ch = 3 if ch >= 3 else 1
             lum = [sum(line[x * ch: x * ch + colour_ch]) / colour_ch for x in range(w)]
@@ -194,26 +296,43 @@ def png_info(path: str | Path) -> dict:
     # noise), 0.01-0.08 for real photos and renders measured on ROPY-PC
     rough = (adj_sum / adj_n) / std if adj_n and std > 0 else 0.0
     info.update(mean=round(mean, 2), std=round(std, 2), distinct_colours=len(colours), roughness=round(rough, 3))
+    if edges and rows_top and rows_bottom and cols_left:
+        info["edge_subject"] = _edge_subject(rows_top, rows_bottom, cols_left, cols_right, h)
     return info
 
 
 def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
-    """check: min_width, min_height, min_std (not blank), min_colours, max_roughness (not random noise)."""
+    """check: min/max_width, min/max_height, power_of_two, min_std (not blank), min_colours,
+    max_roughness + min_noise_difference (not random noise), max_edge_subject (share of each border band that
+    differs from the background: a subject on a plain background must not be cut off)."""
     c = check or {}
     try:
-        i = png_info(path)
+        i = png_info(path, edges="max_edge_subject" in c)
     except (AssetError, OSError, zlib.error, struct.error) as e:
         return "FAIL", f"image invalid: {e}"
     errs = []
     if i["width"] < int(c.get("min_width", 16)) or i["height"] < int(c.get("min_height", 16)):
         errs.append(f"too small {i['width']}x{i['height']}")
+    if i["width"] > int(c.get("max_width", 1 << 16)) or i["height"] > int(c.get("max_height", 1 << 16)):
+        errs.append(f"too large {i['width']}x{i['height']}")
+    if c.get("power_of_two") and any(n & (n - 1) for n in (i["width"], i["height"])):
+        errs.append(f"size {i['width']}x{i['height']} is not a power of two")
     if "std" in i:
         if i["std"] < float(c.get("min_std", 3.0)):
             errs.append(f"image is blank/flat (std {i['std']})")
         if i["distinct_colours"] < int(c.get("min_colours", 8)):
             errs.append(f"only {i['distinct_colours']} colours")
-        if i["roughness"] > float(c.get("max_roughness", 0.25)):
+        # noise = neighbours differ a lot relative to the spread AND in absolute terms: a fine-grained but
+        # low-contrast texture (std 12-15, ratio ~0.3, neighbour difference ~4) is not noise
+        if i["roughness"] > float(c.get("max_roughness", 0.25)) and \
+                i["roughness"] * i["std"] > float(c.get("min_noise_difference", 10.0)):
             errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
+    if "max_edge_subject" in c and "edge_subject" in i:
+        sides = c.get("edge_sides") or ["top", "bottom", "left", "right"]
+        cut = [side for side, f in i["edge_subject"].items() if side in sides and f > float(c["max_edge_subject"])]
+        if cut:
+            errs.append("something other than the plain background reaches the image border (" + ", ".join(cut) +
+                        "): the subject is cropped (e.g. feet cut off) or the background is not plain")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
                                                f"{i['roughness']}" if "std" in i else "")
     return ("FAIL", "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)

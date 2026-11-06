@@ -67,8 +67,12 @@ class AssetCheckers:
                 except Exception as e:  # noqa: BLE001 - a broken checker must not crash QC
                     return "NOT_VERIFIED", f"checker {ctype} crashed: {type(e).__name__}: {e}"
             fb = self.fallback.get(k)
+            if fb is None and k == "exists" and outputs is not None:
+                return self._exists(criterion, outputs)
             if fb is None:
                 return "NOT_VERIFIED", f"no checker for kind '{k}'" + (f" / type '{ctype}'" if ctype else "")
+            if getattr(fb, "wants_outputs", False):
+                return fb(k, criterion, contents, outputs=outputs)
             return fb(k, criterion, contents)
         check.wants_outputs = True
         return check
@@ -111,6 +115,14 @@ class AssetCheckers:
                    f"{rep.get('lights')}, materials {len(rep.get('materials', []))}, non-manifold edges {nm}")
         return ("FAIL", "scene check: " + "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)
 
+    # ------------------------------------------------------------------ exists
+    def _exists(self, c: dict, outputs: list[dict]):
+        sel = [o for o in outputs if o.get("role", "output") == "output"]
+        empty = [o["logical_id"] for o in sel if not Path(o["file"]).exists() or Path(o["file"]).stat().st_size == 0]
+        if not sel or empty:
+            return "FAIL", "missing output: " + (", ".join(empty) if empty else "nothing produced")
+        return "PASS", f"{len(sel)} output(s) present and non-empty"
+
     # ------------------------------------------------------------------ text
     def _text(self, c: dict, outputs: list[dict]):
         chk = c.get("check") or {}
@@ -139,7 +151,16 @@ class AssetCheckers:
         sel = pick(outputs, c.get("check") or {}, ("image/png", "image/jpeg"))
         if not sel:
             return "FAIL", "missing output: no image for visual QC"
-        return self.visual([o["file"] for o in sel], c["description"], c.get("check") or {})
+        desc = c["description"]
+        briefs = [o for o in outputs if o.get("role") == "input" and str(o.get("media_type", "")).startswith("text/")
+                  and o.get("file")]
+        for o in briefs[:2]:                          # e.g. the art brief the image was drawn from
+            try:
+                desc += " | Character description: " + Path(o["file"]).read_text(
+                    encoding="utf-8", errors="replace").strip()[:600]
+            except OSError:
+                pass
+        return self.visual([o["file"] for o in sel], desc, c.get("check") or {})
 
     # ------------------------------------------------------------------ code
     @staticmethod
@@ -214,6 +235,11 @@ def make_visual_checker(provider: Any, model: str, exclusive: bool = True):
         if not r.get("text", "").strip():
             # some vision models answer only in their reasoning channel when thinking is forced off
             r = provider.chat(msgs, model=model, images=imgs, format="json", think=True)
+        if exclusive and hasattr(provider, "unload"):
+            try:                                      # free the GPU for the next generator
+                provider.unload(model)
+            except Exception:  # noqa: BLE001 - freeing memory must not change the verdict
+                pass
         try:
             v = extract_json(r["text"])
         except ValueError:

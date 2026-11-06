@@ -1,0 +1,16 @@
+# SearXNG for SHAMS research tools: local only, JSON output on, Google as the engine SHAMS asks for.
+# The install step replaces CHANGE_ME_AT_INSTALL with a random secret (never commit a real one).
+use_default_settings: true
+general:
+  instance_name: "SHAMS local search"
+server:
+  # inside the container SearXNG listens on 0.0.0.0:8080 (image default); "docker run -p 127.0.0.1:8888:8080"
+  # publishes it on this PC only
+  secret_key: "CHANGE_ME_AT_INSTALL"
+  limiter: false
+  image_proxy: false
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json

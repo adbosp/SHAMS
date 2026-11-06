@@ -33,7 +33,7 @@ ROLES = {"planner": {"model": "qwen3.5:9b"}, "coder": {"model": "qwen2.5-coder:1
 
 
 # --------------------------------------------------------------------------- helpers
-def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False) -> Path:
+def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False, nodes=None) -> Path:
     pos = struct.pack("<9f", 0, 0, 0, scale, 0, 0, 0, scale, 0)
     uvs = struct.pack("<6f", 0, 0, 1, 0, 0, 1)
     binary = pos + (uvs if uv else b"")
@@ -46,7 +46,7 @@ def make_glb(path: Path, *, uv=True, scale=1.0, truncate=False) -> Path:
                          ([{"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC2"}] if uv else []),
             "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}], "textures": [{"source": 0}],
             "images": [{"uri": "x.png"}],
-            "meshes": [{"primitives": [{"attributes": attrs, "material": 0}]}], "nodes": [{"mesh": 0}]}
+            "meshes": [{"primitives": [{"attributes": attrs, "material": 0}]}], "nodes": nodes or [{"mesh": 0}]}
     js = json.dumps(gltf).encode()
     js += b" " * ((4 - len(js) % 4) % 4)
     binary += b"\0" * ((4 - len(binary) % 4) % 4)
@@ -166,7 +166,7 @@ def test_registry_binds_roles_and_generates_workers(ollama):
     s = {"models": {"ollama": {"base_url": ollama.url}, "roles": ROLES}}
     reg = models.ModelRegistry(s)
     by = {b.role: b for b in reg.bindings()}
-    assert all(b.ok for b in by.values()), [b.as_dict() for b in by.values()]
+    assert all(b.ok for r, b in by.items() if r != "build"), [b.as_dict() for b in by.values()]
     assert by["scene3d"].model_id == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0" and by["scene3d"].how == "fuzzy"
     ws = {w["id"]: w for w in reg.workers()}
     assert "worker.role.embedding" not in ws                     # retrieval role: no scheduler worker
@@ -181,7 +181,7 @@ def test_registry_reports_missing_and_down():
     s = {"models": {"ollama": {"base_url": "http://127.0.0.1:9"}, "roles": {"coder": {"model": "x"}}}}
     models._CACHE.clear()
     b = models.ModelRegistry(s).binding("coder")
-    assert b.status == "down" and not models.ModelRegistry(s).workers()
+    assert b.status == "down" and not [w for w in models.ModelRegistry(s).workers() if w["id"] != "worker.role.build"]
     s2 = {"models": {"roles": {"image": {}}}}
     assert models.ModelRegistry(s2).binding("image").status == "not_configured"
 
@@ -285,6 +285,80 @@ def test_png_check_rejects_random_noise(tmp_path):
     assert assets.png_info(make_png(tmp_path / "grad.png"))["roughness"] < 0.2
 
 
+
+def test_png_check_keeps_low_contrast_fine_textures(tmp_path):
+    import random
+    rnd, w, h = random.Random(2), 128, 128
+    grid = [[rnd.randrange(108, 149) for _ in range(w // 2)] for _ in range(h // 2)]   # fine soil-like grain
+    rows = b"".join(b"\x00" + bytes(v for x in range(w) for v in (grid[y // 2][x // 2],) * 3) for y in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    tex = tmp_path / "soil.png"
+    tex.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                    + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    i = assets.png_info(tex)
+    assert i["roughness"] > 0.25 and i["std"] < 15                     # the ratio alone called this noise
+    assert assets.check_png(tex, {"power_of_two": True})[0] == "PASS"
+
+
+def test_glb_width_to_height_catches_several_figures(tmp_path):
+    # make_glb is a triangle in the XY plane: width 1, height 1 (glTF Y-up)
+    assert assets.check_glb(make_glb(tmp_path / "a.glb"), {"max_width_to_height": 1.2})[0] == "PASS"
+    v, d = assets.check_glb(make_glb(tmp_path / "b.glb"), {"max_width_to_height": 0.9})
+    assert v == "FAIL" and "side by side" in d
+
+
+def test_comfy_worker_puts_text_brief_first_and_vlm_sees_it(tmp_path):
+    seen = {}
+    class Prov:
+        def generate(self, workflow, params):
+            seen.update(params)
+            return {"images": [make_png(tmp_path / "o.png").read_bytes()], "seconds": 1, "params": {}}
+    brief = tmp_path / "brief.txt"
+    brief.write_text("adult woman, long black hair, green summer dress\n", encoding="utf-8")
+    w = ComfyUIImageWorker(entry={"worker": {"worker_id": "w"}, "provider_config": {}}, attempts_root=tmp_path,
+                           provider=Prov(), read_blob=lambda sha: brief)
+    ctx = {"project_id": "p", "attempt": 1, "goal": "một yêu cầu tiếng Việt",
+           "inputs": [{"logical_id": "brief.npc", "media_type": "text/plain", "sha256": "x"}],
+           "task": {"task_id": "task.c", "title": "c", "description": "single full-body image", "acceptance_criteria": [],
+                    "capability": "image.concept",
+                    "outputs": [{"name": "c", "logical_id": "img.c", "media_type": "image/png"}]}}
+    files, h = w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert h["status"] == "READY_FOR_QC"
+    assert seen["prompt"].startswith("adult woman, long black hair") and "tiếng Việt" not in seen["prompt"]
+    got = {}
+    chk = AssetCheckers(visual=lambda files, desc, c: got.setdefault("d", desc) and ("PASS", "ok")).table()["visual"]
+    outs = [{"logical_id": "img.c", "media_type": "image/png", "file": files[0]["abs"], "role": "output"},
+            {"logical_id": "brief.npc", "media_type": "text/plain", "file": str(brief), "role": "input"}]
+    chk("visual", {"id": "v", "kind": "visual", "description": "one person", "check": {"type": "vlm"}}, [], outputs=outs)
+    assert "green summer dress" in got["d"]
+    brief.write_text("A woman in her 30s, red coat. Rendered in low-poly style, garden background.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["background", "rendered"]}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("A woman in her 30s, red coat.") and "garden" not in seen["prompt"]
+    assert "brief_skip" not in seen
+    brief.write_text("A man in his 30s. Short dark hair, jeans. Comfortable for a garden date. Third sentence.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["garden"], "brief_max_sentences": 2, "prompt_prefix": "plain white background."}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("plain white background. A man in his 30s. Short dark hair, jeans.")
+    assert "garden" not in seen["prompt"] and "Third" not in seen["prompt"] and "prompt_prefix" not in seen
+    brief.write_text("A man in his late 20s with hair styled neatly. Rendered in a garden style.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["style", "garden"]}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("A man in his late 20s with hair styled neatly.")    # whole words only
+
+
+def test_visual_checker_frees_the_vision_model():
+    calls = []
+    class P:
+        def ps(self): return [{"name": "coder"}]
+        def unload(self, m): calls.append(m)
+        def chat(self, msgs, **kw): return {"text": '{"pass": true, "score": 8, "reason": "ok"}'}
+    import tempfile
+    img = make_png(Path(tempfile.mkdtemp()) / "a.png")
+    assert make_visual_checker(P(), "vl")([str(img)], "x", {})[0] == "PASS"
+    assert calls == ["coder", "vl"]
+
 def test_asset_checkers_dispatch_on_check_type(tmp_path):
     table = AssetCheckers({"compile": lambda k, c, contents: ("PASS", "pack checker")}).table()
     g = make_glb(tmp_path / "a.glb")
@@ -365,6 +439,54 @@ def test_stable_fast_3d_provider_and_worker_gating(tmp_path, monkeypatch):
                  ref)[1]["status"] == "BLOCKED"                                            # basic -> procedural
     files, h = w.run({**ctx, "inputs": IMG}, ref)
     assert h["status"] == "READY_FOR_QC" and assets.check_glb(files[0]["abs"], {"require_uv": True})[0] == "PASS"
+
+
+def test_sf3d_plan_step_skips_route_policy_and_meets_budget(tmp_path, monkeypatch):
+    repo = tmp_path / "sf3d"
+    repo.mkdir()
+    fake = FAKE_SF3D.replace('p.add_argument("--device")', 'p.add_argument("--device"); p.add_argument("--target_vertex_count")')
+    fake += "\nopen(os.path.join(a.output_dir, 'argv.txt'), 'w').write(' '.join(sys.argv))\n"
+    (repo / "run.py").write_text(fake, encoding="utf-8")
+    monkeypatch.setenv("FAKE_GLB", str(make_glb(tmp_path / "src.glb")))
+    prov = StableFast3D(repo=str(repo), python=sys.executable)
+    assert prov.supports_target_vertices() == "--target_vertex_count"
+    img = make_png(tmp_path / "ref.png")
+    w = StableFast3DWorker(entry={"worker": {"worker_id": "w"}, "provider_config": {}}, attempts_root=tmp_path / "att",
+                           provider=prov, read_blob=lambda sha: img)
+    assert w.blender is None
+    task = {"task_id": "task.npc", "title": "Chair", "description": "simple", "capability": "mesh.image_to_3d",
+            "params": {"height_m": 1.7},
+            "acceptance_criteria": [{"id": "a", "check": {"type": "glb", "max_triangles": 3000}}],
+            "outputs": [{"name": "npc", "logical_id": "mesh.npc", "media_type": "model/gltf-binary"},
+                        {"name": "npc_preview", "logical_id": "img.npc", "media_type": "image/png"}]}
+    files, h = w.run({"project_id": "p", "attempt": 1, "inputs": IMG, "task": task}, {"worker_id": "w", "kind": "tool"})
+    assert h["status"] == "READY_FOR_QC"                         # plan step: no "basic -> procedural" refusal
+    argv = next((tmp_path / "att").rglob("argv.txt")).read_text()
+    assert "--target_vertex_count 1350" in argv and "--remesh_option triangle" in argv
+    assert [f["media_type"] for f in files] == ["model/gltf-binary"]       # no Blender: raw mesh, no preview
+    assert any("preview" in i["issue"] for i in h["known_issues"])
+
+
+def test_game_template_characters_are_built_by_the_3d_model_from_a_brief():
+    from shams.planning.validator import instantiate as inst
+    dag = inst("vertical_slice_3d", "p", "g", engine="web")
+    t = {x["task_id"]: x for x in dag["tasks"]}
+    assert not {x for x in t if x.endswith("_concept")} and "task.environment_texture" not in t
+    assert not any(x["capability"].startswith(("image.", "mesh.image_to_3d")) for x in dag["tasks"])
+    for who in ("player", "npc"):
+        m = t[f"task.{who}_model"]
+        assert m["capability"] == "mesh.procedural" and m["params"]["builder"] == "json"
+        assert m["depends_on"] == ["task.character_brief"] and m["inputs"][0]["logical_id"] == f"brief.{who}"
+        assert m["params"]["height_m"] == 1.7 and "1.7 m" in m["description"]
+        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.9
+    e = t["task.environment_model"]
+    assert e["capability"] == "mesh.procedural" and e["outputs"][0]["logical_id"] == "asset.environment.mesh"
+    integ = t["task.integration_slice1"]
+    assert "task.environment_model" in integ["depends_on"]
+    assert any(i["logical_id"] == "asset.environment.mesh" for i in integ["inputs"])
+    assert "./models/Environment/environment.glb" in integ["description"]
+    b = t["task.character_brief"]
+    assert b["capability"].startswith("plan.") and {o["media_type"] for o in b["outputs"]} == {"text/plain"}
 
 
 # --------------------------------------------------------------------------- ComfyUI
@@ -695,3 +817,292 @@ def test_blender_scenes_get_the_same_physical_checks():
     issues = blender_tools.blender_physics(rep)
     text = "; ".join(issues)
     assert "Leg goes 0.25 m below the floor" in text and "Ball sinks 8 cm into Top" in text and "z=" in text
+
+
+def test_asset_task_gets_goal_only_as_background():
+    from shams_tools.blender import scoped_payload
+    p = scoped_payload({}, {"capability": "mesh.text_to_3d"}, {"goal": "garden game with 5 characters", "task": "player"})
+    assert "goal" not in p and p["project_background"].startswith("garden") and "ONLY" in p["scope"]
+    q = scoped_payload({}, {"capability": "scene.build"}, {"goal": "a table scene", "task": "scene"})
+    assert q["goal"] == "a table scene" and "scope" not in q
+
+
+def test_png_power_of_two_and_max_size(tmp_path):
+    assert assets.check_png(make_png(tmp_path / "a.png", 64, 64), {"power_of_two": True})[0] == "PASS"
+    v, d = assets.check_png(make_png(tmp_path / "b.png", 96, 64), {"power_of_two": True})
+    assert v == "FAIL" and "power of two" in d
+    assert assets.check_png(make_png(tmp_path / "c.png", 64, 64), {"max_width": 32})[0] == "FAIL"
+
+
+def test_ollama_tool_calls_use_native_chat_with_num_ctx():
+    """Tool turns must keep num_ctx: the OpenAI-compatible endpoint would run with Ollama's small default."""
+    def handle(method, path, body):
+        if path == "/api/chat" and body.get("tools"):
+            return 200, {"message": {"role": "assistant", "content": "",
+                                     "tool_calls": [{"function": {"name": "research__web_search",
+                                                                  "arguments": {"query": "three.js"}}}]},
+                         "prompt_eval_count": 7, "eval_count": 3}
+        return 200, {"message": {"role": "assistant", "content": '{"done": true}'}}
+    srv = Server(handle)
+    try:
+        prov = providers.create("ollama", {"base_url": srv.url, "num_ctx": 16384})
+        r = prov.chat_tools([{"role": "user", "content": "x"}], model="m",
+                            tools=[{"name": "research__web_search", "input_schema": {"type": "object"}}])
+        method, path, body = srv.calls[-1]
+        assert path == "/api/chat" and body["options"]["num_ctx"] == 16384 and body["stream"] is False
+        assert r["tool_calls"][0]["name"] == "research__web_search" and r["tool_calls"][0]["arguments"]["query"] == "three.js"
+        msgs = prov.tool_results([(r["tool_calls"][0], "result")])
+        assert msgs[0]["role"] == "tool" and msgs[0]["tool_name"] == "research__web_search"
+        r2 = prov.chat_tools([{"role": "user", "content": "x"}], model="m", tools=[])
+        assert r2["text"] == '{"done": true}' and not r2["tool_calls"]
+    finally:
+        srv.close()
+
+
+def test_llm_worker_reply_without_declared_outputs_is_a_task_failure(tmp_path):
+    from shams.workers import LLMWorker
+
+    class P:
+        name = "fake"
+        def chat(self, messages, *, model, **o):
+            return {"text": json.dumps({"files": [{"logical_id": "wrong.id", "content": "x"}], "summary": "s",
+                                        "status": "READY_FOR_QC"})}
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    w = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P())
+    ref = {"worker_id": "worker.x", "model": "m"}
+    files, h = w.run(ctx, ref)
+    assert files == [] and h["status"] == "FAILED" and "wrong.id" in h["blocked_reason"]
+    assert (tmp_path / "task.a" / "a1" / "_model_reply.txt").read_text(encoding="utf-8").startswith("{")
+
+
+def test_tool_call_written_as_text_is_executed():
+    from shams.workers import text_tool_call
+    names = {"research__web_search"}
+    c = text_tool_call('{\n "name": "research__web_search",\n "arguments": {"query": "three.js"}\n}', names)
+    assert c["name"] == "research__web_search" and c["arguments"] == {"query": "three.js"}
+    assert text_tool_call('{"function": {"name": "research__web_search", "arguments": "{\\"query\\": \\"x\\"}"}}',
+                          names)["arguments"] == {"query": "x"}
+    assert text_tool_call('{"files": [], "summary": "s", "name": "research__web_search"}', names) is None
+    assert text_tool_call('{"name": "other", "arguments": {}}', names) is None
+    assert text_tool_call("plain words", names) is None
+
+
+def test_llm_worker_runs_text_tool_call_then_writes_files(tmp_path):
+    from shams.workers import LLMWorker
+    calls = []
+
+    class P:
+        name, supports_tools = "fake", True
+        def __init__(self):
+            self.n = 0
+        def chat_tools(self, msgs, *, model, tools, **o):
+            self.n += 1
+            if self.n == 1:
+                return {"text": '{"name": "research__web_search", "arguments": {"query": "q"}}', "tool_calls": [],
+                        "assistant": {"role": "assistant", "content": ""}}
+            return {"text": json.dumps({"files": [{"logical_id": "code.a", "content": "x = 1"}], "summary": "ok",
+                                        "status": "READY_FOR_QC"}), "tool_calls": [], "assistant": {}}
+        def tool_results(self, results):
+            return [{"role": "tool", "content": t} for _, t in results]
+
+    class M:
+        def tools(self, servers):
+            return [{"name": "research__web_search", "server": "research", "input_schema": {"type": "object"}}]
+        def call(self, name, args, catalog):
+            calls.append((name, args))
+            return {"text": "results", "is_error": False}
+        research = type("R", (), {"enabled": True})()
+
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    w = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P(), mcp=M())
+    files, h = w.run(ctx, {"worker_id": "worker.x", "model": "m"})
+    assert calls == [("research__web_search", {"query": "q"})]
+    assert h["status"] == "READY_FOR_QC" and [f["logical_id"] for f in files] == ["code.a"]
+
+
+def test_blender_script_model_is_swapped_not_stacked(tmp_path):
+    from shams_tools.blender import Scene3DWorker
+    log = []
+
+    class P:
+        def unload(self, m):
+            log.append(("unload", m))
+    w = Scene3DWorker(entry={"worker": {"model": "small3d"}, "provider_config": {"blender_model": "coder14b"}},
+                      attempts_root=tmp_path, provider=P())
+    w.build = lambda *a: (log.append(("build", w.blender_model)) or ({"ok": True}, "", {}))
+    w._build_swapped({}, tmp_path, {}, "blender")
+    assert log == [("unload", "small3d"), ("build", "coder14b"), ("unload", "coder14b")]
+
+
+def test_glb_size_uses_node_transforms(tmp_path):
+    """Blender exports objects with node scale/translation; the size check must see the world size."""
+    g = make_glb(tmp_path / "s.glb", scale=1.0, nodes=[{"mesh": 0, "scale": [0.5, 1.7, 1], "translation": [3, 0, 0]}])
+    size = assets.parse_glb(g)["bbox"]["size"]
+    assert abs(size[0] - 0.5) < 1e-6 and abs(size[1] - 1.7) < 1e-6
+    g2 = make_glb(tmp_path / "t.glb", scale=1.0,
+                  nodes=[{"children": [1], "translation": [0, 1, 0]}, {"mesh": 0}, {"mesh": 0, "translation": [2, 0, 0]}])
+    b = assets.parse_glb(g2)["bbox"]
+    assert abs(b["size"][0] - 3.0) < 1e-6 and abs(b["min"][1] - 0.0) < 1e-6 and abs(b["max"][1] - 2.0) < 1e-6
+
+
+def test_single_asset_parts_must_touch():
+    from shams_tools.scene_json import detached_parts
+    body = ({"name": "Body"}, [-0.2, 0.8, -0.1], [0.2, 1.4, 0.1])
+    head = ({"name": "Head"}, [-0.1, 1.45, -0.1], [0.1, 1.65, 0.1])          # 5 cm above the body
+    leg = ({"name": "Leg"}, [-0.1, 0.0, -0.05], [0.0, 0.8, 0.05])             # touches
+    probs = detached_parts([body, head, leg])
+    assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
+    assert detached_parts([body, leg]) == []
+
+
+def test_detached_head_found_with_real_gaps_where_boxes_touch():
+    """Regression from ROPY-PC: the head's box touched the arms' boxes, so a 5 cm head gap passed."""
+    from shams_tools.blender import blender_physics
+    objs = {"Head": ([-0.15, -0.15, 0.65], [0.15, 0.15, 0.95]), "Torso": ([-0.1, -0.1, 0.0], [0.1, 0.1, 0.6]),
+            "Arm_Right": ([0.15, -0.05, 0.3], [0.25, 0.05, 0.7]), "Arm_Left": ([-0.25, -0.05, 0.3], [-0.15, 0.05, 0.7]),
+            "Leg_Right": ([0.03, -0.07, -0.25], [0.17, 0.07, 0.45]), "Leg_Left": ([-0.17, -0.07, -0.25], [-0.03, 0.07, 0.45])}
+    rep = {"objects": [{"name": n, "type": "MESH", "bbox": [lo, hi]} for n, (lo, hi) in objs.items()]}
+    assert not any("not attached" in p for p in blender_physics(rep, single_asset=True))   # boxes alone miss it
+    names = sorted(objs)
+    gaps = {f"{a}|{b}": 0.0 for i, a in enumerate(names) for b in names[i + 1:]}
+    for k in list(gaps):
+        if "Head" in k:
+            gaps[k] = 0.05 if "Torso" in k else 0.08
+    rep["gaps"] = gaps
+    probs = [p for p in blender_physics(rep, single_asset=True) if "not attached" in p]
+    assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
+
+
+def test_research_reports_a_blocked_search_page_as_unavailable(monkeypatch):
+    from shams import research
+    r = research.Research({"enabled": True})
+    def fake_get(url, search=False):
+        r.last_status = 202
+        return "<html>please verify you are human</html>", "text/html"
+    monkeypatch.setattr(r, "_get", fake_get)
+    out = r.call("research__web_search", {"query": "three.js setup"})
+    assert out["is_error"] and "unavailable" in out["text"] and "own knowledge" in out["text"]
+
+
+def test_research_uses_a_local_searxng_for_search_only():
+    from shams import research
+    srv = Server(lambda m, path, body: (200, {"results": [{"title": "three.js docs", "url": "https://threejs.org/docs",
+                                                           "content": "manual"}]}))
+    try:
+        r = research.Research({"enabled": True, "search_url": srv.url + "/search?q={query}&format=json&engines=google"})
+        out = r.call("research__web_search", {"query": "three.js"})
+        assert not out["is_error"] and "threejs.org/docs" in out["text"]
+        bad = r.call("research__web_fetch", {"url": srv.url + "/anything"})      # fetch still refuses local hosts
+        assert bad["is_error"] and "local" in bad["text"]
+    finally:
+        srv.close()
+
+
+def test_llm_worker_giving_up_without_outputs_is_a_failed_attempt(tmp_path):
+    from shams.workers import LLMWorker
+
+    class P:
+        name = "fake"
+        def chat(self, messages, *, model, **o):
+            assert "never because a search was empty" in messages[0]["content"]
+            return {"text": json.dumps({"files": [], "summary": "no search results", "status": "BLOCKED",
+                                        "blocked_reason": "No relevant web search results found"})}
+    ctx = {"attempt": 1, "inputs": [], "project_id": "p", "goal": "g",
+           "task": {"task_id": "task.a", "title": "A", "capability": "code.x", "acceptance_criteria": [],
+                    "outputs": [{"name": "a", "logical_id": "code.a", "media_type": "text/x-python"}]}}
+    files, h = LLMWorker(entry={"worker": {"model": "m"}}, attempts_root=tmp_path, provider=P()).run(
+        ctx, {"worker_id": "worker.x", "model": "m"})
+    assert files == [] and h["status"] == "FAILED" and "own knowledge" in h["known_issues"][0]["issue"]
+
+
+def _png(path: Path, w: int, h: int, pixel) -> Path:
+    rows = b"".join(b"\x00" + b"".join(bytes(pixel(x, y)) for x in range(w)) for y in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    return path
+
+
+def test_png_edge_check_catches_a_cropped_subject(tmp_path):
+    grey = (200, 200, 200)
+    def person(top, bottom):
+        return lambda x, y: ((40 + (x * 7) % 90, 60, 120) if 24 <= x < 40 and top <= y < bottom else grey)
+    whole = _png(tmp_path / "whole.png", 64, 64, person(6, 58))          # head to feet inside the frame
+    cut = _png(tmp_path / "cut.png", 64, 64, person(6, 64))              # legs run off the bottom edge
+    assert assets.check_png(whole, {"max_edge_subject": 0.02})[0] == "PASS"
+    v, d = assets.check_png(cut, {"max_edge_subject": 0.02})
+    assert v == "FAIL" and "bottom" in d and "cropped" in d and "not plain" in d
+    assert assets.png_info(cut, edges=True)["edge_subject"]["top"] == 0
+    def studio(x, y):                                                   # grey backdrop, lighter floor
+        g = 150 + y * 80 // 63
+        return (40 + (x * 7) % 90, 60, 120) if 24 <= x < 40 and 6 <= y < 58 else (g, g, g)
+    grad = _png(tmp_path / "grad.png", 64, 64, studio)
+    assert assets.check_png(grad, {"max_edge_subject": 0.04})[0] == "PASS"
+
+
+def test_module_exports_tell_the_next_worker_how_to_import():
+    from shams.workers import module_exports
+    ex = module_exports('import x from "y";\nexport default class PlayerController {\n}\nexport const SPEED = 2;\n'
+                        'export { a, b };\nfunction hidden() {}\n')
+    assert ex == ["export default class PlayerController", "export const SPEED", "export { a, b }"]
+
+
+def test_png_edge_check_can_ignore_the_sides(tmp_path):
+    grey = (200, 200, 200)
+    img = _png(tmp_path / "side.png", 64, 64,
+               lambda x, y: (30, 30, 30) if (x < 3 and 20 < y < 40) or (24 <= x < 40 and 6 <= y < 58) else grey)
+    assert assets.check_png(img, {"max_edge_subject": 0.04})[0] == "FAIL"                  # a shadow on the left
+    assert assets.check_png(img, {"max_edge_subject": 0.04, "edge_sides": ["top", "bottom"], "min_colours": 1})[0] == "PASS"
+
+
+def test_scene3d_json_prompt_includes_the_text_inputs(tmp_path):
+    from shams_tools.blender import Scene3DWorker
+    brief = tmp_path / "b.txt"
+    brief.write_text("A woman in her late 20s, long black hair, red dress, white shoes.", encoding="utf-8")
+    w = Scene3DWorker(entry={"worker": {"worker_id": "w", "model": "m"}, "provider_config": {}},
+                      attempts_root=tmp_path, read_blob=lambda sha: brief)
+    ctx = {"goal": "g", "inputs": [{"logical_id": "brief.npc", "media_type": "text/plain", "sha256": "x"},
+                                   {"logical_id": "img", "media_type": "image/png", "sha256": "y"}],
+           "task": {"title": "npc", "description": "humanoid", "capability": "mesh.procedural",
+                    "acceptance_criteria": []}}
+    user = json.loads(w._json_messages(ctx, 20000)[1]["content"])
+    assert user["inputs"] == [{"name": "brief.npc", "text": brief.read_text(encoding="utf-8")}]
+
+
+def test_game_code_goes_to_the_coder_unless_a_game_coder_is_set(tmp_path):
+    from shams.models import ModelRegistry
+    from shams.nodes.registry import NodeRegistry
+    disc = {"status": "ok", "loaded": [], "models": [
+        {"name": "qwen2.5-coder:14b", "capabilities": ["completion"], "size_mb": 9000},
+        {"name": "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0", "capabilities": ["completion"], "size_mb": 4500}]}
+    reg = ModelRegistry({"models": {"roles": {"coder": {"model": "qwen2.5-coder:14b"},
+                                              "scene3d": {"model": "Qwen3.5-4B-3D-Coder:Q8_0"}}}}, ollama=disc)
+    assert reg.binding("game_coder") is None                      # not set: the coder writes game code
+    ws = {w["id"]: w for w in reg.workers()}
+    assert "worker.role.game_coder" not in ws and "code.*" in ws["worker.role.coder"]["capabilities"]
+    reg = ModelRegistry({"models": {"roles": {"coder": {"model": "qwen2.5-coder:14b"},
+                                              "game_coder": {"model": "Qwen3.5-4B-3D-Coder:Q8_0"}}}}, ollama=disc)
+    b = reg.binding("game_coder")
+    assert b.ok and b.model_id == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0"
+
+
+def test_scheduler_prefers_the_most_specific_worker_and_repair_switches_to_the_next():
+    from shams.nodes.registry import NodeRegistry, normalize_worker
+    reg = NodeRegistry.from_dict({
+        "node": [{"id": "node.local", "kind": "local", "cpu_slots": 2, "gpus": [{"index": 0, "vram_mb": 12000}]}],
+        "worker": [{"id": "worker.role.coder", "node": "node.local", "kind": "llm_agent", "provider": "ollama",
+                    "model": "coder", "capabilities": ["code.*", "integration.*"]},
+                   {"id": "worker.role.game_coder", "node": "node.local", "kind": "llm_agent", "provider": "ollama",
+                    "model": "game", "capabilities": ["code.game.*", "integration.game"]}]})
+    task = {"capability": "code.game.web_typescript"}
+    assert [w.worker_id for w in reg.preferred(task)] == ["worker.role.game_coder"]
+    assert [w.worker_id for w in reg.ranked("code.game.web_typescript")] == ["worker.role.game_coder",
+                                                                             "worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({**task, "provider_hint": "worker.role.coder"})] == ["worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({"capability": "code.web_typescript"})] == ["worker.role.coder"]
+    assert [w.worker_id for w in reg.preferred({"capability": "integration.game"})] == ["worker.role.game_coder"]

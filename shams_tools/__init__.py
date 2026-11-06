@@ -52,8 +52,12 @@ class _SF3DBackend:
     def worker(self, reg, b) -> dict:
         c = dict(reg.tools.get("stable_fast_3d") or {})
         cfg = {k: v for k, v in c.items() if k in ("repo", "python", "weights", "device", "texture_resolution",
-                                                   "remesh", "timeout", "env", "force")}
+                                                   "remesh", "timeout", "env", "force", "preview_dir")}
         cfg["impl"] = "sf3d"
+        from shams_tools.blender import blender_from
+        bl = blender_from(reg.settings)
+        if bl:
+            cfg["blender"] = bl                  # preview render + real-world scale of the generated mesh
         return {"kind": "tool", "provider": "stable_fast_3d", "model": "stable-fast-3d", "load_adapter": "none",
                 "vram_mb": int(b.config.get("vram_mb", 7000)), "config": cfg}
 
@@ -72,6 +76,13 @@ def _scene3d_hook(reg, w: dict) -> None:
         mid, _how = match_model(want, names, dict(reg.cfg.get("aliases") or {}))
         if mid:
             w["config"]["blender_model"] = mid
+            # the lease must cover the bigger of the two models (they are swapped, never loaded together)
+            from shams.models import estimate_vram_mb
+            info = next((m for m in reg.ollama().get("models", []) if m["name"] == mid), {})
+            size_mb = int(info.get("size_mb") or int(info.get("size", 0)) // (1 << 20))
+            need = estimate_vram_mb(size_mb, w["config"].get("num_ctx"))
+            if size_mb and need > int(w.get("vram_mb") or 0):
+                w["vram_mb"] = need
 
 
 def _probe_blender(settings: dict) -> dict:
@@ -111,14 +122,14 @@ def register() -> None:
     _DONE = True
     from shams import models, providers, workers
     from shams.verification.checkers import register_check_type
-    from shams_tools import blender, comfyui, sf3d
+    from shams_tools import blender, comfyui, sf3d, web_build
 
     providers.register_provider("comfyui", comfyui.ComfyUI)
     providers.register_provider("stable_fast_3d", sf3d.StableFast3D)
     workers.register_worker("scene3d", blender.Scene3DWorker)
     workers.register_worker("comfyui_image", comfyui.ComfyUIImageWorker)
     workers.register_worker("sf3d", sf3d.StableFast3DWorker)
-    workers.worker_only_keys("blender", "blender_timeout", "blender_model")
+    workers.worker_only_keys("blender", "blender_timeout", "blender_model", "preview_dir")
     models.register_backend("comfyui", _ComfyBackend())
     models.register_backend("stable_fast_3d", _SF3DBackend())
     models.register_role_hook("scene3d", _scene3d_hook)
@@ -126,6 +137,12 @@ def register() -> None:
     models.register_probe("comfyui", _probe_comfyui)
     models.register_probe("stable_fast_3d", _probe_sf3d)
     register_check_type("blender_import", blender.check_blender_import)
+    providers.register_provider("web_build", web_build.WebBuildProvider)
+    workers.register_worker("web_build", web_build.WebBuildWorker)
+    models.register_backend("web_build", web_build._WebBuildBackend())
+    models.register_default_role("build", {"backend": "web_build", "capabilities": ["build.web"]})
+    register_check_type("web_zip", web_build.check_web_zip)
+    register_check_type("web_smoke", web_build.check_web_smoke)
 
 
 WORKFLOWS = Path(__file__).resolve().parent / "workflows"

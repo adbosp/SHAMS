@@ -54,6 +54,10 @@ def actor_ref(actor: str, kind: str = "tool") -> dict:
     return {"worker_id": actor, "kind": kind}
 
 
+class StoreClosed(sqlite3.ProgrammingError):
+    """The project was closed (for example the app switched project) while a reader still held it."""
+
+
 class EventStore:
     def __init__(self, path: Path | str, project_id: str):
         self.path = str(path)
@@ -63,11 +67,14 @@ class EventStore:
         self._conn.executescript(SCHEMA_SQL)
         self._lock = threading.RLock()
         self._depth = 0
+        self._closed = False
 
     # ---------------------------------------------------------------- transactions
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
         with self._lock:
+            if self._closed:
+                raise StoreClosed(f"event store {self.path} is closed")
             outer = self._depth == 0
             if outer:
                 self._conn.execute("BEGIN IMMEDIATE")
@@ -86,6 +93,8 @@ class EventStore:
 
     def q(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:
+            if self._closed:
+                raise StoreClosed(f"event store {self.path} is closed")
             return self._conn.execute(sql, args).fetchall()
 
     def q1(self, sql: str, args: tuple = ()) -> sqlite3.Row | None:
@@ -93,7 +102,16 @@ class EventStore:
         return rows[0] if rows else None
 
     def close(self) -> None:
-        self._conn.close()
+        """Close under the lock: closing a SQLite connection while another thread runs a statement on it
+        crashes the interpreter (access violation), it does not raise."""
+        with self._lock:
+            if not self._closed:
+                self._closed = True
+                self._conn.close()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
 
     # ---------------------------------------------------------------- events
     def append(self, type_: str, subject_kind: str, subject_id: str, actor: str, *,

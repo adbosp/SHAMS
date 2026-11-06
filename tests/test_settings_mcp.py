@@ -252,7 +252,7 @@ def test_app_first_chat_creates_project_in_workspace(tmp_path):
     s = c.post("/api/chat", json={"text": "Game giải đố nhỏ"}).json()
     assert s["project"]["domain"] == "game" and s["project"]["selected"] == {"engine": "godot"}
     assert (ws / s["project"]["dir"].split("/")[-1].split("\\")[-1] / "project.json").exists()
-    assert s["progress"]["total"] == 11
+    assert s["progress"]["total"] == 12
 
 
 def test_mcp_http_transport_json_and_sse():
@@ -330,3 +330,81 @@ def test_app_auto_mock_counts_model_registry_role_workers(tmp_path, monkeypatch)
     assert svc._mock_default(s) is True
     assert svc._mock_default({"general": {"mock": "off"}}) is False
     assert svc._mock_default({"general": {"mock": "on"}}) is True
+
+
+def test_crash_log_is_enabled(tmp_path):
+    import faulthandler
+    from apps.api.server import enable_crash_log
+    try:
+        p = enable_crash_log(tmp_path)
+        assert p.exists() and "started" in p.read_text(encoding="utf-8") and faulthandler.is_enabled()
+    finally:
+        faulthandler.disable()
+
+
+def test_app_does_not_resume_an_unfinished_project_on_open(tmp_path, monkeypatch):
+    from shams.orchestration.project import Shams
+    from apps.api.server import StudioService
+    started = []
+    monkeypatch.setattr(StudioService, "start", lambda self: started.append(self.dir))
+    ws = tmp_path / "ws"
+    proj = ws / "g1"
+    Shams.init_project(proj, "g1", "CLI Python", mode="autonomous", mock_mode=True)
+    st = Shams(proj)
+    st.plan_from_template(goal="CLI Python", approved_by="t")
+    st.close()
+    svc = StudioService(ws)                 # opens the most recent project
+    assert svc.dir == proj and started == []
+    svc.open(proj, resume=True)
+    assert started == [proj]
+
+
+def test_store_close_is_safe_while_other_threads_read(tmp_path):
+    from shams.events.store import EventStore, StoreClosed
+    db = EventStore(tmp_path / "s.sqlite", "p")
+    assert db.q("SELECT 1")[0][0] == 1
+    db.close()
+    db.close()                                   # idempotent
+    with pytest.raises(StoreClosed):
+        db.q("SELECT 1")
+
+
+def test_app_survives_concurrent_project_switches(tmp_path):
+    """Several clicks on the project list while the UI polls state(): no crash, no closed-database error."""
+    import threading
+    from apps.api.server import StudioService
+    from shams.orchestration.project import Shams
+    ws = tmp_path / "ws"
+    for name in ("a1", "b2"):
+        Shams.init_project(ws / name, name, "CLI Python", mode="autonomous", mock_mode=True)
+        st = Shams(ws / name)
+        st.plan_from_template(goal="CLI Python", approved_by="t")
+        st.close()
+    svc = StudioService(ws)
+    errors, stop = [], threading.Event()
+
+    def poll():
+        while not stop.is_set():
+            try:
+                svc.state()
+            except Exception as e:  # noqa: BLE001
+                errors.append(repr(e))
+
+    def switch(i):
+        try:
+            for k in range(6):
+                svc.open(ws / ("a1" if (i + k) % 2 else "b2"))
+        except Exception as e:  # noqa: BLE001
+            errors.append(repr(e))
+
+    pollers = [threading.Thread(target=poll) for _ in range(3)]
+    switchers = [threading.Thread(target=switch, args=(i,)) for i in range(4)]
+    for t in pollers + switchers:
+        t.start()
+    for t in switchers:
+        t.join(60)
+    stop.set()
+    for t in pollers:
+        t.join(10)
+    assert errors == []
+    assert svc.state()["project"]["id"] in ("a1", "b2")
