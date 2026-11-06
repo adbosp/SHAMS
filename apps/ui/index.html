@@ -555,7 +555,7 @@ function renderDirect(){
     if (p.content_policy.adult){
       comp += DIR.allow_adult_content
         ? `<div style="flex-basis:100%;order:4;border:1px solid var(--warn);border-radius:8px;padding:8px"><b>Preset chỉ dành cho người lớn.</b> Không bao giờ được dùng tự động. Prompt về trẻ vị thành niên, không đồng thuận, lạm dụng hoặc người thật có thể nhận diện sẽ bị từ chối.<label style="display:flex;gap:8px;margin-top:6px"><input type="checkbox" id="d_adult"><span class="small">${esc(DIR.confirm_text)}</span></label></div>`
-        : `<div class="small" style="flex-basis:100%;order:4;color:var(--bad)">Preset 18+ đang tắt. Bật bằng <code>general.allow_adult_content: true</code> trong settings nếu bạn muốn dùng.</div>`;
+        : `<div class="small" style="flex-basis:100%;order:4;color:var(--bad);display:flex;align-items:center;gap:8px;flex-wrap:wrap">Preset 18+ đang tắt.<button type="button" class="btn sm" id="d_adult_on">Bật trong Settings</button></div>`;
     }
   }
   comp += `<span class="small muted" id="d_msg" style="order:5"></span><button class="send" id="d_run" aria-label="Gửi" ${!p || p.status!=="ok"?"disabled":""}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div></form>`;
@@ -566,6 +566,7 @@ function renderDirect(){
   const running = (DIR.tasks || []).find(t => t.running || !["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(t.state));
   if (running) { $("d_run").disabled = true; dWatch(running.task_id); }
   if (!p) return;
+  const aon = $("d_adult_on"); if (aon) aon.onclick = () => { stab = "general"; go("settings"); };
   $("d_preset").onchange = e => { dsel = e.target.value; try{localStorage.setItem("shams.dpreset", dsel)}catch(_){}; renderDirect(); };
   $("d_prompt").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("d_form").requestSubmit(); } };
   $("d_form").onsubmit = async e => {
@@ -736,6 +737,8 @@ function sGeneral(M){
     row("Chế độ thử (không gọi model)", "Tự động: bật khi chưa có worker nào; Bật: luôn dùng; Tắt: luôn dùng model thật", sel("g_mock", [["auto","Tự động"],["on","Bật"],["off","Tắt"]], g.mock)) +
     row("Số vòng gọi tool tối đa", "Mỗi lần worker LLM làm việc với MCP", `<input class="f" id="g_rounds" type="number" min="0" max="50" value="${g.max_tool_rounds}" style="width:80px">`) +
     row("Mở trình duyệt khi chạy shams ui", "", sw("g_browser", g.open_browser)) +
+    row("Tự mở game khi build xong", "Mở link chơi thử trong trình duyệt khi task build được nhận", sw("g_game", g.open_game !== false)) +
+    row("Cho phép preset 18+", "Chỉ dùng trong Direct Mode, mỗi lần chạy vẫn phải xác nhận; không bao giờ chạy tự động. Nội dung về trẻ vị thành niên, không đồng thuận hoặc người thật luôn bị từ chối.", sw("g_adult", !!g.allow_adult_content)) +
     `</div><div class="actions"><button class="btn primary" id="g_save">Lưu</button></div>`;
 }
 function sPerms(M){
@@ -853,7 +856,8 @@ const lines = id => $(id).value.split("\n").map(s => s.trim()).filter(Boolean);
 const kvs = id => Object.fromEntries(lines(id).map(l => { const i = l.indexOf("="); return i > 0 ? [l.slice(0,i).trim(), l.slice(i+1).trim()] : null; }).filter(Boolean));
 const BIND = {
   general(){ $("g_save").onclick = () => patch(d => { d.general = {...(d.general||{}), language:$("g_lang").value, default_mode:$("g_mode").value,
-      default_domain:$("g_dom").value || null, mock:$("g_mock").value, max_tool_rounds:+$("g_rounds").value, open_browser:$("g_browser").checked}; }); },
+      default_domain:$("g_dom").value || null, mock:$("g_mock").value, max_tool_rounds:+$("g_rounds").value, open_browser:$("g_browser").checked,
+      open_game:$("g_game").checked, allow_adult_content:$("g_adult").checked}; }); },
   permissions(){
     document.querySelectorAll("[name=pmode]").forEach(r => r.onchange = () => document.querySelectorAll(".choice label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked)));
     $("p_save").onclick = () => patch(d => { d.permissions = {mode: document.querySelector("[name=pmode]:checked").value, allow: lines("p_allow"), deny: lines("p_deny")}; });
