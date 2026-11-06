@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web Chat hiển thị câu trả lời từng đoạn khi Ollama đang sinh chữ. Model trả một lần có hiệu ứng hiện dần ngắn, và lịch sử vẫn lưu câu trả lời hoàn chỉnh.
+
 - Research cho worker và Direct Mode: tìm kiếm SearXNG với fallback DuckDuckGo/Bing RSS, đọc và đối chiếu nguồn công khai, ghi URL thực sự đọc, cùng browser chỉ đọc tùy chọn. Transport kiểm từng redirect trước khi kết nối và ghim IP đã xác minh. Xem `docs/RESEARCH.md`.
 
 - Web UI: chat văn bản theo từng cuộc trò chuyện, chọn model, lưu lịch sử trên trình duyệt và giữ ngữ cảnh khi hỏi tiếp. Luồng chat web không gọi công cụ và không mở màn hình điều phối dự án.

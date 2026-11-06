@@ -75,6 +75,7 @@ main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .reply-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; margin-bottom: 10px; }
 .reply-label img { width: 24px; height: 24px; border-radius: 7px; }
 .reply-status { color: var(--muted); }
+.reply-live::after { content: ""; display: inline-block; width: .45em; height: .85em; border-radius: 2px; background: var(--accent); }
 .error { color: var(--danger); }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
@@ -161,6 +162,6 @@ main.welcome .empty { margin: 0 auto; }
     </div>
   </main>
 </div>
-<script src="/static/chat.js" defer></script>
+<script src="/static/chat.js?v=2" defer></script>
 </body>
 </html>

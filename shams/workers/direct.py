@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from contextlib import nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ from shams.research import RESEARCH_PROMPT
 from shams.workers import MAX_INPUT_CHARS, base_handoff, output_plan
 
 PARAM_MAP = {"temperature": "temperature", "max_tokens": "num_predict", "num_ctx": "num_ctx"}
+reply_progress: ContextVar[Callable[[str, str | None], None] | None] = ContextVar("reply_progress", default=None)
 
 
 class DirectChatWorker:
@@ -63,7 +65,13 @@ class DirectChatWorker:
                     r = self._chat_with_tools(messages, params)
                     sources = run.sources if run else {}
             else:
-                r = self.provider.chat(messages, model=self.model, **self._options(params))
+                options = self._options(params)
+                publish = reply_progress.get()
+                if "_chat_history" in params and publish and getattr(self.provider, "supports_progress", False):
+                    tid = task["task_id"]
+                    publish(tid, None)  # Clear text from a previous attempt.
+                    options["on_delta"] = lambda text: publish(tid, text)
+                r = self.provider.chat(messages, model=self.model, **options)
         except providers.ProviderError as e:
             return [], base_handoff(ctx, worker_ref, "FAILED", "provider error", blocked_reason=f"provider error: {e}"[:500],
                                     known_issues=[{"issue": str(e)[:800], "severity": "high"}])

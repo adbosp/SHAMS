@@ -189,6 +189,7 @@ class Ollama(OpenAICompatible):
     reporting (/api/ps)."""
     name = "ollama"
     default_base_url = "http://127.0.0.1:11434"
+    supports_progress = True
 
     def __init__(self, base_url: str | None = None, keep_alive: str = "30m", native: bool = True,
                  think: bool | None = False, num_ctx: int | None = None, unload_wait_s: float = 30.0, **kw: Any):
@@ -201,7 +202,8 @@ class Ollama(OpenAICompatible):
 
     # chat ------------------------------------------------------------------------------------
     def chat(self, messages: list[dict], *, model: str, images: list[str] | None = None,
-             format: Any = None, think: Any = "default", **opts: Any) -> dict:
+             format: Any = None, think: Any = "default", on_delta: Callable[[str], None] | None = None,
+             **opts: Any) -> dict:
         """Native /api/chat. ``images`` are base64 strings attached to the last user message."""
         if not self.native and not images and format is None:
             return super().chat(messages, model=model, **opts)
@@ -221,6 +223,8 @@ class Ollama(OpenAICompatible):
             body["think"] = think
         if format is not None:
             body["format"] = format
+        if on_delta is not None:
+            return self._chat_progress(body, on_delta)
         r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
         if "error" in r:
             raise ProviderError(f"ollama: {r['error']}")
@@ -228,6 +232,33 @@ class Ollama(OpenAICompatible):
         return {"text": msg.get("content") or "", "thinking": msg.get("thinking") or "",
                 "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0)),
                 "load_seconds": round(r.get("load_duration", 0) / 1e9, 3)}
+
+    def _chat_progress(self, body: dict, on_delta: Callable[[str], None]) -> dict:
+        url = f"{self.root}/api/chat"
+        req = urllib.request.Request(url, data=json.dumps({**body, "stream": True}).encode("utf-8"),
+                                     method="POST", headers={"Content-Type": "application/json", **self.extra_headers})
+        parts = []
+        try:
+            with _open(req, self.timeout) as response:
+                for line in response:
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    if "error" in chunk:
+                        raise ProviderError(f"ollama: {chunk['error']}")
+                    text = (chunk.get("message") or {}).get("content")
+                    if text:
+                        parts.append(text)
+                        on_delta(text)
+                    if chunk.get("done"):
+                        return {"text": "".join(parts), "tokens_in": int(chunk.get("prompt_eval_count", 0)),
+                                "tokens_out": int(chunk.get("eval_count", 0))}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:500]
+            raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
+        except (OSError, ValueError) as e:
+            raise ProviderError(f"ollama stream: {e}") from None
+        raise ProviderError("ollama stream ended before the final response")
 
     def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
         """Tool calls over native /api/chat, so num_ctx and keep_alive apply (the OpenAI-compatible endpoint

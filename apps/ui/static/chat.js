@@ -5,6 +5,8 @@ const storageKey = "shams.webChat.v1";
 const mobile = matchMedia("(max-width: 700px)");
 const terminal = new Set(["ACCEPTED", "FAILED", "BLOCKED", "HUMAN_REVIEW", "CANCELED"]);
 const inflight = new Set();
+const drafts = new WeakMap();
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let threads = [];
 let active = null;
 let models = [];
@@ -147,14 +149,31 @@ function renderConversation(scrollToEnd = false) {
   $("welcome").hidden = !empty;
   $("suggestions").hidden = !empty;
   $("conversation").innerHTML = turns.map(turn => {
-    const reply = turn.reply !== undefined ? '<div class="md">' + markdown(turn.reply) + "</div>" :
-      turn.error ? '<div class="error">' + esc(turn.error) + "</div>" :
-      '<div class="reply-status">Đang chờ phản hồi…</div>';
     return '<div class="user-message">' + esc(turn.prompt) + '</div><article class="reply">' +
-      '<div class="reply-label"><img src="/static/logo.png" alt="">SHAMS</div>' + reply + "</article>";
+      '<div class="reply-label"><img src="/static/logo.png" alt="">SHAMS</div><div class="reply-body">' +
+      replyBody(turn) + "</div></article>";
   }).join("");
   if (scrollToEnd || nearBottom) scroll.scrollTop = scroll.scrollHeight;
   syncComposer();
+}
+
+function replyBody(turn) {
+  if (turn.reply !== undefined) return '<div class="md">' + markdown(turn.reply) + '</div>';
+  if (turn.error) return '<div class="error">' + esc(turn.error) + '</div>';
+  const draft = drafts.get(turn);
+  if (draft) return '<div class="md reply-live" aria-live="off">' + markdown(draft) + '</div>';
+  return '<div class="reply-status">Đang chờ phản hồi…</div>';
+}
+
+function updateDraft(thread, turn, text) {
+  if ((drafts.get(turn) || "") === text) return;
+  drafts.set(turn, text);
+  if (active !== thread) return;
+  const body = $("conversation").querySelector(".reply:last-child .reply-body");
+  const scroll = $("scroll");
+  const nearBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60;
+  if (body) body.innerHTML = replyBody(turn);
+  if (nearBottom) scroll.scrollTop = scroll.scrollHeight;
 }
 
 function selectThread(thread) {
@@ -183,7 +202,7 @@ function context(turns) {
   return history;
 }
 
-async function watch(thread, turn) {
+async function watch(thread, turn, animateFinal = false) {
   try {
     for (;;) {
       const task = await api("/api/web-chat/tasks/" + encodeURIComponent(turn.taskId));
@@ -192,18 +211,30 @@ async function watch(thread, turn) {
         if (task.state === "ACCEPTED" && output) {
           const response = await fetch(output.url);
           if (!response.ok) throw new Error("Không đọc được câu trả lời.");
-          turn.reply = await response.text();
+          const reply = await response.text();
+          // Providers without live text still get a brief reveal for newly sent messages.
+          if (animateFinal && !drafts.get(turn) && !reducedMotion.matches && active === thread) {
+            const chars = Array.from(reply);
+            const step = Math.max(4, Math.ceil(chars.length / 24));
+            for (let i = step; i < chars.length && active === thread; i += step) {
+              updateDraft(thread, turn, chars.slice(0, i).join(""));
+              await new Promise(resolve => setTimeout(resolve, 28));
+            }
+          }
+          turn.reply = reply;
         } else {
           turn.error = task.error || (terminal.has(task.state) ? "Model chưa trả về văn bản (" + task.state + ")." :
             "Lượt chat bị gián đoạn. Hãy gửi lại tin nhắn.");
         }
         break;
       }
-      await new Promise(resolve => setTimeout(resolve, 900));
+      if (typeof task.partial === "string") updateDraft(thread, turn, task.partial);
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
   } catch (error) {
     turn.error = error.message;
   } finally {
+    drafts.delete(turn);
     inflight.delete(thread.id);
     save();
     if (active === thread) renderConversation();
@@ -230,7 +261,7 @@ $("composer").onsubmit = async event => {
     const task = await api("/api/web-chat/send", { preset, prompt, history });
     turn.taskId = task.task_id;
     save();
-    await watch(thread, turn);
+    await watch(thread, turn, true);
   } catch (error) {
     turn.error = error.message;
     inflight.delete(thread.id);

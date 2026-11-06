@@ -676,6 +676,8 @@ class DirectService:
         self.lock = threading.RLock()
         self.studio: Studio | None = None
         self.threads: dict[str, threading.Thread] = {}
+        self._progress_lock = threading.Lock()
+        self._progress: dict[str, tuple[dict, list[str]]] = {}
 
     def _open(self) -> Studio:
         with self.lock:
@@ -721,12 +723,47 @@ class DirectService:
                 raise HTTPException(400, str(e))
 
         def go():
-            with self.lock:
-                st.run_task(tid)
+            if chat_history is None:
+                with self.lock:
+                    st.run_task(tid)
+                return
+            from shams.workers.direct import reply_progress
+            token = reply_progress.set(self._publish_progress)
+            try:
+                with self.lock:
+                    st.run_task(tid)
+            finally:
+                reply_progress.reset(token)
+                with self._progress_lock:
+                    self._progress.pop(tid, None)
+                    self.threads.pop(tid, None)
+
         t = threading.Thread(target=go, daemon=True)
         self.threads[tid] = t
+        if chat_history is not None:
+            with self._progress_lock:
+                self._progress[tid] = (queued, [])
         t.start()
         return {**queued, "running": True}
+
+    def _publish_progress(self, tid: str, text: str | None) -> None:
+        with self._progress_lock:
+            snapshot = self._progress.get(tid)
+            if snapshot is not None:
+                _, parts = snapshot
+                if text is None:
+                    parts.clear()
+                else:
+                    parts.append(text)
+
+    def chat_progress(self, tid: str) -> dict:
+        # The generation thread holds the Studio lock, so live reads use their own lock.
+        with self._progress_lock:
+            snapshot = self._progress.get(tid)
+            if snapshot is not None:
+                queued, parts = snapshot
+                return {**queued, "running": True, "partial": "".join(parts)}
+        return self.task(tid)
 
     def tasks(self, limit: int = 30) -> list[dict]:
         st = self._open()
@@ -747,7 +784,7 @@ class DirectService:
         h = st.db.handoff(tid) or {}
         v = {"task_id": tid, "state": t["state"], "preset": t.get("preset"), "title": t["title"],
              "params": {k: val for k, val in (t.get("params") or {}).items() if not k.startswith("_")},
-             "running": tid in self.threads and self.threads[tid].is_alive(),
+             "running": bool((thread := self.threads.get(tid)) and thread.is_alive()),
              "summary": h.get("summary"), "error": h.get("blocked_reason"), "usage": h.get("usage"),
              "outputs": [{"logical_id": a["logical_id"], "media_type": a["media_type"], "sha256": a["sha256"],
                             "url": f"{self.api_path}/artifact/{a['sha256']}"} for a in arts]}
@@ -787,7 +824,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
         f = STATIC_DIR / name
         if f.parent != STATIC_DIR or not f.is_file():
             raise HTTPException(404, "not found")
-        return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+        return FileResponse(f, headers={"Cache-Control": "no-cache" if name == "chat.js" else "max-age=86400"})
 
     @app.get("/play/{task_id}/{path:path}")
     def play(task_id: str, path: str = ""):
@@ -894,7 +931,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
 
     @app.get("/api/web-chat/tasks/{task_id}")
     def web_chat_task(task_id: str):
-        return web_chat.task(task_id)
+        return web_chat.chat_progress(task_id)
 
     @app.get("/api/web-chat/artifact/{sha}")
     def web_chat_artifact(sha: str):
