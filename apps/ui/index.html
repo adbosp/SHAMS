@@ -75,7 +75,7 @@ main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .reply-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; margin-bottom: 10px; }
 .reply-label img { width: 24px; height: 24px; border-radius: 7px; }
 .reply-status { color: var(--muted); }
-.reply-live::after { content: ""; display: inline-block; width: .45em; height: .85em; border-radius: 2px; background: var(--accent); }
+.reply-live > :is(p, h1, h2, h3, h4, blockquote):last-child::after { content: ""; display: inline-block; width: .4em; height: .8em; margin-inline-start: .25em; border-radius: 2px; background: var(--accent); }
 .error { color: var(--danger); }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
