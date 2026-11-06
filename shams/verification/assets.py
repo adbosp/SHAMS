@@ -188,6 +188,29 @@ def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- PNG
+def _edge_subject(rows_top, rows_bottom, cols_left, cols_right, h: int) -> dict:
+    """Share of each border band that differs from the background. The background along a border is the
+    straight blend of that border's two corner colours, so a studio gradient (lighter floor) is not a subject."""
+    def med(pxs):
+        return tuple(sorted(p[i] for p in pxs)[len(pxs) // 2] for i in range(len(pxs[0])))
+    k = max(1, len(rows_top[0]) // 16)
+    tl, tr = med([p for r in rows_top for p in r[:k]]), med([p for r in rows_top for p in r[-k:]])
+    bl, br = med([p for r in rows_bottom for p in r[:k]]), med([p for r in rows_bottom for p in r[-k:]])
+    def blend(a, b, t):
+        return tuple(x + (y - x) * t for x, y in zip(a, b))
+    def off(p, bg):
+        return max(abs(a - b) for a, b in zip(p, bg)) > 40
+    def frac_rows(rows, a, b):
+        n = len(rows[0])
+        hits = [off(p, blend(a, b, x / max(n - 1, 1))) for r in rows for x, p in enumerate(r)]
+        return round(sum(hits) / max(len(hits), 1), 3)
+    def frac_cols(cols, a, b):
+        hits = [off(p, blend(a, b, y / max(h - 1, 1))) for y, ps in cols for p in ps]
+        return round(sum(hits) / max(len(hits), 1), 3)
+    return {"top": frac_rows(rows_top, tl, tr), "bottom": frac_rows(rows_bottom, bl, br),
+            "left": frac_cols(cols_left, tl, bl), "right": frac_cols(cols_right, tr, br)}
+
+
 def png_info(path: str | Path, edges: bool = False) -> dict:
     """Size, colour type and pixel statistics of an 8-bit non-interlaced PNG. ``edges``: also measure how much
     of each border band differs from the background colour (the corners), see ``edge_subject``."""
@@ -224,8 +247,8 @@ def png_info(path: str | Path, edges: bool = False) -> dict:
     band = max(2, min(w, h) // 50)
     rows_top: list[list[tuple]] = []
     rows_bottom: list[list[tuple]] = []
-    cols_left: list[tuple] = []
-    cols_right: list[tuple] = []
+    cols_left: list[tuple[int, list[tuple]]] = []
+    cols_right: list[tuple[int, list[tuple]]] = []
     for y in range(h):
         f = raw[y * (stride + 1)]
         line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
@@ -253,8 +276,8 @@ def png_info(path: str | Path, edges: bool = False) -> dict:
             if y >= h - band:
                 rows_bottom.append([px(x) for x in xs])
             if y % max(1, h // 256) == 0:
-                cols_left += [px(x) for x in range(band)]
-                cols_right += [px(x) for x in range(w - band, w)]
+                cols_left.append((y, [px(x) for x in range(band)]))
+                cols_right.append((y, [px(x) for x in range(w - band, w)]))
         if y % step == 0:
             colour_ch = 3 if ch >= 3 else 1
             lum = [sum(line[x * ch: x * ch + colour_ch]) / colour_ch for x in range(w)]
@@ -273,15 +296,8 @@ def png_info(path: str | Path, edges: bool = False) -> dict:
     # noise), 0.01-0.08 for real photos and renders measured on ROPY-PC
     rough = (adj_sum / adj_n) / std if adj_n and std > 0 else 0.0
     info.update(mean=round(mean, 2), std=round(std, 2), distinct_colours=len(colours), roughness=round(rough, 3))
-    if edges and rows_top and rows_bottom:
-        corners = [rows_top[0][0], rows_top[0][-1], rows_bottom[-1][0], rows_bottom[-1][-1]]
-        bg = tuple(sorted(c[i] for c in corners)[1] for i in range(len(corners[0])))   # robust to one odd corner
-        def frac(pxs):
-            pxs = list(pxs)
-            return round(sum(1 for p in pxs if max(abs(a - b) for a, b in zip(p, bg)) > 40) / max(len(pxs), 1), 3)
-        info["edge_subject"] = {"top": frac(p for r in rows_top for p in r),
-                                "bottom": frac(p for r in rows_bottom for p in r),
-                                "left": frac(cols_left), "right": frac(cols_right)}
+    if edges and rows_top and rows_bottom and cols_left:
+        info["edge_subject"] = _edge_subject(rows_top, rows_bottom, cols_left, cols_right, h)
     return info
 
 

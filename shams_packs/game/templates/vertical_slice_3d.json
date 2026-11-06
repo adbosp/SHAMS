@@ -60,7 +60,10 @@
       "max_attempts": 3,
       "workspace_scope": [
         "${scripts}/Core/**"
-      ]
+      ],
+      "params": {
+        "research": false
+      }
     },
     {
       "task_id": "task.player_controller",
@@ -299,7 +302,7 @@
     {
       "task_id": "task.character_brief",
       "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
-      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
+      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Không dùng tên cây, hoa, lá hay cảnh vật, kể cả khi tả hoạ tiết quần áo (viết 'patterned dress', không viết 'floral' hay 'flowers'), vì model vẽ ảnh sẽ vẽ chúng ra nền.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -341,7 +344,7 @@
     {
       "task_id": "task.player_concept",
       "title": "Ảnh concept nhân vật chính (để dựng mesh)",
-      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
+      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered with empty space above the head and below the feet, small in the frame, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
       "capability": "image.concept",
       "params": {
         "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
@@ -384,7 +387,7 @@
             "type": "image",
             "min_width": 256,
             "min_height": 256,
-            "max_edge_subject": 0.02
+            "max_edge_subject": 0.04
           }
         },
         {
@@ -479,7 +482,7 @@
     {
       "task_id": "task.npc_concept",
       "title": "Ảnh concept NPC (để dựng mesh)",
-      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
+      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered with empty space above the head and below the feet, small in the frame, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
       "capability": "image.concept",
       "params": {
         "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
@@ -522,7 +525,7 @@
             "type": "image",
             "min_width": 256,
             "min_height": 256,
-            "max_edge_subject": 0.02
+            "max_edge_subject": 0.04
           }
         },
         {

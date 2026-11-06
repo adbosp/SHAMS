@@ -965,6 +965,17 @@ def test_detached_head_found_with_real_gaps_where_boxes_touch():
     assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
 
 
+def test_research_reports_a_blocked_search_page_as_unavailable(monkeypatch):
+    from shams import research
+    r = research.Research({"enabled": True})
+    def fake_get(url):
+        r.last_status = 202
+        return "<html>please verify you are human</html>", "text/html"
+    monkeypatch.setattr(r, "_get", fake_get)
+    out = r.call("research__web_search", {"query": "three.js setup"})
+    assert out["is_error"] and "unavailable" in out["text"] and "own knowledge" in out["text"]
+
+
 def test_llm_worker_giving_up_without_outputs_is_a_failed_attempt(tmp_path):
     from shams.workers import LLMWorker
 
@@ -1001,3 +1012,8 @@ def test_png_edge_check_catches_a_cropped_subject(tmp_path):
     v, d = assets.check_png(cut, {"max_edge_subject": 0.02})
     assert v == "FAIL" and "bottom" in d and "cropped" in d
     assert assets.png_info(cut, edges=True)["edge_subject"]["top"] == 0
+    def studio(x, y):                                                   # grey backdrop, lighter floor
+        g = 150 + y * 80 // 63
+        return (40 + (x * 7) % 90, 60, 120) if 24 <= x < 40 and 6 <= y < 58 else (g, g, g)
+    grad = _png(tmp_path / "grad.png", 64, 64, studio)
+    assert assets.check_png(grad, {"max_edge_subject": 0.04})[0] == "PASS"

@@ -61,6 +61,10 @@ def html_to_text(raw: str) -> str:
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 
+
+class SearchUnavailable(RuntimeError):
+    """The search endpoint answered with something that is not a result page (bot check, outage)."""
+
 class Research:
     def __init__(self, cfg: dict | None = None):
         c = dict(cfg or {})
@@ -97,6 +101,7 @@ class Research:
             self._check_url(final)                      # redirects must stay public too
             data = r.read(self.max_bytes + 1)[: self.max_bytes]
             ctype = r.headers.get("Content-Type", "")
+            self.last_status = getattr(r, "status", 200)
         return data.decode("utf-8", "replace"), ctype
 
     # ------------------------------------------------------------------ tools
@@ -116,6 +121,9 @@ class Research:
             out.append({"title": html_to_text(m.group(2)), "url": href, "snippet": html_to_text(m.group(4) or "")})
             if len(out) >= max_results:
                 break
+        if not out and (getattr(self, "last_status", 200) != 200 or "result__a" not in body):
+            # e.g. HTTP 202 with a bot-check page: that is not "nothing found", the search is not working
+            raise SearchUnavailable(f"the search engine returned no result page (HTTP {getattr(self, 'last_status', '?')})")
         return out
 
     def fetch(self, url: str) -> str:
@@ -128,12 +136,17 @@ class Research:
             if tool == "web_search":
                 rows = self.search(str(args.get("query", "")), int(args.get("max_results", 6)))
                 self.log.append({"tool": tool, "query": args.get("query"), "urls": [r["url"] for r in rows]})
-                text = "\n".join(f"- {r['title']} — {r['url']}\n  {r['snippet']}" for r in rows) or "no results"
+                text = "\n".join(f"- {r['title']} — {r['url']}\n  {r['snippet']}" for r in rows) or \
+                    "no results. Continue without search: write the outputs from your own knowledge."
             elif tool == "web_fetch":
                 text = self.fetch(str(args.get("url", "")))[:20000]
                 self.log.append({"tool": tool, "url": args.get("url")})
             else:
                 return {"text": f"unknown research tool {name}", "is_error": True}
+        except SearchUnavailable as e:
+            self.log.append({"tool": tool, "error": str(e)[:200], **args})
+            return {"text": f"web search is unavailable right now ({e}). Do not search again and do not stop: "
+                            "write every declared output from your own knowledge.", "is_error": True}
         except Exception as e:  # noqa: BLE001 - errors go back to the model as tool errors
             self.log.append({"tool": tool, "error": str(e)[:200], **args})
             return {"text": f"{type(e).__name__}: {e}", "is_error": True}

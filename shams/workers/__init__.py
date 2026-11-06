@@ -173,9 +173,10 @@ class LLMWorker:
                                     blocked_reason=f"{worker_ref['worker_id']} only writes text; route "
                                                    f"{binary} to a generator (command/plugin) worker")
         messages = self.prompt(ctx, plan)
-        research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False
+        research = getattr(getattr(self.mcp, "research", None), "enabled", False) and self.research is not False \
+            and (ctx["task"].get("params") or {}).get("research") is not False      # a task can opt out
         if self.mcp is not None and (self.mcp_servers or research) and getattr(self.provider, "supports_tools", False):
-            r = self._chat_with_tools(messages)
+            r = self._chat_with_tools(messages, research=research)
         else:
             r = providers.timed_chat(self.provider, messages, self.model, **self.chat_options)
         usage = {"tokens_in": r.get("tokens_in", 0), "tokens_out": r.get("tokens_out", 0),
@@ -226,11 +227,11 @@ class LLMWorker:
                                    decisions=decisions, known_issues=reply.get("known_issues"),
                                    usage=usage)
 
-    def _chat_with_tools(self, messages: list[dict]) -> dict:
+    def _chat_with_tools(self, messages: list[dict], research: bool = True) -> dict:
         """Agent loop: the model may call MCP tools (subject to Permissions) before its final JSON reply."""
         t0 = time.monotonic()
         catalog = self.mcp.tools(self.mcp_servers)
-        if self.research is False:
+        if self.research is False or not research:
             catalog = [t for t in catalog if t.get("server") != "research"]
         msgs = list(messages)
         msgs[0] = {**msgs[0], "content": msgs[0]["content"] + "\nYou may call the provided tools to inspect or change "
