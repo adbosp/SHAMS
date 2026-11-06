@@ -17,7 +17,9 @@
         "task.spawner",
         "task.core_mechanic",
         "task.hud",
+        "task.player_concept",
         "task.player_model",
+        "task.npc_concept",
         "task.npc_model",
         "task.environment_texture",
         "task.sfx_core",
@@ -276,12 +278,69 @@
       ]
     },
     {
-      "task_id": "task.player_model",
-      "title": "Mesh nhân vật chính game-ready",
-      "description": "Chỉ dựng MỘT mesh: nhân vật chính theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 20000 tam giác, có UV.",
-      "capability": "mesh.text_to_3d",
+      "task_id": "task.player_concept",
+      "title": "Ảnh concept nhân vật chính (để dựng mesh)",
+      "description": "full-body concept art of ONE main character as described in the request, game character, standing in a neutral pose, front view, whole body visible from head to feet, centered, plain white background, no shadow, no text",
+      "capability": "image.concept",
+      "params": {
+        "negative": "nsfw, nude, multiple people, cropped, out of frame, text, watermark, background scenery"
+      },
       "depends_on": [],
       "inputs": [],
+      "outputs": [
+        {
+          "name": "player_concept",
+          "logical_id": "asset.player.concept",
+          "media_type": "image/png",
+          "contract": "image.concept"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.player_concept_valid",
+          "description": "PNG hợp lệ",
+          "kind": "schema",
+          "check": {
+            "type": "image",
+            "min_width": 256,
+            "min_height": 256
+          }
+        },
+        {
+          "id": "ac.player_concept_look",
+          "description": "Exactly one full-body character, head to feet visible, on a plain background",
+          "kind": "visual",
+          "check": {
+            "type": "vlm",
+            "min_score": 6
+          }
+        }
+      ],
+      "priority": 45,
+      "budget": {
+        "max_wall_seconds": 900,
+        "max_tokens": 20000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${models}/Player/**"
+      ]
+    },
+    {
+      "task_id": "task.player_model",
+      "title": "Mesh nhân vật chính game-ready",
+      "description": "Chỉ dựng MỘT mesh từ ảnh concept: nhân vật chính theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 20000 tam giác, có UV.",
+      "capability": "mesh.image_to_3d",
+      "depends_on": [
+        "task.player_concept"
+      ],
+      "inputs": [
+        {
+          "name": "concept",
+          "from_task": "task.player_concept",
+          "logical_id": "asset.player.concept"
+        }
+      ],
       "outputs": [
         {
           "name": "player",
@@ -329,15 +388,75 @@
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Player/**"
+      ],
+      "params": {
+        "height_m": 1.7
+      }
+    },
+    {
+      "task_id": "task.npc_concept",
+      "title": "Ảnh concept NPC (để dựng mesh)",
+      "description": "full-body concept art of ONE secondary character (NPC) as described in the request, game character, standing in a neutral pose, front view, whole body visible from head to feet, centered, plain white background, no shadow, no text",
+      "capability": "image.concept",
+      "params": {
+        "negative": "nsfw, nude, multiple people, cropped, out of frame, text, watermark, background scenery"
+      },
+      "depends_on": [],
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "npc_concept",
+          "logical_id": "asset.npc.concept",
+          "media_type": "image/png",
+          "contract": "image.concept"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.npc_concept_valid",
+          "description": "PNG hợp lệ",
+          "kind": "schema",
+          "check": {
+            "type": "image",
+            "min_width": 256,
+            "min_height": 256
+          }
+        },
+        {
+          "id": "ac.npc_concept_look",
+          "description": "Exactly one full-body character, head to feet visible, on a plain background",
+          "kind": "visual",
+          "check": {
+            "type": "vlm",
+            "min_score": 6
+          }
+        }
+      ],
+      "priority": 45,
+      "budget": {
+        "max_wall_seconds": 900,
+        "max_tokens": 20000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${models}/Npc/**"
       ]
     },
     {
       "task_id": "task.npc_model",
       "title": "Mesh đối tượng phụ / NPC",
-      "description": "Chỉ dựng MỘT mesh: một nhân vật phụ (NPC) theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 3000 tam giác, có UV.",
-      "capability": "mesh.text_to_3d",
-      "depends_on": [],
-      "inputs": [],
+      "description": "Chỉ dựng MỘT mesh từ ảnh concept: một nhân vật phụ (NPC) theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 3000 tam giác, có UV.",
+      "capability": "mesh.image_to_3d",
+      "depends_on": [
+        "task.npc_concept"
+      ],
+      "inputs": [
+        {
+          "name": "concept",
+          "from_task": "task.npc_concept",
+          "logical_id": "asset.npc.concept"
+        }
+      ],
       "outputs": [
         {
           "name": "npc",
@@ -384,7 +503,10 @@
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Npc/**"
-      ]
+      ],
+      "params": {
+        "height_m": 1.7
+      }
     },
     {
       "task_id": "task.environment_texture",

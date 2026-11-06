@@ -42,6 +42,27 @@ def _stats(scene):
     return objs
 
 
+def _fit_height(scene, height):
+    """Scale the imported asset uniformly to ``height`` metres (Z up), feet on the ground, centred on the origin."""
+    from mathutils import Matrix
+    meshes = [o for o in scene.objects if o.type == "MESH"]
+    if not meshes:
+        return None
+    bpy.context.view_layer.update()
+    lo, hi = _bbox(meshes)
+    h = hi.z - lo.z
+    if h <= 1e-6:
+        return None
+    k = height / h
+    centre = Vector(((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z))
+    m = Matrix.Scale(k, 4) @ Matrix.Translation(-centre)
+    for o in scene.objects:
+        if o.parent is None:
+            o.matrix_world = m @ o.matrix_world
+    bpy.context.view_layer.update()
+    return round(k, 4)
+
+
 def _gaps(meshes, limit=40, samples=1500):
     """Real surface distance between every pair of meshes (world space, metres; 0 = touching or overlapping).
     Bounding boxes are not enough: the box of a sphere touches things the sphere never reaches."""
@@ -125,6 +146,8 @@ def main():
         if spec.get("import_glb"):
             bpy.ops.import_scene.gltf(filepath=spec["import_glb"])
             report["stage"] = "import"
+            if spec.get("fit_height"):
+                report["scaled_by"] = _fit_height(scene, float(spec["fit_height"]))
         if spec.get("script"):
             code = open(spec["script"], encoding="utf-8").read()
             report["stage"] = "script"

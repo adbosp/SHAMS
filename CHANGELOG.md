@@ -18,6 +18,7 @@
 - A tool call the model writes as plain JSON text is recognised and executed (local models often do this); the last tool round asks for the final answer.
 - Scene3D: when a separate model writes Blender scripts, the two models are swapped on the GPU, never loaded together, and the lease covers the larger one. The Blender prompt lists common API pitfalls.
 - 3D evidence: SHAMS always frames its own camera on the meshes; meshes without UVs get Smart UV Project before export. GLB size checks apply node transforms (world size). Character look checks are required; the NPC and the ground texture get a vision check; texture prompts ask for a seamless top-down texture and no longer include the project goal.
+- Game template characters: SDXL draws a full-body concept image (`image.concept`), then Stable Fast 3D builds the mesh from it (`mesh.image_to_3d`). A plan step that asks for image-to-3D skips the 3D route heuristic. SF3D remeshes to the triangle budget when its run.py supports a vertex target; Blender then scales the mesh to `params.height_m`, puts the feet at the origin and renders the preview.
 - Single 3D assets must be one connected piece: detached parts (a floating head, loose arms) go back to the model as a fix round; the character look check asks for connected body parts.
 - PNG checks reject random-noise images (neighbour/std "roughness"); self-test 9e adds visual QC.
 - Read-only web research tools for models (public web only, untrusted-content marking, URL log).

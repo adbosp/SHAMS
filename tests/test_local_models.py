@@ -367,6 +367,45 @@ def test_stable_fast_3d_provider_and_worker_gating(tmp_path, monkeypatch):
     assert h["status"] == "READY_FOR_QC" and assets.check_glb(files[0]["abs"], {"require_uv": True})[0] == "PASS"
 
 
+def test_sf3d_plan_step_skips_route_policy_and_meets_budget(tmp_path, monkeypatch):
+    repo = tmp_path / "sf3d"
+    repo.mkdir()
+    fake = FAKE_SF3D.replace('p.add_argument("--device")', 'p.add_argument("--device"); p.add_argument("--target_vertex_count")')
+    fake += "\nopen(os.path.join(a.output_dir, 'argv.txt'), 'w').write(' '.join(sys.argv))\n"
+    (repo / "run.py").write_text(fake, encoding="utf-8")
+    monkeypatch.setenv("FAKE_GLB", str(make_glb(tmp_path / "src.glb")))
+    prov = StableFast3D(repo=str(repo), python=sys.executable)
+    assert prov.supports_target_vertices() == "--target_vertex_count"
+    img = make_png(tmp_path / "ref.png")
+    w = StableFast3DWorker(entry={"worker": {"worker_id": "w"}, "provider_config": {}}, attempts_root=tmp_path / "att",
+                           provider=prov, read_blob=lambda sha: img)
+    assert w.blender is None
+    task = {"task_id": "task.npc", "title": "Chair", "description": "simple", "capability": "mesh.image_to_3d",
+            "params": {"height_m": 1.7},
+            "acceptance_criteria": [{"id": "a", "check": {"type": "glb", "max_triangles": 3000}}],
+            "outputs": [{"name": "npc", "logical_id": "mesh.npc", "media_type": "model/gltf-binary"},
+                        {"name": "npc_preview", "logical_id": "img.npc", "media_type": "image/png"}]}
+    files, h = w.run({"project_id": "p", "attempt": 1, "inputs": IMG, "task": task}, {"worker_id": "w", "kind": "tool"})
+    assert h["status"] == "READY_FOR_QC"                         # plan step: no "basic -> procedural" refusal
+    argv = next((tmp_path / "att").rglob("argv.txt")).read_text()
+    assert "--target_vertex_count 1350" in argv and "--remesh_option triangle" in argv
+    assert [f["media_type"] for f in files] == ["model/gltf-binary"]       # no Blender: raw mesh, no preview
+    assert any("preview" in i["issue"] for i in h["known_issues"])
+
+
+def test_game_template_characters_go_concept_then_image_to_3d():
+    from shams.planning.validator import instantiate as inst
+    dag = inst("vertical_slice_3d", "p", "g", engine="web")
+    t = {x["task_id"]: x for x in dag["tasks"]}
+    for who in ("player", "npc"):
+        c, m = t[f"task.{who}_concept"], t[f"task.{who}_model"]
+        assert c["capability"] == "image.concept" and c["outputs"][0]["media_type"] == "image/png"
+        assert "nsfw" in c["params"]["negative"]
+        assert m["capability"] == "mesh.image_to_3d" and m["depends_on"] == [f"task.{who}_concept"]
+        assert m["inputs"][0]["logical_id"] == c["outputs"][0]["logical_id"]
+        assert m["params"]["height_m"] == 1.7
+
+
 # --------------------------------------------------------------------------- ComfyUI
 class FakeComfy:
     def __init__(self, checkpoints=("sdxl_lightning_4step.safetensors",)):

@@ -252,7 +252,7 @@ def test_app_first_chat_creates_project_in_workspace(tmp_path):
     s = c.post("/api/chat", json={"text": "Game giải đố nhỏ"}).json()
     assert s["project"]["domain"] == "game" and s["project"]["selected"] == {"engine": "godot"}
     assert (ws / s["project"]["dir"].split("/")[-1].split("\\")[-1] / "project.json").exists()
-    assert s["progress"]["total"] == 11
+    assert s["progress"]["total"] == 13
 
 
 def test_mcp_http_transport_json_and_sse():

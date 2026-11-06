@@ -54,6 +54,10 @@ class _SF3DBackend:
         cfg = {k: v for k, v in c.items() if k in ("repo", "python", "weights", "device", "texture_resolution",
                                                    "remesh", "timeout", "env", "force")}
         cfg["impl"] = "sf3d"
+        from shams_tools.blender import blender_from
+        bl = blender_from(reg.settings)
+        if bl:
+            cfg["blender"] = bl                  # preview render + real-world scale of the generated mesh
         return {"kind": "tool", "provider": "stable_fast_3d", "model": "stable-fast-3d", "load_adapter": "none",
                 "vram_mb": int(b.config.get("vram_mb", 7000)), "config": cfg}
 
