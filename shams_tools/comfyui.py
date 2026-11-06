@@ -286,7 +286,7 @@ class ComfyUIImageWorker:
         self.content_policy = dict(cfg.get("content_policy") or {})
         self.preset = cfg.get("preset")
 
-    def _brief(self, ctx: dict, skip: list[str] | None = None) -> str:
+    def _brief(self, ctx: dict, skip: list[str] | None = None, max_sentences: int | None = None) -> str:
         """Text inputs (text/plain, text/markdown) describe the subject in words the image model understands.
         ``skip``: sentences containing any of these words are dropped (e.g. a background the task forbids)."""
         parts = []
@@ -299,10 +299,11 @@ class ComfyUIImageWorker:
             except (OSError, KeyError, TypeError):
                 continue
             txt = " ".join(l.strip().lstrip("#*-> ").strip() for l in txt.splitlines() if l.strip())
-            if skip:
+            if skip or max_sentences:
                 import re
-                txt = " ".join(x for x in re.split(r"(?<=[.!?])\s+", txt)
-                               if not any(w.lower() in x.lower() for w in skip))
+                sents = [x for x in re.split(r"(?<=[.!?])\s+", txt)
+                         if not any(w.lower() in x.lower() for w in skip or [])]
+                txt = " ".join(sents[:int(max_sentences)] if max_sentences else sents)
             if txt:
                 parts.append(txt[:600])
         return " ".join(parts)
@@ -313,11 +314,14 @@ class ComfyUIImageWorker:
         task = ctx["task"]
         tparams = dict(task.get("params") or {})
         prompt = tparams.pop("prompt", None) or task.get("description") or task["title"]
-        brief = self._brief(ctx, tparams.pop("brief_skip", None))
+        brief = self._brief(ctx, tparams.pop("brief_skip", None), tparams.pop("brief_max_sentences", None))
+        prefix = tparams.pop("prompt_prefix", None)
         if brief:                                     # a written subject (e.g. an art brief) comes first
-            prompt = f"{brief}. {prompt}"
+            prompt = f"{brief.rstrip('.')}. {prompt}"
         elif ctx.get("goal") and not task.get("preset") and not str(task.get("capability", "")).startswith("image.texture"):
             prompt = f"{prompt}. Context: {ctx['goal']}"
+        if prefix:                                    # what must win (e.g. a plain background) goes before all
+            prompt = f"{prefix} {prompt}"
         params = {**self.params, **tparams, "prompt": prompt}
         if self.content_policy.get("adult"):          # checked again here: defence in depth
             try:

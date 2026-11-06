@@ -337,6 +337,11 @@ def test_comfy_worker_puts_text_brief_first_and_vlm_sees_it(tmp_path):
     w.run(ctx, {"worker_id": "w", "kind": "tool"})
     assert seen["prompt"].startswith("A woman in her 30s, red coat.") and "garden" not in seen["prompt"]
     assert "brief_skip" not in seen
+    brief.write_text("A man in his 30s. Short dark hair, jeans. Comfortable for a garden date. Third sentence.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["garden"], "brief_max_sentences": 2, "prompt_prefix": "plain white background."}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("plain white background. A man in his 30s. Short dark hair, jeans.")
+    assert "garden" not in seen["prompt"] and "Third" not in seen["prompt"] and "prompt_prefix" not in seen
 
 
 def test_visual_checker_frees_the_vision_model():
@@ -1024,7 +1029,7 @@ def test_png_edge_check_catches_a_cropped_subject(tmp_path):
     cut = _png(tmp_path / "cut.png", 64, 64, person(6, 64))              # legs run off the bottom edge
     assert assets.check_png(whole, {"max_edge_subject": 0.02})[0] == "PASS"
     v, d = assets.check_png(cut, {"max_edge_subject": 0.02})
-    assert v == "FAIL" and "bottom" in d and "cropped" in d
+    assert v == "FAIL" and "bottom" in d and "cropped" in d and "not plain" in d
     assert assets.png_info(cut, edges=True)["edge_subject"]["top"] == 0
     def studio(x, y):                                                   # grey backdrop, lighter floor
         g = 150 + y * 80 // 63

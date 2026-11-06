@@ -331,7 +331,8 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
         sides = c.get("edge_sides") or ["top", "bottom", "left", "right"]
         cut = [side for side, f in i["edge_subject"].items() if side in sides and f > float(c["max_edge_subject"])]
         if cut:
-            errs.append("subject touches the image border (" + ", ".join(cut) + "): cropped, e.g. feet cut off")
+            errs.append("something other than the plain background reaches the image border (" + ", ".join(cut) +
+                        "): the subject is cropped (e.g. feet cut off) or the background is not plain")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
                                                f"{i['roughness']}" if "std" in i else "")
     return ("FAIL", "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)
