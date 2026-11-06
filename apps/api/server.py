@@ -202,7 +202,7 @@ class StudioService:
         self.open(Path(p["dir"]))
         return self.state()
 
-    def delete_project(self, pid: str) -> dict:
+    def delete_project(self, pid: str, by: str = "ui") -> dict:
         """Delete a project folder permanently (the UI asks for confirmation first). The open project is closed
         first, so its database and run loop let go of the files."""
         import shutil
@@ -219,6 +219,11 @@ class StudioService:
         def writable(func, path, _exc):          # Windows: read-only files (e.g. git objects) block rmtree
             os.chmod(path, stat.S_IWRITE)
             func(path)
+        logd = self.workspace / "_logs"
+        logd.mkdir(parents=True, exist_ok=True)
+        with open(logd / "deletions.log", "a", encoding="utf-8") as f:   # permanent: keep a trace of who/when
+            f.write(json.dumps({"ts": contracts.now_iso(), "project": p["id"], "folder": src.name,
+                                "goal": p.get("goal", ""), "by": by}, ensure_ascii=False) + "\n")
         try:
             shutil.rmtree(src, onerror=writable)
         except OSError as e:

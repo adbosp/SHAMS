@@ -12,7 +12,7 @@
 
 - Game template simplified (12 tasks): no SDXL concept images and no Stable Fast 3D. The 3D scene model builds both characters and the play area as JSON primitives (`mesh.procedural`, `builder: json`) from the character brief; the ground texture task is replaced by `task.environment_model` (`models/Environment/environment.glb`). The 3D model now receives text inputs (briefs) in its prompt. Web scene hint uses relative asset paths.
 - Play link: `/play/<task>/` redirects to a per-build static server on 127.0.0.1 that serves the game from its root, so absolute asset paths (`/models/...`) load too.
-- App: delete a project from the workspace list (trash icon, confirmation dialog). Deletion is permanent.
+- App: delete a project from the workspace list (trash icon, confirmation dialog). Deletion is permanent and logged to `<workspace>/_logs/deletions.log` (time, project, folder, goal).
 
 - App: when a build task with a playable copy is accepted, SHAMS posts a local link in the project chat (`/play/<task>/` on the app's own server) with a "Chơi thử game" button and opens it in the browser (`general.open_game`, default on). A build accepted by hand while a check failed is announced with a warning naming the failed checks.
 - Web scene hint: WebGLRenderer (the model used `THREE.WebGPU`, which does not exist, and the game showed a black screen), load both characters, camera above and looking down, stronger lights, HUD attached to the container.

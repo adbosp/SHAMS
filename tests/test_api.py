@@ -126,5 +126,7 @@ def test_delete_project_removes_it_permanently(tmp_path):
     s = c.post("/api/projects/delete", json={"id": drop}).json()
     assert drop not in {p["id"] for p in s["projects"]} and s["project"].get("id") != drop
     assert not (tmp_path / "ws" / "_trash").exists()
+    log = (tmp_path / "ws" / "_logs" / "deletions.log").read_text(encoding="utf-8")
+    assert drop in log and '"by": "ui"' in log
     assert len([d for d in (tmp_path / "ws").iterdir() if (d / "project.json").exists()]) == 1
     assert c.post("/api/projects/delete", json={"id": drop}).status_code == 404
