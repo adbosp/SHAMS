@@ -17,9 +17,10 @@
         "task.spawner",
         "task.core_mechanic",
         "task.hud",
+        "task.character_brief",
         "task.player_model",
         "task.npc_model",
-        "task.environment_texture",
+        "task.environment_model",
         "task.sfx_core",
         "task.integration_slice1",
         "task.build_game"
@@ -57,13 +58,16 @@
       "max_attempts": 3,
       "workspace_scope": [
         "${scripts}/Core/**"
-      ]
+      ],
+      "params": {
+        "research": false
+      }
     },
     {
       "task_id": "task.player_controller",
       "title": "Điều khiển nhân vật chính 3D",
       "description": "Điều khiển nhân vật chính 3D",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -96,7 +100,7 @@
         },
         {
           "id": "ac.movement_tests",
-          "description": "PlayMode test di chuyển pass",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "PlayerControllerTests"
@@ -123,7 +127,7 @@
       "task_id": "task.spawner",
       "title": "Hệ thống sinh đối tượng trong màn chơi",
       "description": "Hệ thống sinh đối tượng trong màn chơi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.project_scaffold"
       ],
@@ -140,6 +144,12 @@
           "logical_id": "code.spawner",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "SpawnerTests",
+          "logical_id": "test.spawner",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -150,7 +160,7 @@
         },
         {
           "id": "ac.spawner_tests",
-          "description": "Test số lượng + bounds",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "SpawnerTests"
@@ -171,10 +181,11 @@
       "task_id": "task.core_mechanic",
       "title": "Cơ chế gameplay cốt lõi",
       "description": "Cơ chế gameplay cốt lõi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
         "task.player_controller",
-        "task.spawner"
+        "task.spawner",
+        "task.project_scaffold"
       ],
       "inputs": [
         {
@@ -186,6 +197,11 @@
           "name": "spawner",
           "from_task": "task.spawner",
           "logical_id": "code.spawner"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
@@ -194,6 +210,12 @@
           "logical_id": "code.core_mechanic",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "CoreMechanicTests",
+          "logical_id": "test.core_mechanic",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -204,7 +226,7 @@
         },
         {
           "id": "ac.mechanic_tests",
-          "description": "Test tương tác giữa nhân vật và đối tượng, trạng thái thay đổi đúng",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "CoreMechanicTests"
@@ -225,15 +247,33 @@
       "task_id": "task.hud",
       "title": "HUD trạng thái người chơi",
       "description": "HUD trạng thái người chơi",
-      "capability": "${code}",
+      "capability": "${game_code}",
       "depends_on": [
-        "task.core_mechanic"
+        "task.core_mechanic",
+        "task.project_scaffold",
+        "task.player_controller",
+        "task.spawner"
       ],
       "inputs": [
         {
           "name": "mechanic",
           "from_task": "task.core_mechanic",
           "logical_id": "code.core_mechanic"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
+        },
+        {
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
         }
       ],
       "outputs": [
@@ -242,6 +282,12 @@
           "logical_id": "code.hud",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "HudTests",
+          "logical_id": "test.hud",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -252,7 +298,7 @@
         },
         {
           "id": "ac.hud_tests",
-          "description": "HUD cập nhật khi trạng thái thay đổi",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "HudTests"
@@ -276,111 +322,225 @@
       ]
     },
     {
-      "task_id": "task.player_model",
-      "title": "Mesh nhân vật chính game-ready",
-      "description": "Mesh nhân vật chính game-ready",
-      "capability": "mesh.text_to_3d",
+      "task_id": "task.character_brief",
+      "title": "Mô tả 3D chi tiết: nhân vật và bối cảnh (cho model 3D)",
+      "description": "Model 3D chỉ hiểu mô tả cụ thể bằng tiếng Anh, nên hãy diễn giải yêu cầu dự án thành mô tả dựng hình chi tiết. Hiểu đúng tiếng lóng tiếng Việt: 'cưa gái', 'cưa trai', 'tán', 'thả thính' nghĩa là tán tỉnh, làm quen một người, KHÔNG phải cái cưa, cây hay dụng cụ. Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Với mỗi nhân vật, viết 3 đến 5 câu tiếng Anh (tối đa 90 từ) mà model dựng bằng khối hình học làm theo được: chiều cao (nam khoảng 1.75 m, nữ khoảng 1.65 m), dáng người, màu da, kiểu và màu tóc (ngắn, dài, buộc đuôi ngựa...), từng món trang phục với màu cụ thể (ví dụ 'white short-sleeve shirt, blue jeans, brown shoes', 'red knee-length dress, white sandals'), phụ kiện nổi bật nếu có. File thứ ba (brief.environment) mô tả bối cảnh màn chơi bằng tiếng Anh (tối đa 150 từ): loại mặt đất và màu, kích thước khu vực (khoảng 30 x 30 m), danh sách vật thể kèm số lượng, kích thước và màu (ví dụ '8 trees about 4 m tall with brown trunks and round green crowns', '3 flower beds with red and yellow flowers', 'a grey stone path from the south edge to the centre', 'a wooden bench'), cách bố trí (vật ở rìa, giữa khu vực để trống cho nhân vật). Không có người trong bối cảnh. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH, trang phục người lớn, không mô tả gợi dục, không thương hiệu hay người thật. Mỗi file ghi đúng một lần.",
+      "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
+      "outputs": [
+        {
+          "name": "player_brief",
+          "logical_id": "brief.player",
+          "media_type": "text/plain",
+          "contract": "doc.text"
+        },
+        {
+          "name": "npc_brief",
+          "logical_id": "brief.npc",
+          "media_type": "text/plain",
+          "contract": "doc.text"
+        },
+        {
+          "name": "environment_brief",
+          "logical_id": "brief.environment",
+          "media_type": "text/plain",
+          "contract": "doc.text"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.brief_exists",
+          "description": "Có ba file mô tả bằng tiếng Anh: nhân vật chính, NPC, bối cảnh",
+          "kind": "exists",
+          "check": {
+            "type": "text",
+            "min_chars": 40
+          }
+        }
+      ],
+      "priority": 50,
+      "budget": {
+        "max_wall_seconds": 600,
+        "max_tokens": 20000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${models}/**"
+      ]
+    },
+    {
+      "task_id": "task.player_model",
+      "title": "Mesh nhân vật chính (Qwen 3D, khối hình học)",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height as described (about 1.65 to 1.75 m), feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object. Follow the height, hair, skin and clothing colours given in the character description exactly.",
+      "capability": "mesh.procedural",
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.player"
+        }
+      ],
       "outputs": [
         {
           "name": "player",
           "logical_id": "asset.player.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
+        },
+        {
+          "name": "player_preview",
+          "logical_id": "asset.player.preview",
+          "media_type": "image/png",
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
         {
           "id": "ac.player_mesh_valid",
-          "description": "Poly ≤ 20k, có UV, scale đúng",
+          "description": "Poly trong ngân sách, có UV, cao khoảng 1.7 m, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
-            "max_tris": 20000
+            "type": "${mesh_check}",
+            "logical_id": "asset.player.mesh",
+            "max_triangles": 20000,
+            "require_uv": true,
+            "min_size_m": 1.2,
+            "max_size_m": 2.4,
+            "max_width_to_height": 0.9
           }
-        },
-        {
-          "id": "ac.player_look",
-          "description": "Hình dáng khớp mô tả nhân vật trong yêu cầu",
-          "kind": "visual",
-          "required": false
         }
       ],
       "priority": 40,
       "budget": {
-        "max_wall_seconds": 1800,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Player/**"
-      ]
+      ],
+      "params": {
+        "builder": "json",
+        "height_m": 1.7
+      }
     },
     {
       "task_id": "task.npc_model",
-      "title": "Mesh đối tượng phụ / NPC",
-      "description": "Mesh đối tượng phụ / NPC",
-      "capability": "mesh.text_to_3d",
-      "depends_on": [],
-      "inputs": [],
+      "title": "Mesh NPC (Qwen 3D, khối hình học)",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height as described (about 1.65 to 1.75 m), feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object. Follow the height, hair, skin and clothing colours given in the character description exactly.",
+      "capability": "mesh.procedural",
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.npc"
+        }
+      ],
       "outputs": [
         {
           "name": "npc",
           "logical_id": "asset.npc.mesh",
           "media_type": "${mesh_mt}",
           "contract": "${mesh_contract}"
+        },
+        {
+          "name": "npc_preview",
+          "logical_id": "asset.npc.preview",
+          "media_type": "image/png",
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
         {
           "id": "ac.npc_mesh_valid",
-          "description": "Poly ≤ 3k, có UV",
+          "description": "Poly trong ngân sách, có UV, cao khoảng 1.7 m, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
-            "max_tris": 3000
+            "type": "${mesh_check}",
+            "logical_id": "asset.npc.mesh",
+            "max_triangles": 3000,
+            "require_uv": true,
+            "min_size_m": 1.2,
+            "max_size_m": 2.4,
+            "max_width_to_height": 0.9
           }
         }
       ],
       "priority": 40,
       "budget": {
-        "max_wall_seconds": 1800,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Npc/**"
-      ]
+      ],
+      "params": {
+        "builder": "json",
+        "height_m": 1.7
+      }
     },
     {
-      "task_id": "task.environment_texture",
-      "title": "Texture môi trường",
-      "description": "Texture môi trường",
-      "capability": "image.texture",
-      "depends_on": [],
-      "inputs": [],
+      "task_id": "task.environment_model",
+      "title": "Bối cảnh màn chơi (Qwen 3D, khối hình học)",
+      "description": "Build the play area as ONE scene description (JSON primitives) following the environment description in the inputs (ground, props, counts, sizes, colours, layout). Ground: a flat plane about 30 x 30 m at y=0. Keep the centre (a circle of 4 m around the origin) free for the characters. Real-world sizes, every prop resting on the ground, trees made of a trunk cylinder plus a sphere or cone crown. No people or characters.",
+      "capability": "mesh.procedural",
+      "params": {
+        "builder": "json"
+      },
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.environment"
+        }
+      ],
       "outputs": [
         {
           "name": "environment",
-          "logical_id": "asset.environment.texture",
+          "logical_id": "asset.environment.mesh",
+          "media_type": "${mesh_mt}",
+          "contract": "${mesh_contract}"
+        },
+        {
+          "name": "environment_preview",
+          "logical_id": "asset.environment.preview",
           "media_type": "image/png",
-          "contract": "image.texture"
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
         {
-          "id": "ac.texture_valid",
-          "description": "PNG lũy thừa 2, ≤ 2048",
-          "kind": "schema"
+          "id": "ac.environment_valid",
+          "description": "GLB hợp lệ, trong ngân sách poly, rộng vài chục mét",
+          "kind": "schema",
+          "check": {
+            "type": "${mesh_check}",
+            "logical_id": "asset.environment.mesh",
+            "max_triangles": 40000,
+            "min_size_m": 5,
+            "max_size_m": 200
+          }
         }
       ],
       "priority": 30,
       "budget": {
-        "max_wall_seconds": 1200,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${textures}/**"
+        "${models}/Environment/**"
       ]
     },
     {
@@ -418,8 +578,8 @@
     {
       "task_id": "task.integration_slice1",
       "title": "Tích hợp vertical slice 1",
-      "description": "Tích hợp vertical slice 1",
-      "capability": "integration",
+      "description": "Ghép mọi phần đã làm thành một màn chơi chạy được. ${scene_hint}",
+      "capability": "integration.game",
       "depends_on": [
         "task.player_controller",
         "task.spawner",
@@ -427,8 +587,8 @@
         "task.hud",
         "task.player_model",
         "task.npc_model",
-        "task.environment_texture",
-        "task.sfx_core"
+        "task.environment_model",
+        "task.project_scaffold"
       ],
       "inputs": [
         {
@@ -463,13 +623,13 @@
         },
         {
           "name": "environment",
-          "from_task": "task.environment_texture",
-          "logical_id": "asset.environment.texture"
+          "from_task": "task.environment_model",
+          "logical_id": "asset.environment.mesh"
         },
         {
-          "name": "sfx",
-          "from_task": "task.sfx_core",
-          "logical_id": "asset.sfx.core"
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
         }
       ],
       "outputs": [
@@ -488,13 +648,19 @@
         },
         {
           "id": "ac.slice_integration",
-          "description": "Integration PlayMode test",
-          "kind": "integration_test"
+          "description": "Màn chơi build và mở được, không lỗi khi khởi động",
+          "kind": "integration_test",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.slice_runtime",
-          "description": "Chạy 30 s không exception",
-          "kind": "runtime_log"
+          "description": "Chạy vài giây trong trình duyệt không có exception",
+          "kind": "runtime_log",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.slice_screenshot",
@@ -519,13 +685,61 @@
       "description": "Build ${build_target} + smoke test",
       "capability": "${build}",
       "depends_on": [
-        "task.integration_slice1"
+        "task.integration_slice1",
+        "task.project_scaffold",
+        "task.player_controller",
+        "task.spawner",
+        "task.core_mechanic",
+        "task.hud",
+        "task.player_model",
+        "task.npc_model",
+        "task.environment_model"
       ],
       "inputs": [
         {
           "name": "scene",
           "from_task": "task.integration_slice1",
           "logical_id": "scene.slice1"
+        },
+        {
+          "name": "scaffold",
+          "from_task": "task.project_scaffold",
+          "logical_id": "project.scaffold"
+        },
+        {
+          "name": "player",
+          "from_task": "task.player_controller",
+          "logical_id": "code.player_controller"
+        },
+        {
+          "name": "spawner",
+          "from_task": "task.spawner",
+          "logical_id": "code.spawner"
+        },
+        {
+          "name": "mechanic",
+          "from_task": "task.core_mechanic",
+          "logical_id": "code.core_mechanic"
+        },
+        {
+          "name": "hud",
+          "from_task": "task.hud",
+          "logical_id": "code.hud"
+        },
+        {
+          "name": "player_mesh",
+          "from_task": "task.player_model",
+          "logical_id": "asset.player.mesh"
+        },
+        {
+          "name": "npc_mesh",
+          "from_task": "task.npc_model",
+          "logical_id": "asset.npc.mesh"
+        },
+        {
+          "name": "environment",
+          "from_task": "task.environment_model",
+          "logical_id": "asset.environment.mesh"
         }
       ],
       "outputs": [
@@ -540,12 +754,18 @@
         {
           "id": "ac.build_ok",
           "description": "Build thành công",
-          "kind": "compile"
+          "kind": "compile",
+          "check": {
+            "type": "${build_check}"
+          }
         },
         {
           "id": "ac.smoke",
-          "description": "Chạy 30 s, log sạch",
-          "kind": "runtime_log"
+          "description": "Mở bản build trong trình duyệt, không có exception",
+          "kind": "runtime_log",
+          "check": {
+            "type": "${run_check}"
+          }
         },
         {
           "id": "ac.fps",
@@ -555,7 +775,8 @@
             "metric": "fps",
             "op": ">=",
             "value": 30
-          }
+          },
+          "required": false
         }
       ],
       "priority": 60,

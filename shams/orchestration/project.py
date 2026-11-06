@@ -35,7 +35,7 @@ from shams.orchestration import task_runner
 
 MODES = ("collaborative", "guided", "autonomous")
 CRITICAL_KINDS = {"compile", "unit_test", "integration_test"}
-MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric")
+MOCK_KINDS = ("exists", "schema", "compile", "unit_test", "integration_test", "runtime_log", "metric", "visual")
 
 
 DB_FILE = "shams.sqlite"
@@ -74,6 +74,8 @@ class Shams:
         for k, v in (self.settings.get("env") or {}).items():       # non-secret env (ADR-118)
             os.environ.setdefault(k, str(v))
         self.mcp = MCPManager.from_settings(self.settings)
+        from shams.research import Research, ToolBox
+        self.tools = ToolBox(self.mcp, Research(self.settings.get("research")))
         self.hooks = HookRunner(self.settings.get("hooks"), self.dir, self.settings.get("env"))
         self.hooks.last_seq = self.db.q1("SELECT COALESCE(MAX(seq),0) FROM events")[0]
         self.artifacts = ArtifactRegistry(self.db, self.dir / "artifacts")
@@ -95,7 +97,7 @@ class Shams:
                 check = make_mock_check(self.pack.mock_failure_logs())
                 checkers = {k: check for k in MOCK_KINDS}
             else:
-                checkers = {**self.pack.checkers(), **registered_checkers()}
+                checkers = asset_checkers(self.settings, {**self.pack.checkers(), **registered_checkers()})
         self.qc = QCRunner(self.db, self.artifacts, checkers)
         self.classifier = FailureClassifier(self.pack.failure_rules())
         self.repair = RepairRouter(self.db, self.nodes, analysis, repair_policy,
@@ -196,6 +198,113 @@ class Shams:
         self.load_plan(dag, approved_by=approved_by)
         return dag
 
+    def plan_from_llm(self, goal: str | None = None, approved_by: str | None = None, *, fallback: bool = True,
+                      max_rounds: int = 3) -> dict:
+        """The planner role writes the DAG (ADR-120); the Plan Validator decides; template as fallback."""
+        from shams.planning import llm_planner
+        goal = goal if goal is not None else self.project.get("goal", "")
+        planners = [w for w in self.nodes.candidates("plan.dag") if w.entry["worker"]["kind"] != "mock"]
+        result = {"dag": None, "issues": ["no planner worker (capability plan.dag)"], "rounds": 0}
+        if planners:
+            w = planners[0]
+            impl = self.worker_impl(w)
+            caps = sorted({c for x in self.nodes.workers.values() for c in x.capabilities})
+            result = llm_planner.plan(impl.provider, w.model, goal=goal, project_id=self.db.project_id,
+                                      capabilities=caps, domain=self.pack.name,
+                                      domain_context=self.pack.domain_context(self.domain_config),
+                                      nodes=self.nodes, max_rounds=max_rounds)
+        with self.db.tx():
+            self.db.append("plan.llm_attempted", "plan", f"plan.{self.db.project_id}", "planner",
+                           payload={"ok": result["dag"] is not None, "rounds": result.get("rounds", 0),
+                                    "issues": result["issues"][:10]})
+        if result["dag"] is not None:
+            self.load_plan(result["dag"], approved_by=approved_by)
+            return result["dag"]
+        if not fallback:
+            raise ValueError("LLM plan invalid:\n" + "\n".join(result["issues"]))
+        return self.plan_from_template(goal=goal, approved_by=approved_by)
+
+    # ------------------------------------------------------------------ Direct Mode (ADR-121)
+    def direct(self, preset_id: str, params: dict, *, by: str = "human", confirm_adult: bool = False,
+               chat_history: list[dict] | None = None) -> str:
+        """Queue one task for one chosen preset: no planner, same scheduler, GPU lease, workers,
+        artifact registry, QC and event log as Autonomous Mode. Returns the task id; run() executes it."""
+        import jsonschema
+        from shams import policy
+        from shams.models import ModelRegistry
+        reg = ModelRegistry(self.settings)
+        p = reg.preset(preset_id)
+        if p is None:
+            raise KeyError(f"unknown preset {preset_id!r}; see `shams presets`")
+        if "direct" not in p["execution_modes"]:
+            raise PermissionError(f"preset {preset_id} does not allow Direct Mode")
+        if chat_history is not None and (p["kind"] != "chat" or p["content_policy"].get("adult")):
+            raise PermissionError("preset is not available for web chat")
+        params = dict(params or {})
+        try:
+            jsonschema.validate(params, p["input_schema"])
+            props = (p["input_schema"].get("properties") or {})
+            # preset params the user may also set become defaults; the rest (model files...) stay in the worker config
+            params = {**{k: v for k, v in p.get("params", {}).items() if k in props}, **params}
+        except jsonschema.ValidationError as e:
+            raise ValueError(f"invalid parameters for {preset_id}: {e.message}") from None
+        allowed = bool((self.settings.get("general") or {}).get("allow_adult_content", False))
+        try:
+            params = policy.check(p, params, allowed=allowed, confirmed=confirm_adult)
+        except policy.PolicyError as e:
+            with self.db.tx():
+                self.db.append("policy.refused", "model", preset_id, by, payload={"preset": preset_id, "reason": str(e)[:300]})
+            raise
+        if p["status"] != "ok":
+            raise RuntimeError(f"preset {preset_id} is not available: {p['status']} {p['how']}")
+        if p["worker"]["id"] not in self.nodes.workers:          # settings changed after this project opened
+            self.nodes = build_registry(self.settings)
+            self.scheduler.nodes = self.nodes
+            self.repair.nodes = self.nodes
+            self.lifecycle.workers = self.nodes.workers
+        if p["content_policy"].get("adult"):
+            params["_adult_confirmed"] = True
+        if chat_history is not None:
+            params["_chat_history"] = chat_history
+        n = self.db.q1("SELECT COUNT(*) FROM tasks WHERE task_id LIKE 'task.direct.%'")[0] + 1
+        tid = f"task.direct.{n:04d}"
+        kinds = {"text/markdown": ("metric", {"type": "text", "min_chars": 1}),
+                 "image/png": ("screenshot", {"type": "image", "min_width": 64}),
+                 "model/gltf-binary": ("schema", {"type": "glb"})}
+        crit = [{"id": f"ac.{tid[5:]}.{i}", "description": f"{o['name']} produced and valid", "kind": kinds[o["media_type"]][0],
+                 "check": {**kinds[o["media_type"]][1], "logical_id": f"direct.{n:04d}.{o['name']}"}}
+                for i, o in enumerate(p["outputs"]) if o["media_type"] in kinds]
+        prompt = str(params.get("prompt", ""))
+        task = {"schema_version": contracts.SCHEMA_VERSION, "project_id": self.db.project_id, "task_id": tid,
+                "title": f"[{preset_id}] {prompt[:80]}" or preset_id, "description": prompt,
+                "capability": p["direct_capability"], "depends_on": [], "inputs": [],
+                "outputs": [{"name": o["name"], "logical_id": f"direct.{n:04d}.{o['name']}", "media_type": o["media_type"]}
+                            for o in p["outputs"]],
+                "acceptance_criteria": crit or [{"id": f"ac.{tid[5:]}.exists", "description": "output exists",
+                                                 "kind": "exists"}],
+                "params": params, "preset": preset_id, "max_attempts": int(p.get("max_attempts", 1) or 1),
+                "budget": {"max_wall_seconds": 3600}, "priority": 90, "created_by": "human"}
+        dag = {"schema_version": contracts.SCHEMA_VERSION, "project_id": self.db.project_id,
+               "plan_id": f"plan.{tid}", "plan_version": 1, "goal": prompt[:500], "template": "direct", "tasks": [task]}
+        self.load_plan(dag, approved_by=by)
+        with self.db.tx():
+            self.db.append("direct.queued", "task", tid, by, payload={"preset": preset_id, "model": p["model"],
+                                                                       "provider": p["provider"]})
+        return tid
+
+    def run_task(self, task_id: str, max_steps: int = 200) -> dict:
+        """Step until one task reaches a final or waiting state (Direct Mode)."""
+        final = {S.ACCEPTED, S.FAILED, S.CANCELED, S.HUMAN_REVIEW, S.BLOCKED}
+        for _ in range(max_steps):
+            if S(self.db.task(task_id)["state"]) in final:
+                break
+            if not self.step():
+                break
+        t = self.db.task(task_id)
+        return {"task_id": task_id, "state": t["state"], "outputs": [a for a in (self.artifacts.accepted(o["logical_id"])
+                                                                               for o in t["outputs"]) if a],
+                "handoff": self.db.handoff(task_id)}
+
     def close(self) -> None:
         self.mcp.close()
         self.db.close()
@@ -253,7 +362,7 @@ class Shams:
         if impl is None:
             from shams import workers
             impl = workers.create(worker.entry, self.dir / "attempts", read_blob=self.artifacts.blob_path,
-                                  mcp=self.mcp, max_tool_rounds=int(self.settings["general"].get("max_tool_rounds", 8)))
+                                  mcp=self.tools, max_tool_rounds=int(self.settings["general"].get("max_tool_rounds", 8)))
             self._impls[worker.worker_id] = impl
         return impl
 
@@ -280,7 +389,9 @@ class Shams:
         task = self.db.task(task_id)
         self.db.transition(task_id, S.REPAIR_REQUIRED, event, "task_runner", {"error": detail[:300]})
         failure = self.classifier.classify(task, attempt, detail, source, [])
-        return self.repair.route(failure)
+        out = self.repair.route(failure)
+        self._autopilot(task_id)
+        return out
 
     # ------------------------------------------------------------------ QC routing
     def run_qc(self, task_id: str, *, revalidation: bool = False) -> dict:
@@ -302,16 +413,16 @@ class Shams:
                 self.db.transition(task_id, S.REPAIR_REQUIRED, "qc.failed", "qc",
                                    {"failure_id": failure["failure_id"], "stage": rep.get("stopped_at_stage")})
             self.repair.route(failure)
+            self._autopilot(task_id)
             return rep
         self.db.save_qc(rep)
         unverified = [c for c in rep["criteria"] if c["verdict"] == "NOT_VERIFIED"]
         if rep["verdict"] == "NOT_VERIFIED":
-            kinds = {k["kind"] for k in task["acceptance_criteria"]
-                     if k["id"] in {u["criterion_id"] for u in unverified}}
-            if not (self.mode == "autonomous" and not kinds & CRITICAL_KINDS):
+            if self.mode != "autonomous":
                 self.db.transition(task_id, S.HUMAN_REVIEW, "qc.not_verified", "qc",
                                    {"criteria": [u["criterion_id"] for u in unverified]})
                 return rep
+            # autonomous: no checker is not a reason to stop; the gap stays visible in the event payload
         self._accept(task_id, handoff, "qc.passed", "qc",
                      {"gate": rep["gate"], "not_verified": [u["criterion_id"] for u in unverified]},
                      refresh_handoff=revalidation)
@@ -329,6 +440,23 @@ class Shams:
             self.db.transition(task_id, S.ACCEPTED, event, actor, payload)
         if superseded:
             self.impact.on_superseded(superseded)
+
+    def _autopilot(self, task_id: str) -> None:
+        """Autonomous mode never waits for a person: a task that used up its repair attempts is accepted with
+        its last produced outputs and marked as accepted with failed checks, so the run goes on to the end.
+        A task that never produced an output (no worker, tool missing) stays in HUMAN_REVIEW."""
+        if self.mode != "autonomous" or self.db.state(task_id) != S.HUMAN_REVIEW:
+            return
+        task = self.db.task(task_id)
+        handoff = next((h for a in range(task["attempt"], -1, -1)
+                        if (h := self.db.handoff(task_id, a)) and h.get("outputs")), None)
+        if handoff is None:
+            return
+        failed = sorted({c["criterion_id"] for r in self.db.qc_reports(task_id) if r.get("attempt") == handoff["attempt"]
+                         for c in r.get("criteria") or [] if c.get("verdict") == "FAIL"})
+        self._accept(task_id, handoff, "human.decided", "autopilot",
+                     {"decision": "accept", "note": "autonomous mode: accepted with failed checks",
+                      "failed_checks": failed, "attempt": handoff["attempt"]})
 
     # ------------------------------------------------------------------ human review (ADR-112)
     def human_decide(self, task_id: str, decision: str, note: str = "") -> None:
@@ -430,10 +558,27 @@ class Shams:
         }
 
 
+def asset_checkers(s: dict, fallback: dict) -> dict:
+    """Path-aware checkers selected by criterion.check.type (ADR-120), the pack's checkers as fallback."""
+    from shams.models import ModelRegistry
+    from shams.verification.checkers import AssetCheckers, make_visual_checker
+    visual = None
+    roles = (s.get("models") or {}).get("roles") or {}
+    if "visual_qc" in roles:
+        b = ModelRegistry(s).binding("visual_qc")
+        if b is not None and b.ok:
+            from shams import providers
+            o = (s.get("models") or {}).get("ollama") or {}
+            visual = make_visual_checker(providers.create("ollama", {k: v for k, v in o.items() if k == "base_url"}
+                                                          | {"num_ctx": 8192}), b.model_id)
+    return AssetCheckers(fallback, settings=s, visual=visual).table()
+
+
 def build_registry(s: dict) -> NodeRegistry:
     from shams import hardware
     nodes = [dict(n) for n in s.get("nodes") or []]
-    wks = settings_mod.resolve_workers(s)
+    from shams.models import merge_role_workers
+    wks = merge_role_workers(s)
     declared = {n.get("id") or n.get("node_id") for n in nodes}
     for nid in dict.fromkeys(w.get("node") for w in wks if w.get("node")):
         if nid not in declared:

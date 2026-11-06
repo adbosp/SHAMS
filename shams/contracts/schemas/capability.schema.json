@@ -23,7 +23,9 @@
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "common.schema.json#/$defs/capability"
+        "type": "string",
+        "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*(\\.\\*)?$",
+        "description": "Capability; may end in .* to cover a family (e.g. code.* matches code.python)"
       }
     },
     "runtime": {

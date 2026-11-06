@@ -75,6 +75,10 @@ class QCRunner:
     def run(self, task: dict, handoff: dict) -> dict:
         contents = [Path(self.reg.blob_path(o["sha256"])).read_text(encoding="utf-8", errors="replace")
                     for o in handoff["outputs"] if self.reg.blob_path(o["sha256"]).exists()]
+        outputs = [{"logical_id": o["logical_id"], "path": o.get("path"), "media_type": o.get("media_type"),
+                    "file": str(self.reg.blob_path(o["sha256"])), "role": role}
+                   for role, refs in (("output", handoff["outputs"]), ("input", handoff.get("inputs") or []))
+                   for o in refs if o.get("sha256") and self.reg.blob_path(o["sha256"]).exists()]
         criteria = sorted(task["acceptance_criteria"], key=lambda c: STAGE[c["kind"]])
         results, stopped, failed = [], None, False
         v1, d1 = self._stage1(task, handoff)
@@ -93,7 +97,8 @@ class QCRunner:
                 verdict = "NOT_VERIFIED" if c.get("required", True) else "SKIPPED"
                 detail = f"no checker for kind '{c['kind']}'"
             else:
-                verdict, detail = checker(c["kind"], c, contents)
+                verdict, detail = (checker(c["kind"], c, contents, outputs=outputs)
+                                   if getattr(checker, "wants_outputs", False) else checker(c["kind"], c, contents))
             results.append({"criterion_id": c["id"], "verdict": verdict, "stage": stage, "checker": QC_ACTOR,
                             "detail": detail, "_required": c.get("required", True)})
             if verdict == "FAIL" and c.get("required", True):

@@ -169,35 +169,203 @@ class OpenAICompatible(_HTTPProvider):
         return [{"role": "tool", "tool_call_id": call["id"], "content": text} for call, text in results]
 
 
+def _get_json(url: str, headers: dict[str, str], timeout: float) -> dict:
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with _open(req, timeout) as r:
+            return json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")[:300]
+        raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
+    except (urllib.error.URLError, OSError) as e:
+        raise ProviderError(f"cannot reach {url}: {getattr(e, 'reason', e)}") from None
+    except json.JSONDecodeError as e:
+        raise ProviderError(f"invalid JSON from {url}: {e}") from None
+
+
 class Ollama(OpenAICompatible):
-    """Ollama: chat over its OpenAI-compatible endpoint, load/unload through keep_alive."""
+    """Ollama: native /api/chat (thinking off, JSON mode, num_ctx), tool calls over the OpenAI-compatible
+    endpoint, explicit load/unload through keep_alive, discovery (/api/tags, /api/show) and resource
+    reporting (/api/ps)."""
     name = "ollama"
     default_base_url = "http://127.0.0.1:11434"
+    supports_progress = True
 
-    def __init__(self, base_url: str | None = None, keep_alive: str = "30m", **kw: Any):
+    def __init__(self, base_url: str | None = None, keep_alive: str = "30m", native: bool = True,
+                 think: bool | None = False, num_ctx: int | None = None, unload_wait_s: float = 30.0, **kw: Any):
         root = (base_url or self.default_base_url).rstrip("/")
         self.root = root[:-3] if root.endswith("/v1") else root
         super().__init__(base_url=self.root + "/v1", **kw)
         self.keep_alive = keep_alive
+        self.native, self.think, self.num_ctx = native, think, num_ctx
+        self.unload_wait_s = float(unload_wait_s)
 
+    # chat ------------------------------------------------------------------------------------
+    def chat(self, messages: list[dict], *, model: str, images: list[str] | None = None,
+             format: Any = None, think: Any = "default", on_delta: Callable[[str], None] | None = None,
+             **opts: Any) -> dict:
+        """Native /api/chat. ``images`` are base64 strings attached to the last user message."""
+        if not self.native and not images and format is None:
+            return super().chat(messages, model=model, **opts)
+        msgs = [dict(m) for m in messages]
+        if images:
+            for m in reversed(msgs):
+                if m["role"] == "user":
+                    m["images"] = list(images)
+                    break
+        options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
+        if self.num_ctx and "num_ctx" not in options:
+            options["num_ctx"] = self.num_ctx
+        body: dict[str, Any] = {"model": model, "messages": msgs, "stream": False, "keep_alive": self.keep_alive,
+                                "options": options}
+        think = self.think if think == "default" else think
+        if think is not None:
+            body["think"] = think
+        if format is not None:
+            body["format"] = format
+        if on_delta is not None:
+            return self._chat_progress(body, on_delta)
+        r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
+        if "error" in r:
+            raise ProviderError(f"ollama: {r['error']}")
+        msg = r.get("message") or {}
+        return {"text": msg.get("content") or "", "thinking": msg.get("thinking") or "",
+                "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0)),
+                "load_seconds": round(r.get("load_duration", 0) / 1e9, 3)}
+
+    def _chat_progress(self, body: dict, on_delta: Callable[[str], None]) -> dict:
+        url = f"{self.root}/api/chat"
+        req = urllib.request.Request(url, data=json.dumps({**body, "stream": True}).encode("utf-8"),
+                                     method="POST", headers={"Content-Type": "application/json", **self.extra_headers})
+        parts = []
+        calls = []
+        try:
+            with _open(req, self.timeout) as response:
+                for line in response:
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    if "error" in chunk:
+                        raise ProviderError(f"ollama: {chunk['error']}")
+                    message = chunk.get("message") or {}
+                    calls.extend(message.get("tool_calls") or [])
+                    text = message.get("content")
+                    if text:
+                        parts.append(text)
+                        on_delta(text)
+                    if chunk.get("done"):
+                        return {"text": "".join(parts), "tokens_in": int(chunk.get("prompt_eval_count", 0)),
+                                "tokens_out": int(chunk.get("eval_count", 0)), "raw_calls": calls}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:500]
+            raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
+        except (OSError, ValueError) as e:
+            raise ProviderError(f"ollama stream: {e}") from None
+        raise ProviderError("ollama stream ended before the final response")
+
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict],
+                   on_delta: Callable[[str], None] | None = None, **opts: Any) -> dict:
+        """Tool calls over native /api/chat, so num_ctx and keep_alive apply (the OpenAI-compatible endpoint
+        ignores num_ctx and runs with Ollama's small default context, which cuts long task prompts)."""
+        if not self.native:
+            return super().chat_tools(messages, model=model, tools=tools, **opts)
+        think = opts.pop("think", self.think)
+        options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
+        if self.num_ctx and "num_ctx" not in options:
+            options["num_ctx"] = self.num_ctx
+        body: dict[str, Any] = {"model": model, "messages": [dict(m) for m in messages], "stream": False,
+                                "keep_alive": self.keep_alive, "options": options}
+        if think is not None:
+            body["think"] = think
+        if tools:
+            body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
+                                                               "parameters": t["input_schema"]}} for t in tools]
+        if on_delta is not None:
+            progress = self._chat_progress(body, on_delta)
+            msg = {"content": progress["text"], "tool_calls": progress["raw_calls"]}
+            r = {"prompt_eval_count": progress["tokens_in"], "eval_count": progress["tokens_out"]}
+        else:
+            r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
+            if "error" in r:
+                raise ProviderError(f"ollama: {r['error']}")
+            msg = r.get("message") or {}
+        calls = []
+        for i, c in enumerate(msg.get("tool_calls") or []):
+            fn = c.get("function", {})
+            args = fn.get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args or "{}")
+                except json.JSONDecodeError:
+                    args = {"_raw": args}
+            calls.append({"id": c.get("id") or f"{fn.get('name')}_{i}", "name": fn.get("name"), "arguments": args})
+        assistant = {"role": "assistant", "content": msg.get("content") or ""}
+        if msg.get("tool_calls"):
+            assistant["tool_calls"] = msg["tool_calls"]
+        return {"text": msg.get("content") or "", "tool_calls": calls, "assistant": assistant,
+                "tokens_in": int(r.get("prompt_eval_count", 0)), "tokens_out": int(r.get("eval_count", 0))}
+
+    def tool_results(self, results: list[tuple[dict, str]]) -> list[dict]:
+        return [{"role": "tool", "tool_call_id": call["id"], "tool_name": call["name"], "content": text}
+                for call, text in results]
+
+    def embed(self, texts: list[str], *, model: str) -> list[list[float]]:
+        r = _post_json(f"{self.root}/api/embed", {"model": model, "input": list(texts), "keep_alive": self.keep_alive},
+                       self.extra_headers, self.timeout)
+        if "error" in r:
+            raise ProviderError(f"ollama: {r['error']}")
+        return r.get("embeddings") or []
+
+    # lifecycle -------------------------------------------------------------------------------
     def load(self, model: str) -> None:
         _post_json(f"{self.root}/api/generate", {"model": model, "keep_alive": self.keep_alive},
                    self.extra_headers, self.timeout)
 
     def unload(self, model: str) -> None:
+        """Ask Ollama to evict the model and wait until /api/ps no longer lists it (VRAM really freed)."""
         _post_json(f"{self.root}/api/generate", {"model": model, "keep_alive": 0}, self.extra_headers, 60)
+        deadline = time.monotonic() + self.unload_wait_s
+        while time.monotonic() < deadline:
+            try:
+                if model not in {m["name"] for m in self.ps()}:
+                    return
+            except ProviderError:
+                return
+            time.sleep(0.5)
+        raise ProviderError(f"ollama: {model} still loaded {self.unload_wait_s:.0f}s after unload")
 
+    def unload_all(self) -> list[str]:
+        names = [m["name"] for m in self.ps()]
+        for n in names:
+            self.unload(n)
+        return names
+
+    # discovery / resources ---------------------------------------------------------------------
     def health(self) -> str:
         return "ok" if _get(f"{self.root}/api/tags", self.extra_headers, 10) < 500 else "down"
 
+    def version(self) -> str:
+        return _get_json(f"{self.root}/api/version", self.extra_headers, 10).get("version", "")
+
+    def tags(self) -> list[dict]:
+        return _get_json(f"{self.root}/api/tags", self.extra_headers, 15).get("models", [])
+
     def list_models(self) -> list[str]:
-        req = urllib.request.Request(f"{self.root}/api/tags", headers=self.extra_headers)
-        try:
-            with _open(req, 15) as r:
-                data = json.loads(r.read().decode("utf-8") or "{}")
-        except (urllib.error.URLError, json.JSONDecodeError) as e:
-            raise ProviderError(f"ollama: cannot list models: {e}") from None
-        return sorted(m.get("name", "") for m in data.get("models", []) if m.get("name"))
+        return sorted(m.get("name", "") for m in self.tags() if m.get("name"))
+
+    def ps(self) -> list[dict]:
+        """Loaded models: [{"name", "size", "size_vram", "expires_at"}]."""
+        return [{"name": m.get("name") or m.get("model"), "size": int(m.get("size", 0)),
+                 "size_vram": int(m.get("size_vram", 0)), "expires_at": m.get("expires_at"),
+                 "context_length": m.get("context_length")}
+                for m in _get_json(f"{self.root}/api/ps", self.extra_headers, 10).get("models", [])]
+
+    def show(self, model: str) -> dict:
+        return _post_json(f"{self.root}/api/show", {"model": model}, self.extra_headers, 30)
+
+    def resources(self) -> dict:
+        loaded = self.ps()
+        return {"loaded": loaded, "vram_mb": sum(m["size_vram"] for m in loaded) // (1024 * 1024)}
 
 
 class Anthropic(_HTTPProvider):
@@ -323,12 +491,14 @@ def register_provider(name: str, factory: Callable[..., Any]) -> None:
 
 
 def available() -> list[str]:
+    plugins.load_extensions()
     return sorted(set(PRESETS) | set(_REGISTERED) | set(plugins.entry_points("shams.providers")))
 
 
 def create(type_: str, config: dict | None = None) -> Any:
     """Build a provider from a preset name, a registered name, an entry point, or 'module:Class'."""
     cfg = dict(config or {})
+    plugins.load_extensions()
     if type_ in _REGISTERED:
         return _REGISTERED[type_](**cfg)
     if type_ in PRESETS:
@@ -347,3 +517,4 @@ def timed_chat(provider: Any, messages: list[dict], model: str, **opts: Any) -> 
     r = provider.chat(messages, model=model, **opts)
     r["wall_seconds"] = round(time.monotonic() - t0, 3)
     return r
+

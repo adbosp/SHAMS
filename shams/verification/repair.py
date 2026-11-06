@@ -16,7 +16,14 @@ RULES: list[tuple[str, str, str]] = [
     # regex, failure_class, default strategy
     (r"(?i)\berror [A-Z]{1,4}\d{3,5}\b|compil(e|ation) error|syntax ?error|undefined (name|reference|symbol)",
      "compile_error", "fix_in_place"),
-    (r"out of memory", "resource_oom", "retry_same"),
+    (r"(?i)out of memory|CUDA error: out of memory|OOM", "resource_oom", "retry_same"),
+    (r"(?i)GLB invalid|image invalid|image is blank|no UV|no base colour texture|vertices|scale\?|render evidence",
+     "asset_validation", "fix_in_place"),
+    (r"(?i)visual check failed|does not match the description", "visual_mismatch", "fix_in_place"),
+    (r"(?i)tool unavailable|is not installed|model file .* not found|not usable|is not running|cannot reach|"
+     r"program not found",
+     "tool_unavailable", "human_review"),
+    (r"(?i)HTTP \d{3} from|provider error|ollama:", "provider_error", "retry_same"),
     (r"(?i)test(s)? failed", "test_failure", "fix_in_place"),
     (r"\w+Exception", "runtime_exception", "fix_in_place"),
     (r"missing output|hash mismatch", "missing_output", "retry_with_context"),
@@ -27,7 +34,8 @@ RULES: list[tuple[str, str, str]] = [
 ]
 SEVERITY = {"compile_error": "high", "missing_output": "high", "schema_violation": "medium",
             "test_failure": "medium", "runtime_exception": "high", "resource_oom": "medium",
-            "tool_unavailable": "high", "unknown": "medium"}
+            "tool_unavailable": "high", "asset_validation": "medium", "visual_mismatch": "medium",
+            "provider_error": "medium", "unknown": "medium"}
 
 
 def normalize(text: str) -> str:
@@ -53,7 +61,7 @@ class FailureClassifier:
             "schema_version": contracts.SCHEMA_VERSION, "project_id": task["project_id"],
             "failure_id": f"fail.{uuid.uuid4().hex[:12]}", "task_id": task["task_id"], "attempt": attempt,
             "source": source, "failure_class": fclass, "signature": sig,
-            "severity": SEVERITY.get(fclass, "medium"), "summary": detail[:500],
+            "severity": SEVERITY.get(fclass, "medium"), "summary": detail[:2000],      # the repair prompt needs the real error
             "evidence": evidence, "timestamp": contracts.now_iso(),
         }
         if strategy:
@@ -117,10 +125,16 @@ class RepairRouter:
             else:
                 plan = {"strategy": "retry_with_context", "notes": a["explanation"]}
         if n_fail >= 3 and plan["strategy"] in {"fix_in_place", "retry_with_context"}:
-            alt = [w for w in self.nodes.candidates(task["capability"]) if w.worker_id != task.get("provider_hint")]
-            if len(alt) > 1:
-                plan = {"strategy": "switch_worker", "notes": f"try {alt[1].worker_id}"}
-                self.db.update_task_json(task["task_id"], {"provider_hint": alt[1].worker_id})
+            ranked = self.nodes.ranked(task["capability"])
+            current = task.get("provider_hint") or (ranked[0].worker_id if ranked else None)
+            tried = {current, ranked[0].worker_id} if ranked else {current}     # specialised one ran first
+            alt = [w for w in ranked if w.worker_id not in tried]
+            if alt:                     # next best fit, e.g. the general coder after the specialised one
+                plan = {"strategy": "switch_worker", "notes": f"try {alt[0].worker_id}"}
+                extra = int(getattr(self.policy, "switch_worker_attempts", 2))
+                task["max_attempts"] = max(task.get("max_attempts", 3), task["attempt"] + 1 + extra)
+                self.db.update_task_json(task["task_id"], {"provider_hint": alt[0].worker_id,
+                                                           "max_attempts": task["max_attempts"]})
             elif n_fail >= 4 and self.policy.allow_external:
                 plan = {"strategy": "escalate_external", "notes": "local workers exhausted"}
         failure["repair_plan"] = {"target_task_id": task["task_id"], **plan}

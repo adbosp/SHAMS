@@ -123,7 +123,7 @@ class Scheduler:
         capacity = {l.lane_id: l.capacity for l in self.nodes.lanes()}
         options = []
         for t in ready:
-            for w in self.nodes.candidates(t["capability"]):
+            for w in self.nodes.preferred(t):
                 for lane in self.nodes.lanes_for(w):
                     options.append((self.score(t, w, lane, ready), t, w, lane))
         options.sort(key=lambda o: (-o[0], o[1]["task_id"]))

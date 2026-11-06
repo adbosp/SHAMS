@@ -173,6 +173,47 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Người dùng tự chịu trách nhiệm khi bật `full_access`; mặc định an toàn.
 - Checker thật cho từng pack và Intent & Scope Manager vẫn là V2.1/V2.2.
 
+### ADR-119 — Ứng dụng desktop: client Tauri + React tách khỏi SHAMS Core Service
+**Vấn đề:** SHAMS cần là ứng dụng desktop thật (giống Claude Code/Codex), nhưng lõi Python (LangGraph, worker, GPU) phải chạy tiếp khi đóng giao diện và phục vụ được nhiều client.
+**Quyết định:**
+- **SHAMS Core Service** (Python) là tiến trình riêng: orchestration LangGraph, Deep Agents + worker chuyên môn, Model Registry, GPU lease, event store, MCP/tool. API hiện có trong `apps/api/server.py` (FastAPI, `127.0.0.1`) chính là Local API của Core Service; không viết lại.
+- **Client desktop**: Tauri 2 + React. Tauri khởi động/giám sát Core Service như sidecar (hoặc nối vào service đang chạy), giao tiếp qua Local API (HTTP + SSE/WebSocket). Electron chỉ là phương án dự phòng.
+- Client khác (CLI `shams`, web UI hiện tại, remote) dùng cùng Local API.
+- Trước khi chọn chính thức phải spike: đóng gói Python (PyInstaller/embedded) làm sidecar, quản lý tiến trình (khởi động, tắt, crash, cổng bận), đóng gói Windows/macOS/Linux.
+**Hệ quả:**
+- Đóng UI không dừng run; mở lại UI thấy trạng thái từ event store.
+- Web UI hiện tại tiếp tục dùng đến khi client Tauri đạt tính năng tương đương.
+- Local API cần token cục bộ khi mở cho client từ xa (chưa làm).
+
+### ADR-120 — Model local theo vai trò, công cụ ảnh/3D, QC tài sản thật
+**Vấn đề:** Máy người dùng đã có model Ollama, ComfyUI, Stable Fast 3D và Blender. SHAMS cần dùng đúng model cho đúng việc mà không viết ID model vào code, không gắn lõi vào một công cụ, và không báo thành công khi chưa chạy thật.
+**Quyết định:**
+- **Model Registry theo vai trò** (`shams.models`): vai trò `planner`, `coder`, `scene3d`, `visual_qc`, `embedding`, `image`, `image_to_3d`. Settings `models.roles` ghi model *mong muốn*; registry hỏi Ollama (`/api/tags`, `/api/show`, `/api/ps`) và ánh xạ tên mong muốn sang ID thật (alias → khớp đúng → không phân biệt hoa thường → khớp theo token; nhập nhằng thì báo, không đoán). Mỗi vai trò đã giải được sinh một worker `worker.role.<vai trò>` với capability dạng họ (`code.*`), ước lượng VRAM từ kích thước model + context. LangGraph và scheduler chỉ thấy capability.
+- **Ollama dùng API gốc** `/api/chat` (tắt thinking, `num_ctx`, JSON mode, ảnh cho model thị giác). `unload` chờ đến khi `/api/ps` không còn model, nên đổi model tuần tự trên một GPU không bị OOM.
+- **Công cụ nằm ngoài lõi** (`shams_tools/`, nạp bằng `plugins.load_extensions()` hoặc entry point `shams.extensions`): ComfyUI (workflow API-format có placeholder, kiểm tra node/file model trước khi chạy, `/free` để trả VRAM), Stable Fast 3D (lệnh `run.py` trong venv riêng), Blender (worker 3D Scene, kiểm tra import GLB). Lõi không nhắc tên công cụ (test ADR-117 vẫn áp dụng).
+- **3D Scene worker**: model *coding* viết Blender Python; Blender chạy headless, render bằng chứng, xuất GLB; lỗi được gửi lại model tối đa `max_fix_rounds` lần. Không coi đây là sinh mesh bằng mạng nơ-ron.
+- **Thứ tự 3D**: tái sử dụng → primitive → procedural → modular → placeholder → Stable Fast 3D, chỉ khi có ảnh tham chiếu *và* vật thể thực sự phức tạp. Worker SF3D tự từ chối (BLOCKED) nếu điều kiện không đủ.
+- **QC thấy file thật**: checker nhận đường dẫn output/input (`wants_outputs`), chọn theo `criterion.check.type`: `glb`, `image`, `scene_report`, `python`, `pytest`, `vlm`, `blender_import`. Không có checker thì vẫn `NOT_VERIFIED`.
+- **Planner LLM** (`shams.planning.llm_planner`): model viết DAG, Plan Validator quyết định, lỗi được gửi lại tối đa 3 vòng, sau đó quay về template của Domain Pack.
+- **`shams selftest`** chạy 8 nhóm test trên máy thật, kết quả PASS / FAIL / BLOCKED / SKIPPED kèm bằng chứng; thiếu model/công cụ là BLOCKED, không bao giờ là PASS.
+**Hệ quả:**
+- Đổi model chỉ cần sửa settings; `shams models` cho thấy ánh xạ thật.
+- Embedding mới có provider (`Ollama.embed`), chưa nối vào truy hồi ngữ cảnh.
+- Nhiều GPU hoặc API: scheduler sẵn có chạy song song theo lane; một GPU: tuần tự.
+
+### ADR-121 — Direct Mode, preset theo registry, chính sách nội dung, research web
+**Vấn đề:** Người dùng muốn chọn thẳng một model/preset, nhập prompt và chạy, không cần Planner hay DAG; thêm model ảnh MOSS-Image (có LoRA chỉ dành cho người lớn) và model chat chỉ dùng trực tiếp; cho model dùng Internet để research; cảnh 3D đơn giản không cần Blender.
+**Quyết định:**
+- **Preset là một mục trong Model Registry** (`models.presets`, và mỗi vai trò đã giải được cũng là một preset). Mỗi preset có: `kind`, `provider`, model thật, `status`, `capabilities`, `execution_modes` (`direct`, `autonomous`), `autonomous_default`, `input_schema`, `outputs`, `params`, `content_policy`, tài nguyên (lane, VRAM). Worker của preset chỉ có capability `direct.<id>`; chỉ khi `autonomous_default` và `autonomous` có trong `execution_modes` thì mới thêm capability thường, nên Planner không bao giờ tự chọn preset chỉ-direct.
+- **Direct Mode dùng chung toàn bộ runtime**: `Shams.direct(preset, params)` kiểm tra schema, chính sách, trạng thái rồi tạo **một** task (plan `plan.task.direct.NNNN`, template `direct`) và để scheduler, GPU lease, model lifecycle (nạp/dỡ), worker, Artifact Registry, QC và event log xử lý như mọi task. `run_task()` chạy tới trạng thái cuối. Không có đường chạy riêng.
+- **Chính sách nội dung** (`shams.policy`): preset có `content_policy.adult` không bao giờ được Autonomous Mode chọn (settings bị từ chối nếu khai báo `autonomous_default` hoặc chế độ `autonomous`), cần `general.allow_adult_content: true` **và** xác nhận mỗi lần chạy; prompt về trẻ vị thành niên, không đồng thuận/lạm dụng, người thật có thể nhận diện bị từ chối (Anh + Việt); luôn thêm negative prompt chống trẻ vị thành niên. Mọi lần từ chối ghi `policy.refused`. Bộ lọc giảm rủi ro, không phải bảo đảm.
+- **Research web** (`shams.research`): hai tool chỉ đọc `research__web_search`, `research__web_fetch` cho model có tool calling; chặn địa chỉ local/private (kể cả sau redirect) nên model không chạm được Ollama/ComfyUI/LAN; giới hạn dung lượng, danh sách cho phép/cấm, ghi log URL; nội dung web được đánh dấu là dữ liệu không tin cậy. Bật bằng `research.enabled`.
+- **Cảnh 3D đơn giản không cần Blender**: model 3D viết mô tả cảnh JSON (primitive, vị trí, xoay, màu, camera, đèn); `shams_tools.scene_json` kiểm tra, dựng GLB (POSITION/NORMAL/UV, vật liệu PBR, camera, KHR_lights_punctual) và render z-buffer bằng Python để làm bằng chứng QC. Blender chỉ dùng cho cảnh phức tạp (modifier, boolean, sculpt, rig, terrain...) hoặc khi JSON thất bại sau các vòng sửa.
+- **MOSS-Image** qua workflow ComfyUI (`moss_image`, `moss_image_lora`); preflight kiểm tra cả node, file model và giá trị lựa chọn (vd. kiểu text encoder `moss_image` mà ComfyUI cũ chưa có).
+**Hệ quả:**
+- Thêm model/preset chỉ cần settings; UI (Direct Mode), API (`/api/direct/*`), CLI (`shams presets`, `shams direct`) đọc từ registry.
+- `shams selftest` có thêm 3 (cảnh JSON), 3b (Blender), 9a–9e (Direct chat, ảnh, chuyển model, lỗi/chính sách, MOSS). Self-test không bao giờ chạy preset 18+, chỉ preflight.
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

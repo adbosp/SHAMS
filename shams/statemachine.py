@@ -53,7 +53,7 @@ _T: dict[tuple[S | None, S], tuple[set[str], set[str]]] = {
     (S.BLOCKED, S.PENDING): ({"task.unblocked"}, {"scheduler", "human"}),
 }
 for _to in (S.READY, S.ACCEPTED, S.FAILED, S.CANCELED):
-    _T[(S.HUMAN_REVIEW, _to)] = ({"human.decided"}, {"human"})
+    _T[(S.HUMAN_REVIEW, _to)] = ({"human.decided"}, {"human", "autopilot"})
 for _from in S:
     if _from not in TERMINAL:
         _T.setdefault((_from, S.CANCELED), (set(), set()))

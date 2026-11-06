@@ -1,0 +1,125 @@
+{
+  "_comment": "Local models by role (ADR-120). Copy into ~/.shams/settings.json (user) or <project>/.shams/settings.json. Model names are preferences: SHAMS maps them onto the IDs Ollama really has (see `shams models`). Paths below are an example Windows layout. Presets (ADR-121) are what Direct Mode offers; an adult-only preset needs general.allow_adult_content and runs only when the user picks it.",
+  "general": {
+    "allow_adult_content": false
+  },
+  "models": {
+    "ollama": {
+      "base_url": "http://127.0.0.1:11434",
+      "keep_alive": "10m"
+    },
+    "auto_workers": true,
+    "node": "node.local",
+    "roles": {
+      "planner": {
+        "model": "qwen3.5:9b",
+        "num_ctx": 16384
+      },
+      "coder": {
+        "model": "qwen2.5-coder:14b",
+        "num_ctx": 16384
+      },
+      "scene3d": {
+        "model": "qwen3.5-4b-coder:Q8",
+        "num_ctx": 16384,
+        "blender_model": "qwen2.5-coder:14b"
+      },
+      "visual_qc": {
+        "model": "qwen3-vl:4b",
+        "num_ctx": 8192
+      },
+      "embedding": {
+        "model": "qwen3-embedding:0.6b"
+      },
+      "image": {
+        "backend": "comfyui",
+        "workflow": "sdxl_lightning_4step"
+      },
+      "image_to_3d": {
+        "backend": "stable_fast_3d"
+      }
+    },
+    "aliases": {},
+    "presets": {
+      "qwen35-heretic-q4": {
+        "label": "Qwen3.5 9B Heretic (Q4_K_M)",
+        "provider": "ollama",
+        "model": "hf.co/darrellbest/Qwen3.5-9B-Heretic-GGUF:Q4_K_M",
+        "capabilities": [
+          "chat",
+          "text_generation"
+        ],
+        "execution_modes": [
+          "direct"
+        ],
+        "autonomous_default": false,
+        "num_ctx": 8192
+      },
+      "moss_image": {
+        "label": "MOSS-Image (SFT)",
+        "provider": "comfyui",
+        "workflow": "moss_image",
+        "execution_modes": [
+          "direct"
+        ],
+        "vram_mb": 11000,
+        "params": {
+          "text_encoder": "qwen3.5_9b_w4a8_gptq.safetensors",
+          "vae": "flux2-vae_small.safetensors"
+        }
+      },
+      "moss_image_nsfw_lora": {
+        "label": "MOSS-Image + NSFW LoRA (18+)",
+        "provider": "comfyui",
+        "workflow": "moss_image_lora",
+        "execution_modes": [
+          "direct"
+        ],
+        "autonomous_default": false,
+        "vram_mb": 11000,
+        "content_policy": {
+          "adult": true
+        },
+        "params": {
+          "text_encoder": "qwen3.5_9b_w4a8_gptq.safetensors",
+          "vae": "flux2-vae_small.safetensors"
+        }
+      }
+    }
+  },
+  "tools": {
+    "blender": {
+      "path": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    "comfyui": {
+      "base_url": "http://127.0.0.1:8188",
+      "autostart": true,
+      "launch": [
+        "C:\\AI\\ComfyUI_windows_portable\\python_embeded\\python.exe",
+        "-s",
+        "ComfyUI\\main.py",
+        "--windows-standalone-build",
+        "--disable-auto-launch"
+      ],
+      "launch_cwd": "C:\\AI\\ComfyUI_windows_portable",
+      "params": {
+        "z_image_turbo": {
+          "unet": "z_image_turbo_bf16.safetensors"
+        }
+      }
+    },
+    "stable_fast_3d": {
+      "repo": "C:\\AI\\SHAMS\\stable-fast-3d",
+      "weights": "C:\\AI\\SHAMS\\Models\\StableFast3D",
+      "texture_resolution": 1024
+    }
+  },
+  "research": {
+    "enabled": true,
+    "search_url": "https://html.duckduckgo.com/html/?q={query}",
+    "max_bytes": 300000,
+    "timeout": 20,
+    "allow_domains": [],
+    "deny_domains": []
+  }
+}

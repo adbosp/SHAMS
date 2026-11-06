@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE", help="change a pack option before the first plan")
     a.add_argument("--engine", help="Game Pack shortcut for --opt engine=...")
     a.add_argument("--approve", help="name of the person approving the plan")
+    a.add_argument("--llm", action="store_true", help="let the planner model write the DAG (template as fallback)")
     a = sub.add_parser("run"); a.add_argument("dir"); a.add_argument("--defect", action="append")
     a.add_argument("--max-steps", type=int, default=500)
     a = sub.add_parser("status"); a.add_argument("dir"); a.add_argument("--json", action="store_true")
@@ -95,7 +96,123 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
     a = sub.add_parser("mcp", help="connect to the configured MCP servers and list their tools")
     a.add_argument("dir", nargs="?"); a.add_argument("--name")
+    a = sub.add_parser("models", help="discover installed models/tools and show which model serves each role")
+    a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
+    a = sub.add_parser("selftest", help="run the integration tests on this machine (real models and tools)")
+    a.add_argument("--only", help="comma-separated test ids, e.g. 1,3,4b")
+    a.add_argument("--out", help="report folder (default: <workspace>/_selftest/<time>)")
+    a.add_argument("--workspace", help="default: $SHAMS_WORKSPACE or ~/SHAMS")
+    a = sub.add_parser("presets", help="models / presets you can run directly (Direct Mode)")
+    a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
+    a = sub.add_parser("direct", help="run one prompt on one chosen preset, without planner or DAG")
+    a.add_argument("prompt"); a.add_argument("--preset", required=True)
+    a.add_argument("--param", action="append", default=[], help="k=v (JSON values allowed), repeatable")
+    a.add_argument("--dir", help="project folder (default: <workspace>/direct, created if missing)")
+    a.add_argument("--confirm-adult", action="store_true",
+                   help="adult-only presets: I am 18+ and the content involves only fictional consenting adults")
+    a.add_argument("--json", action="store_true")
+    a = sub.add_parser("toolchain", help="test toolchains SHAMS installs in its own folder (e.g. web: Vitest + Three.js)")
+    a.add_argument("action", choices=["status", "install"]); a.add_argument("name", nargs="?", default="web", choices=["web"])
     args = p.parse_args(argv)
+
+    if args.cmd == "toolchain":
+        from shams_packs.game import toolchain
+        if args.action == "install":
+            r = toolchain.install_web()
+            print(r["log"][-1500:])
+            print(("installed in " if r["ok"] else "install FAILED in ") + r["dir"])
+            return 0 if r["ok"] else 1
+        st = toolchain.status()
+        print(f"web: {'installed' if st['installed'] else 'not installed'} ({st['dir']})")
+        for k, v in st["versions"].items():
+            print(f"  {k} {v or '-'}")
+        return 0
+
+    if args.cmd == "presets":
+        from shams import settings as settings_mod
+        from shams.models import ModelRegistry
+        ps = ModelRegistry(settings_mod.load(args.dir)).presets()
+        if args.json:
+            print(json.dumps(ps, ensure_ascii=False, indent=2))
+            return 0
+        for x in ps:
+            flags = ",".join(x["execution_modes"]) + (" 18+" if x["content_policy"].get("adult") else "")
+            print(f"  {x['id']:<24} {x['kind']:<8} {str(x['provider']):<14} {str(x['model'] or x['wanted'])[:44]:<44} "
+                  f"{x['status']:<14} [{flags}]")
+        return 0
+    if args.cmd == "direct":
+        import os
+        from shams import policy
+        ws = Path(os.environ.get("SHAMS_WORKSPACE") or Path.home() / "SHAMS")
+        d = Path(args.dir) if args.dir else ws / "direct"
+        if not (d / "project.json").exists():
+            Studio.init_project(d, "direct", "Direct Mode tasks", mode="guided", domain="software",
+                                domain_config={"stack": "python"})
+        params = {"prompt": args.prompt}
+        for k, v in _opts(args.param).items():
+            try:
+                params[k] = json.loads(v)
+            except json.JSONDecodeError:
+                params[k] = v
+        st = Studio(d)
+        try:
+            if args.confirm_adult:
+                print("Confirmed: " + policy.CONFIRM_TEXT, file=sys.stderr)
+            tid = st.direct(args.preset, params, by="cli", confirm_adult=args.confirm_adult)
+            print(f"{tid} queued on {args.preset} ...", file=sys.stderr, flush=True)
+            res = st.run_task(tid)
+            files = [{"logical_id": a["logical_id"], "media_type": a["media_type"],
+                      "file": str(st.artifacts.blob_path(a["sha256"]))} for a in res["outputs"]]
+        except (KeyError, ValueError, PermissionError, RuntimeError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        finally:
+            st.close()
+        if args.json:
+            print(json.dumps({**res, "files": files}, ensure_ascii=False, indent=2, default=str))
+        else:
+            h = res.get("handoff") or {}
+            print(f"{tid}: {res['state']}  {h.get('blocked_reason') or ''}")
+            for f in files:
+                if f["media_type"].startswith("text/"):
+                    print(Path(f["file"]).read_text(encoding="utf-8"))
+                print(f"  {f['logical_id']}  {f['media_type']}  {f['file']}")
+        return 0 if res["state"] == "ACCEPTED" else 1
+
+    if args.cmd == "models":
+        from shams import settings as settings_mod
+        from shams.models import ModelRegistry
+        rep = ModelRegistry(settings_mod.load(args.dir)).report()
+        if args.json:
+            print(json.dumps(rep, ensure_ascii=False, indent=2))
+            return 0
+        o = rep["ollama"]
+        print(f"Ollama {o.get('version', '')} at {o.get('base_url', '?')}: {o.get('status')}"
+              + (f"  ({o['error']})" if o.get("error") else ""))
+        for m in o.get("models", []):
+            loaded = any(x["name"] == m["name"] for x in o.get("loaded", []))
+            print(f"  {m['name']:<44} {m['size_mb'] / 1024:5.1f} GB  {m.get('parameters') or '':>7} "
+                  f"{m.get('quantization') or '':<7} {','.join(m.get('capabilities') or [])}{'  [loaded]' if loaded else ''}")
+        print("Roles:")
+        if not rep["roles"]:
+            print("  none configured (settings: models.roles; see shams/examples/local_models.settings.json)")
+        for r in rep["roles"]:
+            print(f"  {r['role']:<12} {str(r['wanted']):<26} -> {str(r['model_id']):<44} {r['status']} {r['how']}")
+        print("Tools:")
+        for name, t in rep["tools"].items():
+            print(f"  {name:<15} {t.get('status')}  " + json.dumps({k: v for k, v in t.items() if k != 'status'},
+                                                                   ensure_ascii=False)[:160])
+        return 0 if all(r["status"] in ("ok", "disabled") for r in rep["roles"]) else 1
+    if args.cmd == "selftest":
+        import os
+        from shams import settings as settings_mod
+        from shams_tools import selftest
+        ws = args.workspace or os.environ.get("SHAMS_WORKSPACE") or str(Path.home() / "SHAMS")
+        out = Path(args.out) if args.out else selftest.default_out(ws)
+        only = {x.strip() for x in args.only.split(",")} if args.only else None
+        rep = selftest.run(settings_mod.load(), out, only, log=lambda m: print(m, flush=True))
+        print(f"\n{rep['counts']}  report: {out / 'report.md'}")
+        return 1 if rep["counts"]["FAIL"] else 0
 
     if args.cmd == "ui":
         try:
@@ -223,7 +340,8 @@ def main(argv: list[str] | None = None) -> int:
                 opts["engine"] = args.engine
             if opts:
                 st.configure(**opts)
-            dag = st.plan_from_template(args.template, approved_by=args.approve)
+            dag = (st.plan_from_llm(approved_by=args.approve) if args.llm
+                   else st.plan_from_template(args.template, approved_by=args.approve))
             from shams.planning.validator import validate_dag
             for i in validate_dag(dag, st.nodes if not st.mock_mode else None):
                 print(i)

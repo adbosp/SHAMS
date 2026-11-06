@@ -15,7 +15,34 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-GROUPS = ("shams.providers", "shams.workers", "shams.engines", "shams.checkers", "shams.templates")
+GROUPS = ("shams.providers", "shams.workers", "shams.engines", "shams.checkers", "shams.templates",
+          "shams.extensions")
+
+# Built-in tool integrations ship as a separate package so the core stays tool-agnostic (ADR-117/120).
+BUILTIN_EXTENSIONS = ("shams_tools",)
+_EXTENSIONS_LOADED = False
+
+
+def load_extensions() -> list[str]:
+    """Import tool integrations once: the built-in package plus the ``shams.extensions`` entry points.
+    Each module registers its providers, workers, checkers and model backends when imported (or via
+    its ``register()`` function). Missing modules are skipped."""
+    global _EXTENSIONS_LOADED
+    if _EXTENSIONS_LOADED:
+        return []
+    _EXTENSIONS_LOADED = True
+    loaded = []
+    targets = list(BUILTIN_EXTENSIONS) + [ep.value for ep in entry_points("shams.extensions").values()]
+    for t in targets:
+        try:
+            mod = load_object(t) if ":" in t else importlib.import_module(t)
+        except ImportError:
+            continue
+        reg = getattr(mod, "register", None)
+        if callable(reg):
+            reg()
+        loaded.append(t)
+    return loaded
 
 
 def load_object(ref: str) -> Any:

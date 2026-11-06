@@ -27,10 +27,11 @@ include = ["shams*", "shams_packs*", "apps*"]
 
 [tool.setuptools.package-data]
 "shams.contracts" = ["schemas/*.json"]
-"shams_packs.game" = ["templates/*.json", "*.toml"]
+"shams_packs.game" = ["templates/*.json", "*.toml", "js/*.mjs"]
 "shams_packs.software" = ["templates/*.json"]
 "shams.examples" = ["*.toml", "*.json"]
-"apps.ui" = ["index.html", "static/*"]
+"shams_tools" = ["workflows/*.json", "js/*.mjs", "js/*.cjs"]
+"apps.ui" = ["index.html", "system_prompt.md", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

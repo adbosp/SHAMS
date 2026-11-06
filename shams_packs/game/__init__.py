@@ -10,7 +10,7 @@ from pathlib import Path
 
 from shams.packs import DomainPack
 
-from . import engines
+from . import checks, engines
 
 GAME_WORDS = ("game", "trò chơi", "gameplay", "playable", "chơi được", "màn chơi", "level design", "fps", "rpg",
               "platformer", "vertical slice", "npc")
@@ -80,6 +80,9 @@ class GamePack(DomainPack):
             (r"(?i)error C\d{4}|LNK\d{4}", "compile_error", "fix_in_place"),          # Unreal / MSVC
             (r"(?i)SCRIPT ERROR|Parse Error", "compile_error", "fix_in_place"),       # Godot
         ]
+
+    def checkers(self) -> dict:
+        return {"compile": checks.compile_check, "unit_test": checks.unit_test_check}
 
     def mock_failure_logs(self) -> dict[str, str]:
         return {"compile": "Assets/Scripts/X.cs(42,13): error CS0103: The name 'moveSpeed' does not exist "

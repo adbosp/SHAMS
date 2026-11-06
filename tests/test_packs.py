@@ -1,6 +1,7 @@
 """Domain Packs (ADR-117): the core knows no product domain; packs add it."""
 import json
 import pkgutil
+import shutil
 import re
 import subprocess
 import sys
@@ -168,12 +169,16 @@ def test_init_refuses_existing_project(tmp_path):
 def test_run_exit_codes(tmp_path):
     from apps.cli.main import main
     d = str(tmp_path / "p")
-    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "autonomous"]) == 0
+    assert main(["init", d, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "guided"]) == 0
     assert main(["run", d]) == 2                       # no plan yet
-    assert main(["plan", d]) == 0
+    assert main(["plan", d, "--approve", "t"]) == 0
     assert main(["run", d, "--defect", "task.core_module:" + _first_criterion(d, "task.core_module") + ":9"]) == 1
     assert main(["decide", d, "task.core_module", "accept"]) == 0
     assert main(["run", d]) == 0
+    a = str(tmp_path / "auto")                         # autonomous: a task out of repairs does not stop the run
+    assert main(["init", a, "--project-id", "notes", "--goal", "CLI Python", "--mock", "--mode", "autonomous"]) == 0
+    assert main(["plan", a]) == 0
+    assert main(["run", a, "--defect", "task.core_module:" + _first_criterion(a, "task.core_module") + ":9"]) == 0
 
 
 def _first_criterion(d, task_id):
@@ -188,3 +193,184 @@ def _first_criterion(d, task_id):
 def test_version():
     import shams
     assert shams.__version__.startswith("2.")
+
+
+# --------------------------------------------------------------------------- real QC for the game template
+def test_game_template_criteria_have_real_checks():
+    for engine, mesh_type in (("web", "glb"), ("unreal", "mesh_unverified")):
+        dag = instantiate("vertical_slice_3d", "p", "g", engine=engine)
+        t = {x["task_id"]: x for x in dag["tasks"]}
+        crit = {c["id"]: c for c in t["task.player_model"]["acceptance_criteria"]}
+        assert crit["ac.player_mesh_valid"]["check"]["type"] == mesh_type
+        assert crit["ac.player_mesh_valid"]["check"]["max_triangles"] == 20000
+        assert any(o["media_type"] == "image/png" for o in t["task.player_model"]["outputs"])
+        env = {c["id"]: c for c in t["task.environment_model"]["acceptance_criteria"]}
+        assert env["ac.environment_valid"]["check"]["type"] == mesh_type
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="needs Node.js")
+def test_game_compile_checker_parses_web_code(tmp_path):
+    from shams_packs.game import PACK
+    chk = PACK.checkers()["compile"]
+    ok = tmp_path / "ok.ts"
+    ok.write_text('import * as THREE from "three";\nexport class P { speed: number = 3; move(dt: number): void {} }\n')
+    bad = tmp_path / "bad.ts"
+    bad.write_text("export class P { move(dt: number { }\n")
+    cs = tmp_path / "a.cs"
+    cs.write_text("class A {}")
+    def out(p, mt):
+        return [{"logical_id": "code.x", "path": p.name, "media_type": mt, "file": str(p), "role": "output"}]
+    assert chk("compile", {}, [], outputs=out(ok, "text/typescript"))[0] == "PASS"
+    v, d = chk("compile", {}, [], outputs=out(bad, "text/typescript"))
+    assert v == "FAIL" and "compile error" in d
+    assert chk("compile", {}, [], outputs=out(cs, "text/x-csharp"))[0] == "NOT_VERIFIED"
+    assert chk("compile", {}, [], outputs=[])[0] == "FAIL"
+
+
+def test_web_game_template_criteria_all_have_checkers(tmp_path):
+    """A criterion with no checker stops at HUMAN_REVIEW and blocks everything after it."""
+    from shams.verification.checkers import CHECK_TYPES, AssetCheckers
+    from shams_packs.game import PACK
+    pack = PACK.checkers()
+    not_yet = {"unit_test", "screenshot", "integration_test", "runtime_log", "metric"}   # web runners pending
+    dag = instantiate("vertical_slice_3d", "p", "g", engine="web")
+    missing = []
+    for t in dag["tasks"]:
+        for c in t["acceptance_criteria"]:
+            ctype = (c.get("check") or {}).get("type")
+            ok = (ctype and (hasattr(AssetCheckers, f"_{ctype}") or ctype in CHECK_TYPES)) or \
+                c["kind"] in pack or c["kind"] == "exists" or c["kind"] in not_yet
+            if not ok and t["task_id"] != "task.sfx_core":       # audio has no worker yet: BLOCKED anyway
+                missing.append(f"{t['task_id']}:{c['id']}")
+    assert not missing
+    f = tmp_path / "brief.txt"
+    f.write_text("adult woman in her late 20s", encoding="utf-8")
+    chk = AssetCheckers().table()["exists"]
+    assert chk("exists", {"id": "e", "kind": "exists"}, [], outputs=[
+        {"logical_id": "b", "media_type": "text/plain", "file": str(f), "role": "output"}])[0] == "PASS"
+    (tmp_path / "empty.txt").write_text("", encoding="utf-8")
+    assert chk("exists", {"id": "e", "kind": "exists"}, [], outputs=[
+        {"logical_id": "b", "media_type": "text/plain", "file": str(tmp_path / "empty.txt"), "role": "output"}])[0] == "FAIL"
+
+
+def _web_toolchain():
+    from shams_packs.game import toolchain
+    return toolchain.vitest_entry() if shutil.which("node") else None
+
+
+def test_web_unit_test_checker_without_toolchain_is_not_verified(tmp_path, monkeypatch):
+    from shams_packs.game import PACK
+    monkeypatch.setenv("SHAMS_TOOLCHAINS", str(tmp_path / "none"))
+    code = tmp_path / "a.ts"
+    code.write_text("export const x = 1;\n", encoding="utf-8")
+    outs = [{"logical_id": "code.a", "path": "src/game/A.ts", "media_type": "text/typescript", "file": str(code)},
+            {"logical_id": "test.a", "path": "src/game/ATests.ts", "media_type": "text/typescript", "file": str(code)}]
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs)
+    assert v == "NOT_VERIFIED" and ("toolchain install web" in d or "Node.js" in d)
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs[:1])
+    assert v == "FAIL" and "no test file" in d
+
+
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_unit_test_checker_runs_vitest(tmp_path):
+    from shams_packs.game import PACK
+    chk = PACK.checkers()["unit_test"]
+    (tmp_path / "up").mkdir()
+    scaffold = tmp_path / "up" / "config.ts"
+    scaffold.write_text("export const SPEED: number = 2;\n", encoding="utf-8")
+    code = tmp_path / "Spawner.ts"
+    code.write_text("import * as THREE from 'three';\nimport { SPEED } from '../../config';\n"
+                    "export function step(p: THREE.Vector3, dt: number): THREE.Vector3 {\n"
+                    "  return p.clone().add(new THREE.Vector3(SPEED * dt, 0, 0));\n}\n", encoding="utf-8")
+    good = tmp_path / "SpawnerTests.ts"
+    good.write_text("import { describe, it, expect } from 'vitest';\nimport * as THREE from 'three';\n"
+                    "import { step } from './Spawner';\n"
+                    "describe('step', () => { it('moves', () => { expect(step(new THREE.Vector3(), 1).x).toBe(2); }); });\n",
+                    encoding="utf-8")
+    outs = [{"logical_id": "project.scaffold", "path": "src/config.ts", "media_type": "text/typescript",
+             "file": str(scaffold), "role": "input"},
+            {"logical_id": "code.spawner", "path": "src/game/Spawning/Spawner.ts", "media_type": "text/typescript",
+             "file": str(code), "role": "output"},
+            {"logical_id": "test.spawner", "path": "src/game/Spawning/SpawnerTests.ts",
+             "media_type": "text/typescript", "file": str(good), "role": "output"}]
+    crit = {"id": "t", "kind": "unit_test", "check": {"test_filter": "SpawnerTests"}}
+    v, d = chk("unit_test", crit, [], outputs=outs)
+    assert v == "PASS", d
+    good.write_text(good.read_text(encoding="utf-8").replace("toBe(2)", "toBe(3)"), encoding="utf-8")
+    v, d = chk("unit_test", crit, [], outputs=outs)
+    assert v == "FAIL" and "tests failed" in d
+
+
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_unit_test_checker_accepts_jest_style_mocks(tmp_path):
+    from shams_packs.game import PACK
+    code = tmp_path / "Mech.ts"
+    code.write_text("export function fire(cb: (n: number) => void) { cb(3); }\n", encoding="utf-8")
+    test = tmp_path / "MechTests.ts"
+    test.write_text("import { fire } from './Mech';\n"
+                    "describe('fire', () => { it('calls back', () => { const cb = jest.fn(); fire(cb); "
+                    "expect(cb).toHaveBeenCalledWith(3); }); });\n", encoding="utf-8")
+    outs = [{"logical_id": "code.m", "path": "src/game/Mech.ts", "media_type": "text/typescript", "file": str(code)},
+            {"logical_id": "test.m", "path": "src/game/MechTests.ts", "media_type": "text/typescript",
+             "file": str(test)}]
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs)
+    assert v == "PASS", d
+
+
+def test_web_unit_test_criteria_carry_the_engine_test_hint():
+    from shams_packs.game import engines
+    hint = engines.ENGINES["web"].test_hint
+    assert "vitest" in hint and "jest" in hint
+    raw = (Path(__file__).parents[1] / "shams_packs/game/templates/vertical_slice_3d.json").read_text(encoding="utf-8")
+    assert raw.count("${test_hint}") == 4
+    assert engines.ENGINES["unity"].tokens()["test_hint"] == ""
+
+
+def _browser():
+    from shams_tools import web_build
+    return web_build.find_browser()
+
+
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_build_and_smoke_in_a_headless_browser(tmp_path):
+    from shams_tools import web_build
+    scene = tmp_path / "Slice1.ts"
+    scene.write_text("""import * as THREE from 'three';
+import { SPEED } from '../game/Core/Config';
+export function start(container: HTMLElement): void {
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(640, 360);
+  container.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x336699);
+  const cam = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 100);
+  cam.position.z = 3;
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshNormalMaterial());
+  scene.add(cube);
+  const tick = () => { cube.rotation.y += SPEED; renderer.render(scene, cam); requestAnimationFrame(tick); };
+  tick();
+}
+""", encoding="utf-8")
+    cfg = tmp_path / "Config.ts"
+    cfg.write_text("export const SPEED = 0.01;\n", encoding="utf-8")
+    files = [("src/scenes/Slice1.ts", scene), ("src/game/Core/Config.ts", cfg)]
+    r = web_build.build_web(files)
+    try:
+        assert r["ok"], r["log"]
+        assert (r["dist"] / "index.html").exists() and r["entry"]["src/main.ts"].endswith("scenes/Slice1.ts")
+        z = tmp_path / "game.zip"
+        web_build.zip_dir(r["dist"], z)
+        outs = [{"logical_id": "build.game", "media_type": "application/zip", "file": str(z), "role": "output"}]
+        assert web_build.check_web_zip({}, outs)[0] == "PASS"
+        if _browser():
+            v, d = web_build.check_web_smoke({"check": {"seconds": 4}}, outs)
+            assert v == "PASS", d
+    finally:
+        shutil.rmtree(r["work"], ignore_errors=True)
+    broken = tmp_path / "Broken.ts"
+    broken.write_text("export function start(el: HTMLElement) { throw new Error('boom at start'); }\n", encoding="utf-8")
+    if _browser():
+        v, d = web_build.check_web_smoke({"check": {"seconds": 3}}, [
+            {"logical_id": "scene", "path": "src/scenes/Broken.ts", "media_type": "text/typescript",
+             "file": str(broken), "role": "output"}])
+        assert v == "FAIL" and "boom" in d, d
