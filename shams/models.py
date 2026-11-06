@@ -35,11 +35,12 @@ ROLE_SPECS: dict[str, dict[str, Any]] = {
     "scene3d": {"label": "3D Scene / Procedural", "backend": "ollama", "kind": "llm_agent", "impl": "scene3d",
                 "capabilities": ["scene.*", "mesh.procedural", "mesh.text_to_3d"],
                 "needs": ["completion"], "num_ctx": 16384},
-    # game code (gameplay, scene, HUD) goes to the 3D/game model by default; the general coder takes over
-    # after the repair router switches worker. Uses the scene3d model unless the role is set on its own.
+    # optional specialised game-code model (gameplay, scene, HUD): only when models.roles.game_coder is set.
+    # Without it the general coder takes code.game.* tasks (user choice 2026-11-06: the 4B 3D model wrote
+    # plans instead of code). When set, the coder takes over after the repair router switches worker.
     "game_coder": {"label": "Game Code (3D/gameplay)", "backend": "ollama", "kind": "llm_agent",
                    "capabilities": ["code.game.*", "integration.game"], "needs": ["completion"],
-                   "num_ctx": 16384, "inherit_model": "scene3d"},
+                   "num_ctx": 16384},
     "visual_qc": {"label": "Visual QC", "backend": "ollama", "kind": "inference",
                   "capabilities": ["visual_review", "visual_review.*"], "needs": ["vision"], "num_ctx": 8192},
     "embedding": {"label": "Embedding / Retrieval", "backend": "ollama", "kind": "inference", "worker": False,

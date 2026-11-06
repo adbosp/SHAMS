@@ -1074,7 +1074,7 @@ def test_scene3d_json_prompt_includes_the_text_inputs(tmp_path):
     assert user["inputs"] == [{"name": "brief.npc", "text": brief.read_text(encoding="utf-8")}]
 
 
-def test_game_code_goes_to_the_3d_model_first_then_the_coder(tmp_path):
+def test_game_code_goes_to_the_coder_unless_a_game_coder_is_set(tmp_path):
     from shams.models import ModelRegistry
     from shams.nodes.registry import NodeRegistry
     disc = {"status": "ok", "loaded": [], "models": [
@@ -1082,10 +1082,13 @@ def test_game_code_goes_to_the_3d_model_first_then_the_coder(tmp_path):
         {"name": "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0", "capabilities": ["completion"], "size_mb": 4500}]}
     reg = ModelRegistry({"models": {"roles": {"coder": {"model": "qwen2.5-coder:14b"},
                                               "scene3d": {"model": "Qwen3.5-4B-3D-Coder:Q8_0"}}}}, ollama=disc)
+    assert reg.binding("game_coder") is None                      # not set: the coder writes game code
+    ws = {w["id"]: w for w in reg.workers()}
+    assert "worker.role.game_coder" not in ws and "code.*" in ws["worker.role.coder"]["capabilities"]
+    reg = ModelRegistry({"models": {"roles": {"coder": {"model": "qwen2.5-coder:14b"},
+                                              "game_coder": {"model": "Qwen3.5-4B-3D-Coder:Q8_0"}}}}, ollama=disc)
     b = reg.binding("game_coder")
     assert b.ok and b.model_id == "hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0"
-    ws = {w["id"]: w for w in reg.workers()}
-    assert "code.game.*" in ws["worker.role.game_coder"]["capabilities"]
 
 
 def test_scheduler_prefers_the_most_specific_worker_and_repair_switches_to_the_next():
