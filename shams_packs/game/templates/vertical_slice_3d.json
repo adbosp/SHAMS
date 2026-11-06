@@ -102,7 +102,7 @@
         },
         {
           "id": "ac.movement_tests",
-          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi.",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "PlayerControllerTests"
@@ -162,7 +162,7 @@
         },
         {
           "id": "ac.spawner_tests",
-          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi.",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "SpawnerTests"
@@ -228,7 +228,7 @@
         },
         {
           "id": "ac.mechanic_tests",
-          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi.",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "CoreMechanicTests"
@@ -300,7 +300,7 @@
         },
         {
           "id": "ac.hud_tests",
-          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi.",
+          "description": "Unit test của task pass. Test chạy trong Node, không có trình duyệt: code được test không được đụng tới document, window, canvas, WebGLRenderer hay OrbitControls khi import hay khi khởi tạo. Tách logic (vị trí, vận tốc, luật chơi, điểm số) thành hàm hoặc class thuần, nhận input qua tham số, và test phần đó; phần gắn với DOM/renderer để ở file hoặc hàm riêng không bị test gọi. ${test_hint}",
           "kind": "unit_test",
           "check": {
             "test_filter": "HudTests"

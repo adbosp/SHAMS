@@ -301,6 +301,31 @@ def test_web_unit_test_checker_runs_vitest(tmp_path):
     assert v == "FAIL" and "tests failed" in d
 
 
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_unit_test_checker_accepts_jest_style_mocks(tmp_path):
+    from shams_packs.game import PACK
+    code = tmp_path / "Mech.ts"
+    code.write_text("export function fire(cb: (n: number) => void) { cb(3); }\n", encoding="utf-8")
+    test = tmp_path / "MechTests.ts"
+    test.write_text("import { fire } from './Mech';\n"
+                    "describe('fire', () => { it('calls back', () => { const cb = jest.fn(); fire(cb); "
+                    "expect(cb).toHaveBeenCalledWith(3); }); });\n", encoding="utf-8")
+    outs = [{"logical_id": "code.m", "path": "src/game/Mech.ts", "media_type": "text/typescript", "file": str(code)},
+            {"logical_id": "test.m", "path": "src/game/MechTests.ts", "media_type": "text/typescript",
+             "file": str(test)}]
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs)
+    assert v == "PASS", d
+
+
+def test_web_unit_test_criteria_carry_the_engine_test_hint():
+    from shams_packs.game import engines
+    hint = engines.ENGINES["web"].test_hint
+    assert "vitest" in hint and "jest" in hint
+    raw = (Path(__file__).parents[1] / "shams_packs/game/templates/vertical_slice_3d.json").read_text(encoding="utf-8")
+    assert raw.count("${test_hint}") == 4
+    assert engines.ENGINES["unity"].tokens()["test_hint"] == ""
+
+
 def _browser():
     from shams_tools import web_build
     return web_build.find_browser()

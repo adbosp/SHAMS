@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web unit tests: Jest-style calls (`jest.fn`, `jest.spyOn`) run on Vitest through a setup file that maps `jest` to `vi`. Engine profiles get a `test_hint` (`${test_hint}` in templates); for Web it tells the coder to use Vitest's `vi` and keep tests next to the module they test. Template tokens are JSON-escaped, so engine text may contain quotes.
+
 **Direct Mode and presets** (ADR-121)
 - Direct Mode: pick a model or preset, enter a prompt, run one task without planner or DAG. It runs on the same scheduler, GPU lease, model switching, workers, artifact registry, QC and event log. App view "Direct Mode", API `/api/direct/*`, CLI `shams presets` and `shams direct`.
 - Presets in the Model Registry (`models.presets`, plus every resolved role): capability, provider, resources, input/output schema, execution modes. Direct-only presets are never picked by Autonomous Mode.

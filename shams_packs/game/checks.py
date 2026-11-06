@@ -65,10 +65,16 @@ VITEST_CONFIG = """export default {
     exclude: ["**/node_modules/**"],
     environment: "node",
     globals: true,
+    setupFiles: ["./shams.setup.mjs"],
     watch: false,
     testTimeout: 20000,
   },
 };
+"""
+# Models often write Jest-style tests (jest.fn, jest.spyOn). Vitest's `vi` has the same API for those calls,
+# so expose it as `jest` instead of failing on `ReferenceError: jest is not defined`.
+VITEST_SETUP = """import { vi } from "vitest";
+if (typeof globalThis.jest === "undefined") globalThis.jest = vi;
 """
 TEST_NAME = ("Test.", "Tests.", ".test.", ".spec.")
 
@@ -122,6 +128,7 @@ def unit_test_check(kind: str, criterion: dict, contents: list[str], outputs: li
                     dest = new
                 test_paths.append(dest.relative_to(td).as_posix())
         (td / "vitest.config.mjs").write_text(VITEST_CONFIG, encoding="utf-8")
+        (td / "shams.setup.mjs").write_text(VITEST_SETUP, encoding="utf-8")
         try:
             p = subprocess.run([node, str(entry), "run", "--root", str(td), "--config", str(td / "vitest.config.mjs"),
                                 *test_paths], cwd=td, capture_output=True, text=True, timeout=300,
