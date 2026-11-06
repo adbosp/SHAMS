@@ -12,10 +12,11 @@ import re
 import threading
 import time
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from shams import __version__, contracts, hardware, packs, providers
 from shams import settings as settings_mod
@@ -111,6 +112,17 @@ class DirectIn(BaseModel):
     preset: str
     params: dict = {}
     confirm_adult: bool = False
+
+
+class ChatMessageIn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=100000)
+
+
+class WebChatIn(BaseModel):
+    preset: str
+    prompt: str = Field(min_length=1, max_length=100000)
+    history: list[ChatMessageIn] = Field(default_factory=list, max_length=20)
 
 
 class OpenIn(BaseModel):
@@ -658,8 +670,9 @@ class DirectService:
     """Direct Mode (ADR-121): one prompt on one chosen preset. Tasks live in ``<workspace>/_direct`` and run on
     the same scheduler, GPU lease, workers, artifact registry, QC and event log as planned projects."""
 
-    def __init__(self, workspace: Path):
-        self.dir = Path(workspace) / "_direct"
+    def __init__(self, workspace: Path, *, folder: str = "_direct", api_path: str = "/api/direct"):
+        self.dir = Path(workspace) / folder
+        self.api_path = api_path
         self.lock = threading.RLock()
         self.studio: Studio | None = None
         self.threads: dict[str, threading.Thread] = {}
@@ -691,13 +704,15 @@ class DirectService:
         return {"presets": out, "confirm_text": policy.CONFIRM_TEXT,
                 "allow_adult_content": bool(s["general"].get("allow_adult_content", False))}
 
-    def run(self, body: DirectIn) -> dict:
+    def run(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> dict:
         from shams import policy
         st = self._open()
         with self.lock:
             try:
                 st.settings = settings_mod.load(self.dir)          # pick up presets added since the app started
-                tid = st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult)
+                tid = st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult,
+                                chat_history=chat_history)
+                queued = self._view(st, st.db.task(tid), events=True)
             except policy.PolicyError as e:
                 raise HTTPException(403, str(e))
             except KeyError as e:
@@ -711,7 +726,7 @@ class DirectService:
         t = threading.Thread(target=go, daemon=True)
         self.threads[tid] = t
         t.start()
-        return self.task(tid)
+        return {**queued, "running": True}
 
     def tasks(self, limit: int = 30) -> list[dict]:
         st = self._open()
@@ -735,7 +750,7 @@ class DirectService:
              "running": tid in self.threads and self.threads[tid].is_alive(),
              "summary": h.get("summary"), "error": h.get("blocked_reason"), "usage": h.get("usage"),
              "outputs": [{"logical_id": a["logical_id"], "media_type": a["media_type"], "sha256": a["sha256"],
-                          "url": f"/api/direct/artifact/{a['sha256']}"} for a in arts]}
+                            "url": f"{self.api_path}/artifact/{a['sha256']}"} for a in arts]}
         if events:
             v["events"] = [{"seq": r["seq"], "type": r["type"], "at": r["ts"],
                             "subject": r["subject_id"]}
@@ -761,6 +776,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     app.state.svc = svc
     direct = DirectService(svc.workspace)
     app.state.direct = direct
+    web_chat = DirectService(svc.workspace, folder="_web_chat", api_path="/api/web-chat")
 
     @app.get("/")
     def index():
@@ -859,6 +875,30 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     @app.get("/api/direct/presets")
     def direct_presets():
         return direct.presets()
+
+    @app.get("/api/web-chat/models")
+    def web_chat_models():
+        return {"models": [{k: p[k] for k in ("id", "label", "model", "status")}
+                           for p in web_chat.presets()["presets"]
+                           if p["kind"] == "chat" and "direct" in p["execution_modes"]
+                           and not p["content_policy"].get("adult")]}
+
+    @app.post("/api/web-chat/send")
+    def web_chat_send(body: WebChatIn):
+        if not body.prompt.strip():
+            raise HTTPException(400, "Tin nhắn trống")
+        if sum(len(message.content) for message in body.history) > 100000:
+            raise HTTPException(400, "Ngữ cảnh cuộc trò chuyện quá dài")
+        return web_chat.run(DirectIn(preset=body.preset, params={"prompt": body.prompt.strip()}),
+                            chat_history=[message.model_dump() for message in body.history])
+
+    @app.get("/api/web-chat/tasks/{task_id}")
+    def web_chat_task(task_id: str):
+        return web_chat.task(task_id)
+
+    @app.get("/api/web-chat/artifact/{sha}")
+    def web_chat_artifact(sha: str):
+        return web_chat.artifact(sha)
 
     @app.post("/api/direct/run")
     def direct_run(body: DirectIn):

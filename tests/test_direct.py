@@ -228,3 +228,39 @@ def test_direct_api_runs_a_task_and_serves_the_artifact(tmp_path, isolated_home,
     assert r.status_code == 200 and r.text == f"reply from {HERETIC}" and r.headers["content-type"].startswith("text/markdown")
     assert c.get("/api/direct/tasks").json()["tasks"][0]["task_id"] == t["task_id"]
     assert not any(p["folder"] == "_direct" for p in c.get("/api/projects").json()["projects"])
+
+
+def test_web_chat_passes_history_without_tools_and_only_accepts_chat_presets(tmp_path, isolated_home, ollama):
+    pytest.importorskip("fastapi")
+    import time
+    from fastapi.testclient import TestClient
+    from apps.api.server import create_app
+
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    settings = _settings(ollama.url, "http://127.0.0.1:9", allow_adult_content=True)
+    settings["research"] = {"enabled": True}
+    (isolated_home / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    with TestClient(create_app(tmp_path / "ws")) as client:
+        assert "chat.js" in client.get("/").text
+        assert client.get("/static/chat.js").status_code == 200
+        presets = client.get("/api/web-chat/models").json()["models"]
+        assert {p["id"] for p in presets} == {"coder", "qwen35-heretic-q4"}
+        assert client.post("/api/web-chat/send", json={"preset": "sdxl", "prompt": "hello"}).status_code == 400
+        assert client.post("/api/web-chat/send", json={"preset": "coder", "prompt": "  "}).status_code == 400
+        history = [{"role": "user", "content": "My word is violet."},
+                   {"role": "assistant", "content": "Understood."}]
+        r = client.post("/api/web-chat/send", json={"preset": "coder", "prompt": "What word?", "history": history})
+        assert r.status_code == 200, r.text
+        tid = r.json()["task_id"]
+        end = time.monotonic() + 20
+        while time.monotonic() < end:
+            task = client.get(f"/api/web-chat/tasks/{tid}").json()
+            if not task["running"]:
+                break
+            time.sleep(0.05)
+        assert task["state"] == "ACCEPTED", task
+        assert client.get(task["outputs"][0]["url"]).status_code == 200
+        assert client.get(f"/api/direct/tasks/{tid}").status_code == 404
+        request = [c[2] for c in ollama.server.calls if c[1] == "/api/chat"][-1]
+        assert request["messages"] == [*history, {"role": "user", "content": "What word?"}]
+        assert "tools" not in request

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web UI: chat văn bản theo từng cuộc trò chuyện, chọn model, lưu lịch sử trên trình duyệt và giữ ngữ cảnh khi hỏi tiếp. Luồng chat web không gọi công cụ và không mở màn hình điều phối dự án.
+
 - 3D briefs: the planner turns the request into detailed English build descriptions before the 3D model runs: each character (height, hair, skin, every clothing item with colour) and the play area (`brief.environment`: ground, props with counts, sizes, colours, layout). Vietnamese slang such as 'cưa gái' is explained as flirting, not a saw.
 
 - Settings > Chung: switches for 18+ presets (`general.allow_adult_content`) and opening a finished game (`general.open_game`). Direct Mode links to the switch instead of asking to edit JSON.

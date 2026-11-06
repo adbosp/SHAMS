@@ -49,11 +49,12 @@ class DirectChatWorker:
         task = ctx["task"]
         params = dict(task.get("params") or {})
         prompt = params.get("prompt") or task.get("description") or task["title"]
-        messages = ([{"role": "system", "content": params["system"]}] if params.get("system") else []) + \
-                   [{"role": "user", "content": prompt}]
+        messages = [{"role": "system", "content": params["system"]}] if params.get("system") else []
+        messages.extend(params.get("_chat_history", []))
+        messages.append({"role": "user", "content": prompt})
         t0 = time.monotonic()
         try:
-            if self._use_tools(params):
+            if "_chat_history" not in params and self._use_tools(params):
                 r = self._chat_with_tools(messages, params)
             else:
                 r = self.provider.chat(messages, model=self.model, **self._options(params))
