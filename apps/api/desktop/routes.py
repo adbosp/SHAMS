@@ -80,6 +80,10 @@ class OllamaIn(BaseModel):
     keep_alive: Any = "10m"
 
 
+class UrlIn(BaseModel):
+    url: str
+
+
 class RegisterIn(BaseModel):
     inventory_id: str
     preset_id: str | None = None
@@ -438,6 +442,27 @@ def install(app: FastAPI, svc: Any, direct: Any, token: str | None = None) -> De
         return {"git": True, "branch": run("rev-parse", "--abbrev-ref", "HEAD").strip(),
                 "status": run("status", "--short"), "diff": run("diff")[:200_000]}
 
+    @app.post("/api/desktop/open-url")
+    def open_url(body: UrlIn):
+        """Open a local link (a playable build) in the default browser. Only this backend or a loopback
+        address is allowed, so a page or model output cannot make the app open arbitrary sites."""
+        from urllib.parse import urlsplit
+        u = urlsplit(body.url)
+        if u.scheme not in ("http", "https") or (u.hostname or "") not in ("127.0.0.1", "localhost"):
+            raise HTTPException(400, "only local http links can be opened from here")
+        import webbrowser
+        threading.Thread(target=webbrowser.open, args=(body.url,), daemon=True).start()
+        return {"opened": body.url}
+
+    def _playable() -> list[dict]:
+        try:
+            builds = svc.playable()
+        except Exception:  # noqa: BLE001 - a closed project has no builds
+            return []
+        base = getattr(svc, "base_url", None) or ""
+        return [{"task_id": tid, "url": f"{base}/play/{tid}/" if base else None, "dir": str(b["dir"]),
+                 "attempt": b.get("attempt"), "failed": b.get("failed") or []} for tid, b in builds.items()]
+
     # ------------------------------------------------------------------ autonomous progress stream
     @app.get("/api/desktop/autonomous/stream")
     def autonomous_stream(interval: float = 1.0):
@@ -450,6 +475,7 @@ def install(app: FastAPI, svc: Any, direct: Any, token: str | None = None) -> De
                 except Exception as e:  # noqa: BLE001
                     st = {"error": str(e)}
                 st["gpu_gate"] = GPU_GATE.status()
+                st["playable"] = _playable()
                 body = json.dumps(st, ensure_ascii=False, default=str)
                 if body != last:
                     last, idle = body, 0

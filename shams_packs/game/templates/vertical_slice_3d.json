@@ -323,8 +323,8 @@
     },
     {
       "task_id": "task.character_brief",
-      "title": "Mô tả ngoại hình nhân vật (cho model dựng 3D)",
-      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Ghi rõ màu da, màu tóc và màu từng món trang phục (ví dụ 'red dress', 'blue jeans', 'white shirt'), vì model 3D dựng nhân vật bằng khối hình học và tô theo màu đó. Viết tối đa 2 câu, chỉ về chính người đó. Không dùng các từ dễ làm nhân vật trông trẻ như 'petite', 'cute', 'girl', 'boy'; dùng 'woman', 'man'.",
+      "title": "Mô tả 3D chi tiết: nhân vật và bối cảnh (cho model 3D)",
+      "description": "Model 3D chỉ hiểu mô tả cụ thể bằng tiếng Anh, nên hãy diễn giải yêu cầu dự án thành mô tả dựng hình chi tiết. Hiểu đúng tiếng lóng tiếng Việt: 'cưa gái', 'cưa trai', 'tán', 'thả thính' nghĩa là tán tỉnh, làm quen một người, KHÔNG phải cái cưa, cây hay dụng cụ. Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Với mỗi nhân vật, viết 3 đến 5 câu tiếng Anh (tối đa 90 từ) mà model dựng bằng khối hình học làm theo được: chiều cao (nam khoảng 1.75 m, nữ khoảng 1.65 m), dáng người, màu da, kiểu và màu tóc (ngắn, dài, buộc đuôi ngựa...), từng món trang phục với màu cụ thể (ví dụ 'white short-sleeve shirt, blue jeans, brown shoes', 'red knee-length dress, white sandals'), phụ kiện nổi bật nếu có. File thứ ba (brief.environment) mô tả bối cảnh màn chơi bằng tiếng Anh (tối đa 150 từ): loại mặt đất và màu, kích thước khu vực (khoảng 30 x 30 m), danh sách vật thể kèm số lượng, kích thước và màu (ví dụ '8 trees about 4 m tall with brown trunks and round green crowns', '3 flower beds with red and yellow flowers', 'a grey stone path from the south edge to the centre', 'a wooden bench'), cách bố trí (vật ở rìa, giữa khu vực để trống cho nhân vật). Không có người trong bối cảnh. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH, trang phục người lớn, không mô tả gợi dục, không thương hiệu hay người thật. Mỗi file ghi đúng một lần.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -340,12 +340,18 @@
           "logical_id": "brief.npc",
           "media_type": "text/plain",
           "contract": "doc.text"
+        },
+        {
+          "name": "environment_brief",
+          "logical_id": "brief.environment",
+          "media_type": "text/plain",
+          "contract": "doc.text"
         }
       ],
       "acceptance_criteria": [
         {
           "id": "ac.brief_exists",
-          "description": "Có hai file mô tả, mỗi file tả một nhân vật bằng tiếng Anh",
+          "description": "Có ba file mô tả bằng tiếng Anh: nhân vật chính, NPC, bối cảnh",
           "kind": "exists",
           "check": {
             "type": "text",
@@ -366,7 +372,7 @@
     {
       "task_id": "task.player_model",
       "title": "Mesh nhân vật chính (Qwen 3D, khối hình học)",
-      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height 1.7 m, feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object.",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height as described (about 1.65 to 1.75 m), feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object. Follow the height, hair, skin and clothing colours given in the character description exactly.",
       "capability": "mesh.procedural",
       "depends_on": [
         "task.character_brief"
@@ -425,7 +431,7 @@
     {
       "task_id": "task.npc_model",
       "title": "Mesh NPC (Qwen 3D, khối hình học)",
-      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height 1.7 m, feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object.",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height as described (about 1.65 to 1.75 m), feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object. Follow the height, hair, skin and clothing colours given in the character description exactly.",
       "capability": "mesh.procedural",
       "depends_on": [
         "task.character_brief"
@@ -484,13 +490,21 @@
     {
       "task_id": "task.environment_model",
       "title": "Bối cảnh màn chơi (Qwen 3D, khối hình học)",
-      "description": "Build the play area named in the project goal as ONE scene description (JSON primitives): a flat ground plane about 30 x 30 m at y=0 with a fitting colour (grass, sand, floor...), and 10 to 30 simple props that make the place recognisable (for a garden: trees made of a trunk cylinder plus a sphere or cone crown, flower beds, bushes, a stone path, a bench, a small fence). Keep the centre (a circle of 4 m around the origin) free so the characters can stand there. Real-world sizes, every prop resting on the ground. No people or characters.",
+      "description": "Build the play area as ONE scene description (JSON primitives) following the environment description in the inputs (ground, props, counts, sizes, colours, layout). Ground: a flat plane about 30 x 30 m at y=0. Keep the centre (a circle of 4 m around the origin) free for the characters. Real-world sizes, every prop resting on the ground, trees made of a trunk cylinder plus a sphere or cone crown. No people or characters.",
       "capability": "mesh.procedural",
       "params": {
         "builder": "json"
       },
-      "depends_on": [],
-      "inputs": [],
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.environment"
+        }
+      ],
       "outputs": [
         {
           "name": "environment",

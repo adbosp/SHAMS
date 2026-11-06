@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowUp, CheckCircle2, Cpu, FolderOpen, Layers, Play, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUp, CheckCircle2, Cpu, FolderOpen, Gamepad2, Layers, Play, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { api, subscribe } from "../lib/api";
 
 type Task = { task_id: string; title: string; state: string; label: string; attempt: number; capability: string;
@@ -9,7 +9,7 @@ type State = {
   projects: { id: string; folder: string; goal: string; mock: boolean }[];
   mode: string; mock_mode: boolean; running: boolean;
   progress: { done: number; total: number };
-  chat: { role: string; text: string; ts: string }[];
+  chat: { role: string; text: string; ts: string; url?: string }[];
   tasks: Task[];
   active: { label: string; lane: string; task_id: string; model: string | null; gpu: boolean } | null;
   next_worker: string | null;
@@ -20,6 +20,7 @@ type State = {
   review: Task[];
   vram: { name: string; used_mb: number | null; total_mb: number } | null;
   gpu_gate?: { holder: { owner: string; model: string | null } | null; waiting: unknown[] };
+  playable?: { task_id: string; url: string | null; dir: string; attempt: number; failed: string[] }[];
   error?: string;
 };
 
@@ -89,6 +90,12 @@ export default function AutonomousPage() {
               {st.projects.map((p) => <option key={p.id} value={p.id}>{p.goal || p.folder}{p.mock ? " (thử)" : ""}</option>)}
             </select>
             <button className="btn py-1" disabled={busy} onClick={() => act(() => api.post("/api/run"))}><Play size={14} /> Tiếp tục</button>
+            {st.project.id && (
+              <button className="btn py-1" disabled={busy} title="Xóa vĩnh viễn thư mục dự án" onClick={() => {
+                if (!confirm(`Xóa VĨNH VIỄN dự án "${st.project.name}"? Toàn bộ thư mục dự án bị xóa khỏi ổ đĩa, không khôi phục được (có ghi vào _logs/deletions.log).`)) return;
+                act(() => api.post("/api/projects/delete", { id: st.project.id }));
+              }}><Trash2 size={14} /></button>
+            )}
           </div>
           <div className="mt-1 text-sm text-muted">
             {st.project.name} · {st.project.setup} · chế độ {st.mode}{st.mock_mode ? " · chạy thử (không gọi model)" : ""}
@@ -107,6 +114,23 @@ export default function AutonomousPage() {
                 setGoal("");
               })}><ArrowUp size={16} /></button>
           </div>
+
+          {/* playable builds */}
+          {st.playable && st.playable.length > 0 && (
+            <div className="mt-4 flex flex-col gap-2">
+              {st.playable.map((g) => (
+                <div key={g.task_id} className={`card flex items-center gap-3 p-3 ${g.failed.length ? "border-warn/50" : "border-ok/50"}`}>
+                  <Gamepad2 size={20} className={g.failed.length ? "text-warn" : "text-ok"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{g.failed.length ? "Bản build chưa qua hết kiểm tra" : "Bản build đã qua kiểm tra"} · {g.task_id}</div>
+                    <div className="truncate text-xs text-muted">{g.failed.length ? `Chưa đạt: ${g.failed.join(", ")} · ` : ""}{g.dir}</div>
+                  </div>
+                  {g.url && <button className="btn-primary" onClick={() => act(() => api.post("/api/desktop/open-url", { url: g.url }))}>
+                    <Play size={14} /> Chơi thử</button>}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* progress */}
           <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -174,7 +198,8 @@ export default function AutonomousPage() {
         </div>
         <div className="max-h-60 overflow-y-auto border-t border-line p-2 text-xs">
           {st.chat.slice(-6).map((m, i) => (
-            <div key={i} className="mb-1.5"><span className="font-medium">{m.role === "user" ? "Bạn" : "Director"}:</span> {m.text}</div>
+            <div key={i} className="mb-1.5"><span className="font-medium">{m.role === "user" ? "Bạn" : "Director"}:</span> {m.text}
+              {m.url && <button className="ml-1 text-accent underline" onClick={() => api.post("/api/desktop/open-url", { url: m.url })}>mở</button>}</div>
           ))}
         </div>
       </aside>

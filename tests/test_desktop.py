@@ -368,3 +368,15 @@ def test_history_survives_restart_and_running_jobs_are_marked(tmp_path, isolated
     assert c2.get("/api/desktop/jobs").json()["jobs"][0]["status"] == "interrupted"
     assert c2.get("/api/desktop/conversations", params={"q": "hi"}).json()["conversations"][0]["id"] == conv["id"]
     app2.state.desktop.store.close()
+
+
+def test_open_url_only_allows_local_links(client, monkeypatch):
+    import webbrowser
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", lambda u: opened.append(u))
+    assert client.post("/api/desktop/open-url", json={"url": "https://evil.example/x"}).status_code == 400
+    assert client.post("/api/desktop/open-url", json={"url": "file:///etc/passwd"}).status_code == 400
+    assert client.post("/api/desktop/open-url", json={"url": "http://127.0.0.1:8765/play/t/"}).status_code == 200
+    import time
+    time.sleep(0.2)
+    assert opened == ["http://127.0.0.1:8765/play/t/"]

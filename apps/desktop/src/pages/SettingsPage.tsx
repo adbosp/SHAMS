@@ -56,6 +56,21 @@ export default function SettingsPage({ theme, setTheme, health }: {
           </div>
         </Section>
 
+        <Section title="Chung">
+          <Toggle label="Tự mở game khi build xong" hint="Mở link chơi thử trong trình duyệt khi task build được nhận."
+            on={user.general?.open_game !== false} set={(v) => patch(["general", "open_game"], v)} />
+          <Toggle label="Cho phép preset 18+" hint="Chỉ dùng trong Direct AI, mỗi lần chạy vẫn phải xác nhận; không bao giờ chạy tự động. Nội dung về trẻ vị thành niên, không đồng thuận hoặc người thật luôn bị từ chối."
+            on={!!user.general?.allow_adult_content} set={(v) => patch(["general", "allow_adult_content"], v)} />
+          <label className="mt-2 flex items-center justify-between gap-3 text-sm">
+            <span>Chế độ mặc định của dự án Autonomous</span>
+            <select className="input w-auto" value={user.general?.default_mode || "autonomous"} onChange={(e) => patch(["general", "default_mode"], e.target.value)}>
+              <option value="autonomous">autonomous (tự chạy đến cuối)</option>
+              <option value="guided">guided</option>
+              <option value="collaborative">collaborative</option>
+            </select>
+          </label>
+        </Section>
+
         <Section title="Quyền của agent (mặc định cho cuộc trò chuyện mới)">
           <select className="input w-auto" value={desktop.permission_mode || "ask"} onChange={(e) => patch(["desktop", "permission_mode"], e.target.value)}>
             <option value="ask">Ask Before Action — hỏi trước mỗi thay đổi/lệnh</option>
@@ -107,6 +122,18 @@ export default function SettingsPage({ theme, setTheme, health }: {
           <p className="mt-1 text-xs text-muted">Không lưu API key ở đây; dùng api_key_env (tên biến môi trường).</p>
         </Section>
       </div>
+    </div>
+  );
+}
+
+function Toggle({ label, hint, on, set }: { label: string; hint: string; on: boolean; set: (v: boolean) => void }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <div><div className="text-sm">{label}</div><div className="text-xs text-muted">{hint}</div></div>
+      <button role="switch" aria-checked={on} onClick={() => set(!on)}
+        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition ${on ? "bg-accent" : "bg-line"}`}>
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+      </button>
     </div>
   );
 }

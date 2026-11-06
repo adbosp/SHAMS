@@ -9,6 +9,7 @@
 - Model Manager: Ollama/ComfyUI discovery, SHAMS inventory matched against installed files, register/enable/disable/remove presets, Ollama load/unload with keep_alive, ComfyUI start and free.
 - Process-wide GPU gate shared by chats, Direct Mode and Autonomous runs; resource monitor; job cancel.
 - Video preset kind (animated WebP), Wan 2.1 1.3B and generic SDXL checkpoint workflows.
+- 3D briefs: the planner turns the request into detailed English build descriptions before the 3D model runs: each character (height, hair, skin, every clothing item with colour) and the play area (`brief.environment`: ground, props with counts, sizes, colours, layout). Vietnamese slang such as 'cưa gái' is explained as flirting, not a saw.
 
 - Settings > Chung: switches for 18+ presets (`general.allow_adult_content`) and opening a finished game (`general.open_game`). Direct Mode links to the switch instead of asking to edit JSON.
 

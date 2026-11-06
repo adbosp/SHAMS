@@ -33,7 +33,8 @@ Controller chạy trên **PC bất kỳ** (không cần GPU, ADR-114). Model AI 
 | Game Pack: Unity, Unreal Engine 5, Godot, Three.js/WebGPU (ADR-115), template trung lập engine | ✅ (mock) |
 | Checker engine thật (compile/test/build/screenshot cho 4 engine; lệnh đã dựng sẵn) | ⏳ Spike S2 |
 | Git worktree theo attempt (ADR-105) | ⏳ |
-| Ứng dụng (`shams ui`): workspace nhiều dự án, Chat, Workflow, AI Workers, Models, Artifacts, QA, Settings, Console | ✅ |
+| Ứng dụng desktop SHAMS (Tauri 2 + React, `apps/desktop`): chat stream, Direct AI, agent coding theo Project, Autonomous, Media, Model Manager | ✅ |
+| Ứng dụng web cũ (`shams ui`): workspace nhiều dự án, Chat, Workflow, AI Workers, Models, Artifacts, QA, Settings, Console | ✅ |
 | SSE thay polling, Node Agent cho máy remote, desktop Tauri | ⏳ Phase 2/4 |
 
 ## Chạy thử (mock, không cần GPU)
@@ -100,6 +101,9 @@ capabilities = ["code.godot_gdscript", "integration"]
 
 ```bash
 pip install -e ".[ui]"
+# Ứng dụng desktop (khuyên dùng, xem docs/DESKTOP.md):
+scripts\desktop-dev.ps1          # cửa sổ SHAMS (Tauri); scripts\desktop-build.ps1 tạo installer .exe/.msi
+# Bản web cũ (dự phòng):
 shams ui                        # workspace mặc định ~/SHAMS, tự mở http://127.0.0.1:8765
 shams ui D:\SHAMS_Projects      # hoặc thư mục bạn chọn
 ```

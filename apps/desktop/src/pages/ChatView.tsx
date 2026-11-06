@@ -10,7 +10,7 @@ import ParamsForm from "../components/ParamsForm";
 
 const PERMS = [
   { id: "ask", label: "Hỏi trước mỗi hành động" },
-  { id: "safe", label: "Cho phép thao tác an toàn trong Project" },
+  { id: "safe", label: "Thao tác an toàn trong Project" },
   { id: "auto", label: "Tự động, có rào chắn" },
 ];
 const MEDIA_KINDS = new Set(["image", "video", "scene3d", "image_to_3d", "audio"]);
@@ -24,7 +24,7 @@ export function PresetPicker({ presets, value, onChange, filter }: {
   const groups: Record<string, Preset[]> = {};
   for (const p of list) (groups[p.kind] ||= []).push(p);
   return (
-    <select className="input w-auto max-w-[260px] py-1 text-xs" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select className="input w-auto max-w-[220px] py-1 text-xs" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">— Chọn model / preset —</option>
       {Object.entries(groups).map(([k, ps]) => (
         <optgroup key={k} label={KIND_LABEL[k] || k}>
@@ -300,7 +300,7 @@ export default function ChatView({ id, shared, go, initialPreset }: {
                     <option value="">— Project —</option>
                     {shared.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
-                  <select className="input w-auto py-1 text-xs" value={perm} title="Quyền của agent" onChange={(e) => {
+                  <select className="input w-auto max-w-[210px] py-1 text-xs" value={perm} title="Quyền của agent" onChange={(e) => {
                     setPerm(e.target.value);
                     if (conv) patchConv({ permission_mode: e.target.value as Conversation["permission_mode"] });
                   }}>
