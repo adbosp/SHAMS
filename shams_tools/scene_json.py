@@ -308,6 +308,31 @@ def support_problems(built: dict, tol: float = 0.02) -> list[str]:
     return box_problems(boxes, tol)
 
 
+def detached_parts(boxes: list, tol: float = 0.01) -> list[str]:
+    """One asset must be one connected piece: every part has to touch (or overlap) the main body. Bounding boxes
+    closer than ``tol`` count as touching. Returns one problem per part that floats free, with the gap."""
+    if len(boxes) < 2:
+        return []
+    def gap(a, b):
+        return max(max(b[1][k] - a[2][k], a[1][k] - b[2][k], 0.0) for k in range(3))
+    vol = lambda b: max(b[2][0] - b[1][0], 1e-6) * max(b[2][1] - b[1][1], 1e-6) * max(b[2][2] - b[1][2], 1e-6)  # noqa: E731
+    main = max(range(len(boxes)), key=lambda i: vol(boxes[i]))
+    group, frontier = {main}, [main]
+    while frontier:
+        i = frontier.pop()
+        for j in range(len(boxes)):
+            if j not in group and gap(boxes[i], boxes[j]) <= tol:
+                group.add(j)
+                frontier.append(j)
+    out = []
+    for j in range(len(boxes)):
+        if j not in group:
+            d = min(gap(boxes[j], boxes[i]) for i in group)
+            out.append(f"{boxes[j][0]['name']} is not attached to the body ({round(d * 100)} cm gap to the nearest "
+                       f"part): move or resize it so it touches or slightly overlaps the part it belongs to")
+    return out
+
+
 def box_problems(boxes: list, tol: float = 0.02, axis: str = "y") -> list[str]:
     """World bounding boxes (``obj`` with name/shape/rotation, lo, hi; Y up) -> problems with the fix spelled out:
     * a smaller object whose centre sits over a larger support and whose bottom is inside it (sinking);

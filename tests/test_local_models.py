@@ -825,3 +825,13 @@ def test_glb_size_uses_node_transforms(tmp_path):
                   nodes=[{"children": [1], "translation": [0, 1, 0]}, {"mesh": 0}, {"mesh": 0, "translation": [2, 0, 0]}])
     b = assets.parse_glb(g2)["bbox"]
     assert abs(b["size"][0] - 3.0) < 1e-6 and abs(b["min"][1] - 0.0) < 1e-6 and abs(b["max"][1] - 2.0) < 1e-6
+
+
+def test_single_asset_parts_must_touch():
+    from shams_tools.scene_json import detached_parts
+    body = ({"name": "Body"}, [-0.2, 0.8, -0.1], [0.2, 1.4, 0.1])
+    head = ({"name": "Head"}, [-0.1, 1.45, -0.1], [0.1, 1.65, 0.1])          # 5 cm above the body
+    leg = ({"name": "Leg"}, [-0.1, 0.0, -0.05], [0.0, 0.8, 0.05])             # touches
+    probs = detached_parts([body, head, leg])
+    assert len(probs) == 1 and probs[0].startswith("Head") and "5 cm" in probs[0]
+    assert detached_parts([body, leg]) == []

@@ -312,7 +312,7 @@
         },
         {
           "id": "ac.player_look",
-          "description": "Ảnh preview cho thấy rõ một nhân vật hình người đứng (đầu, thân, tay, chân), đúng mô tả nhân vật trong yêu cầu",
+          "description": "Ảnh preview cho thấy một nhân vật hình người liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
           "kind": "visual",
           "required": true,
           "check": {
@@ -368,7 +368,7 @@
         },
         {
           "id": "ac.npc_look",
-          "description": "Ảnh preview cho thấy rõ một nhân vật hình người đứng (đầu, thân, tay, chân)",
+          "description": "Ảnh preview cho thấy một nhân vật hình người liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời)",
           "kind": "visual",
           "check": {
             "type": "vlm",

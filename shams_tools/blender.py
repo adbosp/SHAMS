@@ -243,7 +243,7 @@ class Scene3DWorker:
                 if rep.get("ok") and rep.get("mesh_objects", 0) == 0:
                     rep = {**rep, "ok": False, "error": "The script ran but created no mesh objects."}
                 if rep.get("ok"):
-                    issues = blender_physics(rep)
+                    issues = blender_physics(rep, single_asset=str(ctx["task"].get("capability", "")).startswith("mesh."))
                     if not issues or round_ == self.max_fix_rounds:
                         rep["warnings"] = issues
                         rep["fix_rounds"] = list(self.log)
@@ -365,14 +365,18 @@ class Scene3DWorker:
 
 
 
-def blender_physics(rep: dict) -> list[str]:
-    """Same physical checks as JSON scenes, on the world bounding boxes Blender reported (Z up -> Y up)."""
+def blender_physics(rep: dict, single_asset: bool = False) -> list[str]:
+    """Same physical checks as JSON scenes, on the world bounding boxes Blender reported (Z up -> Y up).
+    A single asset (one character, one prop) must also be one connected piece."""
     boxes = []
     for o in rep.get("objects", []):
         if o.get("type") == "MESH" and o.get("bbox"):
             lo, hi = o["bbox"]
             boxes.append(({"name": o["name"], "shape": "mesh"}, [lo[0], lo[2], lo[1]], [hi[0], hi[2], hi[1]]))
-    return scene_json.box_problems(boxes, axis="z") if boxes else []
+    if not boxes:
+        return []
+    out = scene_json.box_problems(boxes, axis="z")
+    return out + (scene_json.detached_parts(boxes) if single_asset else [])
 
 
 def check_blender_import(c: dict, outputs: list[dict], settings: dict) -> tuple[str, str]:
