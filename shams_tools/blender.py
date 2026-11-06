@@ -266,9 +266,25 @@ class Scene3DWorker:
                    "description": params.get("prompt") or task.get("description", ""),
                    "acceptance_criteria": [c["description"] for c in task["acceptance_criteria"]],
                    "polygon_budget": budget, "prior_failures": ctx.get("prior_failures", [])}
+        texts = self._input_texts(ctx)
+        if texts:
+            payload["inputs"] = texts                        # e.g. the character description from a brief task
         payload = scoped_payload(ctx, task, payload)
         return [{"role": "system", "content": scene_json.SCENE_JSON_PROMPT},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False, indent=1)}]
+
+    def _input_texts(self, ctx: dict) -> list[dict]:
+        out = []
+        for i in ctx.get("inputs", []):
+            if not str(i.get("media_type", "")).startswith("text/plain"):
+                continue
+            try:
+                src = Path(self.read_blob(i["sha256"])) if self.read_blob and i.get("sha256") else Path(i["path"])
+                out.append({"name": i.get("name") or i.get("logical_id"),
+                            "text": src.read_text(encoding="utf-8", errors="replace")[:2000]})
+            except (OSError, KeyError, TypeError):
+                continue
+        return out
 
     def build_json(self, ctx: dict, work: Path, want: dict[str, str | None], budget: int) -> tuple[dict, str, dict]:
         """Model writes a scene description -> SHAMS validates, builds GLB, renders -> fix loop."""

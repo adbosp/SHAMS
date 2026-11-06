@@ -467,21 +467,24 @@ def test_sf3d_plan_step_skips_route_policy_and_meets_budget(tmp_path, monkeypatc
     assert any("preview" in i["issue"] for i in h["known_issues"])
 
 
-def test_game_template_characters_go_concept_then_image_to_3d():
+def test_game_template_characters_are_built_by_the_3d_model_from_a_brief():
     from shams.planning.validator import instantiate as inst
     dag = inst("vertical_slice_3d", "p", "g", engine="web")
     t = {x["task_id"]: x for x in dag["tasks"]}
+    assert not {x for x in t if x.endswith("_concept")} and "task.environment_texture" not in t
+    assert not any(x["capability"].startswith(("image.", "mesh.image_to_3d")) for x in dag["tasks"])
     for who in ("player", "npc"):
-        c, m = t[f"task.{who}_concept"], t[f"task.{who}_model"]
-        assert c["capability"] == "image.concept" and c["outputs"][0]["media_type"] == "image/png"
-        assert "nsfw" in c["params"]["negative"]
-        assert m["capability"] == "mesh.image_to_3d" and m["depends_on"] == [f"task.{who}_concept"]
-        assert m["inputs"][0]["logical_id"] == c["outputs"][0]["logical_id"]
-        assert m["params"]["height_m"] == 1.7
-        assert c["depends_on"] == ["task.character_brief"] and c["inputs"][0]["logical_id"] == f"brief.{who}"
-        assert "turnaround" in c["params"]["negative"] and "character sheet" in c["params"]["negative"]
-        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.7
-        assert "ĐÚNG MỘT" in [x for x in m["acceptance_criteria"] if x["id"] == f"ac.{who}_look"][0]["description"]
+        m = t[f"task.{who}_model"]
+        assert m["capability"] == "mesh.procedural" and m["params"]["builder"] == "json"
+        assert m["depends_on"] == ["task.character_brief"] and m["inputs"][0]["logical_id"] == f"brief.{who}"
+        assert m["params"]["height_m"] == 1.7 and "1.7 m" in m["description"]
+        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.9
+    e = t["task.environment_model"]
+    assert e["capability"] == "mesh.procedural" and e["outputs"][0]["logical_id"] == "asset.environment.mesh"
+    integ = t["task.integration_slice1"]
+    assert "task.environment_model" in integ["depends_on"]
+    assert any(i["logical_id"] == "asset.environment.mesh" for i in integ["inputs"])
+    assert "./models/Environment/environment.glb" in integ["description"]
     b = t["task.character_brief"]
     assert b["capability"].startswith("plan.") and {o["media_type"] for o in b["outputs"]} == {"text/plain"}
 
@@ -1055,3 +1058,17 @@ def test_png_edge_check_can_ignore_the_sides(tmp_path):
                lambda x, y: (30, 30, 30) if (x < 3 and 20 < y < 40) or (24 <= x < 40 and 6 <= y < 58) else grey)
     assert assets.check_png(img, {"max_edge_subject": 0.04})[0] == "FAIL"                  # a shadow on the left
     assert assets.check_png(img, {"max_edge_subject": 0.04, "edge_sides": ["top", "bottom"], "min_colours": 1})[0] == "PASS"
+
+
+def test_scene3d_json_prompt_includes_the_text_inputs(tmp_path):
+    from shams_tools.blender import Scene3DWorker
+    brief = tmp_path / "b.txt"
+    brief.write_text("A woman in her late 20s, long black hair, red dress, white shoes.", encoding="utf-8")
+    w = Scene3DWorker(entry={"worker": {"worker_id": "w", "model": "m"}, "provider_config": {}},
+                      attempts_root=tmp_path, read_blob=lambda sha: brief)
+    ctx = {"goal": "g", "inputs": [{"logical_id": "brief.npc", "media_type": "text/plain", "sha256": "x"},
+                                   {"logical_id": "img", "media_type": "image/png", "sha256": "y"}],
+           "task": {"title": "npc", "description": "humanoid", "capability": "mesh.procedural",
+                    "acceptance_criteria": []}}
+    user = json.loads(w._json_messages(ctx, 20000)[1]["content"])
+    assert user["inputs"] == [{"name": "brief.npc", "text": brief.read_text(encoding="utf-8")}]

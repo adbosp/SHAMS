@@ -123,9 +123,10 @@ ENGINES: dict[str, EngineProfile] = {
                     "`new THREE.WebGLRenderer({ antialias: true })` (không dùng `THREE.WebGPU`, thuộc tính đó không "
                     "tồn tại trong `three`), gắn renderer.domElement vào container; camera phối cảnh đặt cao và chếch "
                     "nhìn xuống nhân vật (ví dụ position (0, 6, 10), lookAt nhân vật); HemisphereLight cộng "
-                    "DirectionalLight đủ sáng; mặt đất phủ texture /textures/environment.png. Nạp CẢ HAI "
-                    "/models/Player/player.glb và /models/Npc/npc.glb bằng GLTFLoader (three/examples/jsm/loaders/"
-                    "GLTFLoader.js), thêm cả hai vào scene và đặt NPC cách người chơi vài mét. Gắn điều khiển nhân "
+                    "DirectionalLight đủ sáng. Nạp bằng GLTFLoader (three/examples/jsm/loaders/GLTFLoader.js) BA file, "
+                    "dùng đường dẫn TƯƠNG ĐỐI (không có dấu / ở đầu): ./models/Environment/environment.glb (bối "
+                    "cảnh, đã có sẵn mặt đất), ./models/Player/player.glb và ./models/Npc/npc.glb; thêm cả ba vào "
+                    "scene và đặt NPC cách người chơi vài mét. Gắn điều khiển nhân "
                     "vật, spawner, cơ chế chính và HUD từ các module đầu vào (phần tử HUD phải được gắn vào "
                     "container), rồi chạy vòng lặp requestAnimationFrame. SHAMS tự tạo index.html và src/main.ts "
                     "gọi start(); không viết hai file đó."),

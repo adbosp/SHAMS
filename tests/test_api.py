@@ -31,10 +31,10 @@ def test_chat_creates_plan_and_runs_to_done(tmp_path):
     s = c.get("/api/state").json()
     assert s["app"] == "SHAMS" and s["progress"] == {"done": 0, "total": 0}
     s = c.post("/api/chat", json={"text": "Tạo game cá mập 3D có hệ thống săn mồi và tiến hóa."}).json()
-    assert s["progress"]["total"] == 14
+    assert s["progress"]["total"] == 12
     assert s["chat"][1]["role"] == "director"
     s = _wait_idle(c)
-    assert s["progress"] == {"done": 14, "total": 14}
+    assert s["progress"] == {"done": 12, "total": 12}
     assert any("Loading mock-coder" in l["text"] for l in s["console"])
     assert {a["state"] for a in s["artifacts"]} == {"ACCEPTED"}
     assert "gpus" in s["hardware"]                      # real hardware, not a simulation
@@ -61,7 +61,7 @@ def test_chat_detects_domain_and_engine_and_configure_endpoint(tmp_path):
     assert s["project"]["selected"] == {"engine": "web"} and "Three.js" in s["chat"][1]["text"]
     assert any(t["capability"] == "code.web_typescript" for t in s["tasks"])
     s = _wait_idle(c)
-    assert s["progress"] == {"done": 14, "total": 14}
+    assert s["progress"] == {"done": 12, "total": 12}
     assert c.post("/api/configure", json={"options": {"engine": "unity"}}).status_code == 400
 
 
@@ -105,8 +105,26 @@ def test_accepted_playable_build_is_announced_and_served(tmp_path, monkeypatch):
             break
         time.sleep(0.02)
     assert opened == [f"http://127.0.0.1:8765/play/{tid}/"]
-    assert c.get(f"/play/{tid}/").text == "<html>game</html>"
-    r = c.get(f"/play/{tid}/assets/main.js")
-    assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript")
-    assert c.get(f"/play/{tid}/../../etc/passwd").status_code == 404
-    assert c.get("/play/nope/").status_code == 404
+    r = c.get(f"/play/{tid}/", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"].startswith("http://127.0.0.1:")
+    import urllib.request
+    base = r.headers["location"]
+    assert urllib.request.urlopen(base).read() == b"<html>game</html>"
+    with urllib.request.urlopen(base + "assets/main.js") as f:          # absolute /assets/... paths work too
+        assert f.headers["Content-Type"].startswith("text/javascript")
+    assert c.get(f"/play/{tid}/assets/main.js", follow_redirects=False).headers["location"] == base + "assets/main.js"
+    assert svc.game_server(play) == base                                # one server per build
+    assert c.get("/play/nope/", follow_redirects=False).status_code == 404
+
+
+def test_delete_project_moves_it_to_trash(tmp_path):
+    c = TestClient(create_app(tmp_path / "ws"))
+    s = c.post("/api/projects", json={"name": "keep me"}).json()
+    s = c.post("/api/projects", json={"name": "drop me"}).json()
+    drop = s["project"]["id"]
+    assert {p["id"] for p in s["projects"]} >= {drop}
+    s = c.post("/api/projects/delete", json={"id": drop}).json()
+    assert drop not in {p["id"] for p in s["projects"]} and s["project"].get("id") != drop
+    trashed = list((tmp_path / "ws" / "_trash").iterdir())
+    assert len(trashed) == 1 and (trashed[0] / "project.json").exists()
+    assert c.post("/api/projects/delete", json={"id": drop}).status_code == 404

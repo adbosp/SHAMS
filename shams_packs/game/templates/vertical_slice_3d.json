@@ -18,11 +18,9 @@
         "task.core_mechanic",
         "task.hud",
         "task.character_brief",
-        "task.player_concept",
         "task.player_model",
-        "task.npc_concept",
         "task.npc_model",
-        "task.environment_texture",
+        "task.environment_model",
         "task.sfx_core",
         "task.integration_slice1",
         "task.build_game"
@@ -325,8 +323,8 @@
     },
     {
       "task_id": "task.character_brief",
-      "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
-      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Không dùng tên cây, hoa, lá hay cảnh vật, kể cả khi tả hoạ tiết quần áo (viết 'patterned dress', không viết 'floral' hay 'flowers'), vì model vẽ ảnh sẽ vẽ chúng ra nền. Viết tối đa 2 câu, chỉ về chính người đó; không nhắc nơi chốn hay hoàn cảnh (không 'garden', 'park', 'date', 'setting'). Không dùng các từ dễ làm nhân vật trông trẻ như 'petite', 'cute', 'girl', 'boy'; dùng 'woman', 'man'.",
+      "title": "Mô tả ngoại hình nhân vật (cho model dựng 3D)",
+      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Với game hẹn hò hay tán tỉnh ('cưa', 'tán', 'hẹn hò', 'làm quen'), NPC là người được tán và có giới tính theo đúng từ trong yêu cầu (ví dụ 'cưa gái' thì NPC là một phụ nữ, 'cưa trai' thì NPC là một người đàn ông); nhân vật chính là người đi tán. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần. Ghi rõ màu da, màu tóc và màu từng món trang phục (ví dụ 'red dress', 'blue jeans', 'white shirt'), vì model 3D dựng nhân vật bằng khối hình học và tô theo màu đó. Viết tối đa 2 câu, chỉ về chính người đó. Không dùng các từ dễ làm nhân vật trông trẻ như 'petite', 'cute', 'girl', 'boy'; dùng 'woman', 'man'.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -366,35 +364,10 @@
       ]
     },
     {
-      "task_id": "task.player_concept",
-      "title": "Ảnh concept nhân vật chính (để dựng mesh)",
-      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered with empty space above the head and below the feet, small in the frame, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
-      "capability": "image.concept",
-      "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
-        "brief_skip": [
-          "background",
-          "date",
-          "daylight",
-          "garden",
-          "isometric",
-          "lighting",
-          "low-poly",
-          "outdoor",
-          "park",
-          "render ",
-          "rendered",
-          "scene",
-          "scenery",
-          "setting",
-          "style",
-          "suitable"
-        ],
-        "width": 768,
-        "height": 1344,
-        "brief_max_sentences": 2,
-        "prompt_prefix": "full-body studio photo of a single adult character standing on a plain white seamless background, nothing else in the image."
-      },
+      "task_id": "task.player_model",
+      "title": "Mesh nhân vật chính (Qwen 3D, khối hình học)",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height 1.7 m, feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object.",
+      "capability": "mesh.procedural",
       "depends_on": [
         "task.character_brief"
       ],
@@ -403,66 +376,6 @@
           "name": "brief",
           "from_task": "task.character_brief",
           "logical_id": "brief.player"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "player_concept",
-          "logical_id": "asset.player.concept",
-          "media_type": "image/png",
-          "contract": "image.concept"
-        }
-      ],
-      "acceptance_criteria": [
-        {
-          "id": "ac.player_concept_valid",
-          "description": "PNG hợp lệ, nhân vật không chạm mép ảnh (không bị cắt chân, cắt đầu)",
-          "kind": "schema",
-          "check": {
-            "type": "image",
-            "min_width": 256,
-            "min_height": 256,
-            "max_edge_subject": 0.04,
-            "edge_sides": [
-              "top",
-              "bottom"
-            ]
-          }
-        },
-        {
-          "id": "ac.player_concept_look",
-          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body is visible: top of the head AND both feet with shoes are inside the image (cut at the knees or thighs fails); front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
-          "kind": "visual",
-          "check": {
-            "type": "vlm",
-            "min_score": 6
-          },
-          "required": true
-        }
-      ],
-      "priority": 45,
-      "budget": {
-        "max_wall_seconds": 900,
-        "max_tokens": 20000
-      },
-      "max_attempts": 3,
-      "workspace_scope": [
-        "${models}/Player/**"
-      ]
-    },
-    {
-      "task_id": "task.player_model",
-      "title": "Mesh nhân vật chính game-ready",
-      "description": "Chỉ dựng MỘT mesh từ ảnh concept: nhân vật chính theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 20000 tam giác, có UV.",
-      "capability": "mesh.image_to_3d",
-      "depends_on": [
-        "task.player_concept"
-      ],
-      "inputs": [
-        {
-          "name": "concept",
-          "from_task": "task.player_concept",
-          "logical_id": "asset.player.concept"
         }
       ],
       "outputs": [
@@ -482,72 +395,38 @@
       "acceptance_criteria": [
         {
           "id": "ac.player_mesh_valid",
-          "description": "Poly ≤ 20k, có UV, scale đúng, đúng một người (rộng ≤ 0.7 × cao)",
+          "description": "Poly trong ngân sách, có UV, cao khoảng 1.7 m, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
             "logical_id": "asset.player.mesh",
             "max_triangles": 20000,
             "require_uv": true,
-            "min_size_m": 0.5,
-            "max_size_m": 3,
-            "max_width_to_height": 0.7
-          }
-        },
-        {
-          "id": "ac.player_look",
-          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), có đủ đầu, thân, hai tay và hai chân tới bàn chân (thiếu chân hay cụt ở đùi là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
-          "kind": "visual",
-          "required": true,
-          "check": {
-            "type": "vlm",
-            "min_score": 6
+            "min_size_m": 1.2,
+            "max_size_m": 2.4,
+            "max_width_to_height": 0.9
           }
         }
       ],
       "priority": 40,
       "budget": {
-        "max_wall_seconds": 1800,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Player/**"
       ],
       "params": {
+        "builder": "json",
         "height_m": 1.7
       }
     },
     {
-      "task_id": "task.npc_concept",
-      "title": "Ảnh concept NPC (để dựng mesh)",
-      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered with empty space above the head and below the feet, small in the frame, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
-      "capability": "image.concept",
-      "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
-        "brief_skip": [
-          "background",
-          "date",
-          "daylight",
-          "garden",
-          "isometric",
-          "lighting",
-          "low-poly",
-          "outdoor",
-          "park",
-          "render ",
-          "rendered",
-          "scene",
-          "scenery",
-          "setting",
-          "style",
-          "suitable"
-        ],
-        "width": 768,
-        "height": 1344,
-        "brief_max_sentences": 2,
-        "prompt_prefix": "full-body studio photo of a single adult character standing on a plain white seamless background, nothing else in the image."
-      },
+      "task_id": "task.npc_model",
+      "title": "Mesh NPC (Qwen 3D, khối hình học)",
+      "description": "Build ONE stylised low-poly humanoid character as a scene description (JSON primitives), matching the character description in the inputs. Total height 1.7 m, feet on y=0, centred on the origin, facing +Z. Parts, all touching their neighbours (nothing floating): two shoes, two legs (cylinders from the shoes up to the hips at y≈0.9), hips, torso (box or cylinder up to y≈1.45), neck, head (sphere, radius≈0.12, centre y≈1.58), hair on the head, two arms hanging close to the sides of the torso, two hands. A dress or skirt is a cone or cylinder around the hips and legs. Use the colours of the description for skin, hair and each piece of clothing. Do NOT add a ground plane, floor, scenery or any other object.",
+      "capability": "mesh.procedural",
       "depends_on": [
         "task.character_brief"
       ],
@@ -556,66 +435,6 @@
           "name": "brief",
           "from_task": "task.character_brief",
           "logical_id": "brief.npc"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "npc_concept",
-          "logical_id": "asset.npc.concept",
-          "media_type": "image/png",
-          "contract": "image.concept"
-        }
-      ],
-      "acceptance_criteria": [
-        {
-          "id": "ac.npc_concept_valid",
-          "description": "PNG hợp lệ, nhân vật không chạm mép ảnh (không bị cắt chân, cắt đầu)",
-          "kind": "schema",
-          "check": {
-            "type": "image",
-            "min_width": 256,
-            "min_height": 256,
-            "max_edge_subject": 0.04,
-            "edge_sides": [
-              "top",
-              "bottom"
-            ]
-          }
-        },
-        {
-          "id": "ac.npc_concept_look",
-          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body is visible: top of the head AND both feet with shoes are inside the image (cut at the knees or thighs fails); front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
-          "kind": "visual",
-          "check": {
-            "type": "vlm",
-            "min_score": 6
-          },
-          "required": true
-        }
-      ],
-      "priority": 45,
-      "budget": {
-        "max_wall_seconds": 900,
-        "max_tokens": 20000
-      },
-      "max_attempts": 3,
-      "workspace_scope": [
-        "${models}/Npc/**"
-      ]
-    },
-    {
-      "task_id": "task.npc_model",
-      "title": "Mesh đối tượng phụ / NPC",
-      "description": "Chỉ dựng MỘT mesh từ ảnh concept: một nhân vật phụ (NPC) theo mô tả trong yêu cầu. Không dựng nền, sàn, cảnh hay nhân vật khác. Kích thước thật (người cao khoảng 1.7 m), đứng ở gốc toạ độ, tối đa 3000 tam giác, có UV.",
-      "capability": "mesh.image_to_3d",
-      "depends_on": [
-        "task.npc_concept"
-      ],
-      "inputs": [
-        {
-          "name": "concept",
-          "from_task": "task.npc_concept",
-          "logical_id": "asset.npc.concept"
         }
       ],
       "outputs": [
@@ -635,87 +454,79 @@
       "acceptance_criteria": [
         {
           "id": "ac.npc_mesh_valid",
-          "description": "Poly ≤ 3k, có UV, đúng một người (rộng ≤ 0.7 × cao)",
+          "description": "Poly trong ngân sách, có UV, cao khoảng 1.7 m, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
             "logical_id": "asset.npc.mesh",
             "max_triangles": 3000,
             "require_uv": true,
-            "min_size_m": 0.3,
-            "max_size_m": 3,
-            "max_width_to_height": 0.7
-          }
-        },
-        {
-          "id": "ac.npc_look",
-          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), có đủ đầu, thân, hai tay và hai chân tới bàn chân (thiếu chân hay cụt ở đùi là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
-          "kind": "visual",
-          "check": {
-            "type": "vlm",
-            "min_score": 6
+            "min_size_m": 1.2,
+            "max_size_m": 2.4,
+            "max_width_to_height": 0.9
           }
         }
       ],
       "priority": 40,
       "budget": {
-        "max_wall_seconds": 1800,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
         "${models}/Npc/**"
       ],
       "params": {
+        "builder": "json",
         "height_m": 1.7
       }
     },
     {
-      "task_id": "task.environment_texture",
-      "title": "Texture môi trường",
-      "description": "seamless tileable top-down ground texture, natural ground surface such as grass, soil or a stone path, flat even lighting, orthographic view from directly above, no objects, no people, no buildings, no horizon, no perspective",
-      "capability": "image.texture",
+      "task_id": "task.environment_model",
+      "title": "Bối cảnh màn chơi (Qwen 3D, khối hình học)",
+      "description": "Build the play area named in the project goal as ONE scene description (JSON primitives): a flat ground plane about 30 x 30 m at y=0 with a fitting colour (grass, sand, floor...), and 10 to 30 simple props that make the place recognisable (for a garden: trees made of a trunk cylinder plus a sphere or cone crown, flower beds, bushes, a stone path, a bench, a small fence). Keep the centre (a circle of 4 m around the origin) free so the characters can stand there. Real-world sizes, every prop resting on the ground. No people or characters.",
+      "capability": "mesh.procedural",
+      "params": {
+        "builder": "json"
+      },
       "depends_on": [],
       "inputs": [],
       "outputs": [
         {
           "name": "environment",
-          "logical_id": "asset.environment.texture",
+          "logical_id": "asset.environment.mesh",
+          "media_type": "${mesh_mt}",
+          "contract": "${mesh_contract}"
+        },
+        {
+          "name": "environment_preview",
+          "logical_id": "asset.environment.preview",
           "media_type": "image/png",
-          "contract": "image.texture"
+          "contract": "image.preview"
         }
       ],
       "acceptance_criteria": [
         {
-          "id": "ac.texture_valid",
-          "description": "PNG lũy thừa 2, ≤ 2048",
+          "id": "ac.environment_valid",
+          "description": "GLB hợp lệ, trong ngân sách poly, rộng vài chục mét",
           "kind": "schema",
           "check": {
-            "type": "image",
-            "power_of_two": true,
-            "max_width": 2048,
-            "max_height": 2048,
-            "min_width": 64
-          }
-        },
-        {
-          "id": "ac.texture_look",
-          "description": "A flat, tileable ground texture seen from directly above (no scene, no horizon, no people, no buildings)",
-          "kind": "visual",
-          "check": {
-            "type": "vlm",
-            "min_score": 6
+            "type": "${mesh_check}",
+            "logical_id": "asset.environment.mesh",
+            "max_triangles": 40000,
+            "min_size_m": 5,
+            "max_size_m": 200
           }
         }
       ],
       "priority": 30,
       "budget": {
-        "max_wall_seconds": 1200,
-        "max_tokens": 60000
+        "max_wall_seconds": 900,
+        "max_tokens": 40000
       },
       "max_attempts": 3,
       "workspace_scope": [
-        "${textures}/**"
+        "${models}/Environment/**"
       ]
     },
     {
@@ -762,7 +573,7 @@
         "task.hud",
         "task.player_model",
         "task.npc_model",
-        "task.environment_texture",
+        "task.environment_model",
         "task.project_scaffold"
       ],
       "inputs": [
@@ -798,8 +609,8 @@
         },
         {
           "name": "environment",
-          "from_task": "task.environment_texture",
-          "logical_id": "asset.environment.texture"
+          "from_task": "task.environment_model",
+          "logical_id": "asset.environment.mesh"
         },
         {
           "name": "scaffold",
@@ -868,7 +679,7 @@
         "task.hud",
         "task.player_model",
         "task.npc_model",
-        "task.environment_texture"
+        "task.environment_model"
       ],
       "inputs": [
         {
@@ -913,8 +724,8 @@
         },
         {
           "name": "environment",
-          "from_task": "task.environment_texture",
-          "logical_id": "asset.environment.texture"
+          "from_task": "task.environment_model",
+          "logical_id": "asset.environment.mesh"
         }
       ],
       "outputs": [

@@ -44,7 +44,7 @@ def test_full_mock_run_for_each_engine(tmp_path, engine):
     st = Studio(d, mock=MockWorker(d / "attempts"))
     st.load_plan(instantiate("vertical_slice_3d", "game1", "goal", engine=engine))
     s = st.run()
-    assert s["done"] and s["counts"] == {"ACCEPTED": 14}
+    assert s["done"] and s["counts"] == {"ACCEPTED": 12}
     assert st.domain_config["engine"]["name"] == engine
 
 

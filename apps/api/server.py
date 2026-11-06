@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 from shams import __version__, contracts, hardware, packs, providers
@@ -152,6 +152,8 @@ class StudioService:
         self.base_url = "http://127.0.0.1:8765"      # serve() sets the real address
         self.open_game = False                       # serve() turns this on: open a finished game in the browser
         self.announce = False                        # off while the service is still being set up
+        self._play_servers: dict[str, object] = {}   # playable build folder -> its static server
+        self._play_lock = threading.Lock()
         if first:
             self.open(first)
 
@@ -198,6 +200,25 @@ class StudioService:
         if not p:
             raise HTTPException(404, f"no project {pid!r} in {self.workspace}")
         self.open(Path(p["dir"]))
+        return self.state()
+
+    def delete_project(self, pid: str) -> dict:
+        """Move a project folder to <workspace>/_trash/ (recoverable by copying it back). The open project is
+        closed first, so its database and run loop let go of the files."""
+        import shutil
+        p = next((p for p in self.projects() if p["id"] == pid or p["folder"] == pid), None)
+        if not p:
+            raise HTTPException(404, f"no project {pid!r} in {self.workspace}")
+        src = Path(p["dir"])
+        if self.dir and Path(self.dir).resolve() == src.resolve():
+            self.close_project()
+        trash = self.workspace / "_trash"
+        trash.mkdir(exist_ok=True)
+        dest = trash / f"{src.name}-{time.strftime('%Y%m%d-%H%M%S')}"
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as e:
+            raise HTTPException(409, f"could not move {src.name} to _trash: {e}")
         return self.state()
 
     def close_project(self) -> dict:
@@ -303,6 +324,30 @@ class StudioService:
         except StoreClosed:
             return {}
         return out
+
+    def game_server(self, root: Path) -> str:
+        """Start (once per folder) a static server on 127.0.0.1 for a playable build; returns its base URL."""
+        import functools
+        import http.server
+        key = str(Path(root).resolve())
+        with self._play_lock:
+            srv = self._play_servers.get(key)
+            if srv is None:
+                class Handler(http.server.SimpleHTTPRequestHandler):
+                    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
+                                      ".js": "text/javascript", ".mjs": "text/javascript",
+                                      ".glb": "model/gltf-binary", ".wasm": "application/wasm"}
+
+                    def log_message(self, *a):
+                        pass
+
+                    def end_headers(self):
+                        self.send_header("Cache-Control", "no-store")
+                        super().end_headers()
+                srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=key))
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                self._play_servers[key] = srv
+        return f"http://127.0.0.1:{srv.server_address[1]}/"
 
     def play_url(self, task_id: str) -> str:
         return f"{self.base_url}/play/{task_id}/"
@@ -721,18 +766,12 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
 
     @app.get("/play/{task_id}/{path:path}")
     def play(task_id: str, path: str = ""):
+        """Stable link to a playable build. The game is served from the ROOT of its own local port, so the
+        model's absolute asset paths (/models/...) work as well as relative ones."""
         b = svc.playable().get(task_id)
         if not b:
             raise HTTPException(404, "no playable build for this task")
-        root = Path(b["dir"]).resolve()
-        f = (root / (path or "index.html")).resolve()
-        if f.is_dir():
-            f = f / "index.html"
-        if root not in f.parents or not f.is_file():
-            raise HTTPException(404, "not found")
-        mt = {".js": "text/javascript", ".mjs": "text/javascript", ".glb": "model/gltf-binary",
-              ".wasm": "application/wasm"}.get(f.suffix.lower())
-        return FileResponse(f, media_type=mt, headers={"Cache-Control": "no-store"})
+        return RedirectResponse(svc.game_server(Path(b["dir"])) + path, status_code=307)
 
     @app.get("/favicon.ico")
     def favicon():
@@ -770,6 +809,10 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     @app.post("/api/projects")
     def new_project(body: ProjectIn):
         return svc.new_project(body)
+
+    @app.post("/api/projects/delete")
+    def delete_project(body: OpenIn):
+        return svc.delete_project(body.id)
 
     @app.post("/api/projects/open")
     def open_project(body: OpenIn):

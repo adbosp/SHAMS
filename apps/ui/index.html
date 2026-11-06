@@ -109,6 +109,12 @@ td code{font-family:var(--mono);font-size:12px}
   .center{max-height:none;padding:16px}
 }
 .nav-proj{font-size:12.5px}
+.proj-row{position:relative}
+.proj-row .nav-proj{padding-right:28px}
+.proj-del{position:absolute!important;right:2px;top:50%;transform:translateY(-50%);width:24px!important;height:24px;padding:0!important;display:grid!important;place-items:center;opacity:0;color:var(--faint)!important;background:none!important}
+.proj-row:hover .proj-del,.proj-del:focus-visible{opacity:1}
+.proj-del:hover{color:var(--bad)!important}
+@media (hover:none){.proj-del{opacity:.7}}
 nav .grow{flex:1}
 nav .bottom{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
 .newproj{color:var(--accent)!important}
@@ -267,13 +273,14 @@ function navRender(){
   h += `<div class="sect" style="margin-top:14px">WORKSPACE</div>`;
   for (const p of S.projects.slice(0, 12)){
     const on = p.id === S.project.id;
-    h += `<button class="nav-proj ${on?"on":""}" data-p="${esc(p.id)}" title="${esc(p.goal||p.folder)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc((p.goal||p.folder).slice(0,22))}</button>`;
+    h += `<div class="proj-row"><button class="nav-proj ${on?"on":""}" data-p="${esc(p.id)}" title="${esc(p.goal||p.folder)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>${esc((p.goal||p.folder).slice(0,22))}</button><button class="proj-del" data-del="${esc(p.id)}" title="Xoá dự án" aria-label="Xoá dự án ${esc(p.folder)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`;
   }
   h += `<button class="newproj" data-new="1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Dự án mới</button>`;
   h += `<div class="bottom">${btn("settings","Settings",GEAR)}</div>`;
   nav.innerHTML = h;
   nav.querySelectorAll("[data-v]").forEach(b => b.onclick = () => go(b.dataset.v));
   nav.querySelectorAll("[data-p]").forEach(b => b.onclick = () => openProject(b.dataset.p));
+  nav.querySelectorAll("[data-del]").forEach(b => b.onclick = () => deleteProject(b.dataset.del));
   nav.querySelector("[data-new]").onclick = newProject;
 }
 function stateIcon(state){
@@ -560,6 +567,13 @@ async function decide(task_id, decision){
 }
 async function openProject(id){
   try { S = await api("/api/projects/open", {id}); view = "chat"; } catch (e) { alert(e.message); }
+  render(true);
+}
+async function deleteProject(id){
+  const p = S.projects.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Xoá dự án "${p.goal || p.folder}"?\n\nThư mục ${p.folder} được chuyển vào _trash trong workspace; muốn lấy lại thì chép nó ra ngoài.`)) return;
+  try { S = await api("/api/projects/delete", {id}); if (!S.project || !S.project.id) view = "chat"; } catch (e) { alert(e.message); }
   render(true);
 }
 async function newProject(){

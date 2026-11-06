@@ -12,7 +12,7 @@ def test_full_vertical_slice_runs_to_done(make_studio):
     st = make_studio()
     s = st.run()
     assert s["done"], s["counts"]
-    assert s["counts"] == {"ACCEPTED": 14}
+    assert s["counts"] == {"ACCEPTED": 12}
     for t in st.db.tasks():
         h = st.db.handoff(t["task_id"])
         assert h and h["status"] == "READY_FOR_QC"
