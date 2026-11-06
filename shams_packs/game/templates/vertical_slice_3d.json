@@ -99,7 +99,7 @@
         },
         {
           "id": "ac.movement_tests",
-          "description": "PlayMode test di chuyển pass",
+          "description": "Unit test của task pass (test logic thuần, chạy được không cần cửa sổ game, trình duyệt hay GPU)",
           "kind": "unit_test",
           "check": {
             "test_filter": "PlayerControllerTests"
@@ -143,6 +143,12 @@
           "logical_id": "code.spawner",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "SpawnerTests",
+          "logical_id": "test.spawner",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -153,7 +159,7 @@
         },
         {
           "id": "ac.spawner_tests",
-          "description": "Test số lượng + bounds",
+          "description": "Unit test của task pass (test logic thuần, chạy được không cần cửa sổ game, trình duyệt hay GPU)",
           "kind": "unit_test",
           "check": {
             "test_filter": "SpawnerTests"
@@ -197,6 +203,12 @@
           "logical_id": "code.core_mechanic",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "CoreMechanicTests",
+          "logical_id": "test.core_mechanic",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -207,7 +219,7 @@
         },
         {
           "id": "ac.mechanic_tests",
-          "description": "Test tương tác giữa nhân vật và đối tượng, trạng thái thay đổi đúng",
+          "description": "Unit test của task pass (test logic thuần, chạy được không cần cửa sổ game, trình duyệt hay GPU)",
           "kind": "unit_test",
           "check": {
             "test_filter": "CoreMechanicTests"
@@ -245,6 +257,12 @@
           "logical_id": "code.hud",
           "media_type": "${script_mt}",
           "contract": "${script_contract}"
+        },
+        {
+          "name": "HudTests",
+          "logical_id": "test.hud",
+          "media_type": "${script_mt}",
+          "contract": "${test_contract}"
         }
       ],
       "acceptance_criteria": [
@@ -255,7 +273,7 @@
         },
         {
           "id": "ac.hud_tests",
-          "description": "HUD cập nhật khi trạng thái thay đổi",
+          "description": "Unit test của task pass (test logic thuần, chạy được không cần cửa sổ game, trình duyệt hay GPU)",
           "kind": "unit_test",
           "check": {
             "test_filter": "HudTests"

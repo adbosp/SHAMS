@@ -111,7 +111,22 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--confirm-adult", action="store_true",
                    help="adult-only presets: I am 18+ and the content involves only fictional consenting adults")
     a.add_argument("--json", action="store_true")
+    a = sub.add_parser("toolchain", help="test toolchains SHAMS installs in its own folder (e.g. web: Vitest + Three.js)")
+    a.add_argument("action", choices=["status", "install"]); a.add_argument("name", nargs="?", default="web", choices=["web"])
     args = p.parse_args(argv)
+
+    if args.cmd == "toolchain":
+        from shams_packs.game import toolchain
+        if args.action == "install":
+            r = toolchain.install_web()
+            print(r["log"][-1500:])
+            print(("installed in " if r["ok"] else "install FAILED in ") + r["dir"])
+            return 0 if r["ok"] else 1
+        st = toolchain.status()
+        print(f"web: {'installed' if st['installed'] else 'not installed'} ({st['dir']})")
+        for k, v in st["versions"].items():
+            print(f"  {k} {v or '-'}")
+        return 0
 
     if args.cmd == "presets":
         from shams import settings as settings_mod

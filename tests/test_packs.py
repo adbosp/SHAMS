@@ -251,3 +251,51 @@ def test_web_game_template_criteria_all_have_checkers(tmp_path):
     (tmp_path / "empty.txt").write_text("", encoding="utf-8")
     assert chk("exists", {"id": "e", "kind": "exists"}, [], outputs=[
         {"logical_id": "b", "media_type": "text/plain", "file": str(tmp_path / "empty.txt"), "role": "output"}])[0] == "FAIL"
+
+
+def _web_toolchain():
+    from shams_packs.game import toolchain
+    return toolchain.vitest_entry() if shutil.which("node") else None
+
+
+def test_web_unit_test_checker_without_toolchain_is_not_verified(tmp_path, monkeypatch):
+    from shams_packs.game import PACK
+    monkeypatch.setenv("SHAMS_TOOLCHAINS", str(tmp_path / "none"))
+    code = tmp_path / "a.ts"
+    code.write_text("export const x = 1;\n", encoding="utf-8")
+    outs = [{"logical_id": "code.a", "path": "src/game/A.ts", "media_type": "text/typescript", "file": str(code)},
+            {"logical_id": "test.a", "path": "src/game/ATests.ts", "media_type": "text/typescript", "file": str(code)}]
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs)
+    assert v == "NOT_VERIFIED" and ("toolchain install web" in d or "Node.js" in d)
+    v, d = PACK.checkers()["unit_test"]("unit_test", {"id": "t", "kind": "unit_test"}, [], outputs=outs[:1])
+    assert v == "FAIL" and "no test file" in d
+
+
+@pytest.mark.skipif(not _web_toolchain(), reason="needs the web toolchain (shams toolchain install web)")
+def test_web_unit_test_checker_runs_vitest(tmp_path):
+    from shams_packs.game import PACK
+    chk = PACK.checkers()["unit_test"]
+    (tmp_path / "up").mkdir()
+    scaffold = tmp_path / "up" / "config.ts"
+    scaffold.write_text("export const SPEED: number = 2;\n", encoding="utf-8")
+    code = tmp_path / "Spawner.ts"
+    code.write_text("import * as THREE from 'three';\nimport { SPEED } from '../../config';\n"
+                    "export function step(p: THREE.Vector3, dt: number): THREE.Vector3 {\n"
+                    "  return p.clone().add(new THREE.Vector3(SPEED * dt, 0, 0));\n}\n", encoding="utf-8")
+    good = tmp_path / "SpawnerTests.ts"
+    good.write_text("import { describe, it, expect } from 'vitest';\nimport * as THREE from 'three';\n"
+                    "import { step } from './Spawner';\n"
+                    "describe('step', () => { it('moves', () => { expect(step(new THREE.Vector3(), 1).x).toBe(2); }); });\n",
+                    encoding="utf-8")
+    outs = [{"logical_id": "project.scaffold", "path": "src/config.ts", "media_type": "text/typescript",
+             "file": str(scaffold), "role": "input"},
+            {"logical_id": "code.spawner", "path": "src/game/Spawning/Spawner.ts", "media_type": "text/typescript",
+             "file": str(code), "role": "output"},
+            {"logical_id": "test.spawner", "path": "src/game/Spawning/SpawnerTests.ts",
+             "media_type": "text/typescript", "file": str(good), "role": "output"}]
+    crit = {"id": "t", "kind": "unit_test", "check": {"test_filter": "SpawnerTests"}}
+    v, d = chk("unit_test", crit, [], outputs=outs)
+    assert v == "PASS", d
+    good.write_text(good.read_text(encoding="utf-8").replace("toBe(2)", "toBe(3)"), encoding="utf-8")
+    v, d = chk("unit_test", crit, [], outputs=outs)
+    assert v == "FAIL" and "tests failed" in d

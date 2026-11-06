@@ -82,7 +82,7 @@ class GamePack(DomainPack):
         ]
 
     def checkers(self) -> dict:
-        return {"compile": checks.compile_check}
+        return {"compile": checks.compile_check, "unit_test": checks.unit_test_check}
 
     def mock_failure_logs(self) -> dict[str, str]:
         return {"compile": "Assets/Scripts/X.cs(42,13): error CS0103: The name 'moveSpeed' does not exist "
