@@ -286,8 +286,9 @@ class ComfyUIImageWorker:
         self.content_policy = dict(cfg.get("content_policy") or {})
         self.preset = cfg.get("preset")
 
-    def _brief(self, ctx: dict) -> str:
-        """Text inputs (text/plain, text/markdown) describe the subject in words the image model understands."""
+    def _brief(self, ctx: dict, skip: list[str] | None = None) -> str:
+        """Text inputs (text/plain, text/markdown) describe the subject in words the image model understands.
+        ``skip``: sentences containing any of these words are dropped (e.g. a background the task forbids)."""
         parts = []
         for i in ctx.get("inputs", []):
             if not str(i.get("media_type", "")).startswith("text/"):
@@ -298,6 +299,10 @@ class ComfyUIImageWorker:
             except (OSError, KeyError, TypeError):
                 continue
             txt = " ".join(l.strip().lstrip("#*-> ").strip() for l in txt.splitlines() if l.strip())
+            if skip:
+                import re
+                txt = " ".join(x for x in re.split(r"(?<=[.!?])\s+", txt)
+                               if not any(w.lower() in x.lower() for w in skip))
             if txt:
                 parts.append(txt[:600])
         return " ".join(parts)
@@ -308,7 +313,7 @@ class ComfyUIImageWorker:
         task = ctx["task"]
         tparams = dict(task.get("params") or {})
         prompt = tparams.pop("prompt", None) or task.get("description") or task["title"]
-        brief = self._brief(ctx)
+        brief = self._brief(ctx, tparams.pop("brief_skip", None))
         if brief:                                     # a written subject (e.g. an art brief) comes first
             prompt = f"{brief}. {prompt}"
         elif ctx.get("goal") and not task.get("preset") and not str(task.get("capability", "")).startswith("image.texture"):

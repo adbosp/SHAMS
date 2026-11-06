@@ -235,6 +235,11 @@ def make_visual_checker(provider: Any, model: str, exclusive: bool = True):
         if not r.get("text", "").strip():
             # some vision models answer only in their reasoning channel when thinking is forced off
             r = provider.chat(msgs, model=model, images=imgs, format="json", think=True)
+        if exclusive and hasattr(provider, "unload"):
+            try:                                      # free the GPU for the next generator
+                provider.unload(model)
+            except Exception:  # noqa: BLE001 - freeing memory must not change the verdict
+                pass
         try:
             v = extract_json(r["text"])
         except ValueError:

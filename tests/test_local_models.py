@@ -332,6 +332,23 @@ def test_comfy_worker_puts_text_brief_first_and_vlm_sees_it(tmp_path):
             {"logical_id": "brief.npc", "media_type": "text/plain", "file": str(brief), "role": "input"}]
     chk("visual", {"id": "v", "kind": "visual", "description": "one person", "check": {"type": "vlm"}}, [], outputs=outs)
     assert "green summer dress" in got["d"]
+    brief.write_text("A woman in her 30s, red coat. Rendered in low-poly style, garden background.", encoding="utf-8")
+    ctx["task"]["params"] = {"brief_skip": ["background", "rendered"]}
+    w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert seen["prompt"].startswith("A woman in her 30s, red coat.") and "garden" not in seen["prompt"]
+    assert "brief_skip" not in seen
+
+
+def test_visual_checker_frees_the_vision_model():
+    calls = []
+    class P:
+        def ps(self): return [{"name": "coder"}]
+        def unload(self, m): calls.append(m)
+        def chat(self, msgs, **kw): return {"text": '{"pass": true, "score": 8, "reason": "ok"}'}
+    import tempfile
+    img = make_png(Path(tempfile.mkdtemp()) / "a.png")
+    assert make_visual_checker(P(), "vl")([str(img)], "x", {})[0] == "PASS"
+    assert calls == ["coder", "vl"]
 
 def test_asset_checkers_dispatch_on_check_type(tmp_path):
     table = AssetCheckers({"compile": lambda k, c, contents: ("PASS", "pack checker")}).table()

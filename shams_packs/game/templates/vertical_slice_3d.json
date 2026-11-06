@@ -281,7 +281,7 @@
     {
       "task_id": "task.character_brief",
       "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
-      "description": "Đọc yêu cầu dự án và viết cho mỗi nhân vật một đoạn mô tả ngoại hình NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) để đưa vào model vẽ ảnh: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục, màu sắc, phong cách đồ hoạ hợp với game. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Nhân vật chính và NPC phải khớp vai trò trong yêu cầu. Mỗi file chỉ tả MỘT người, không tả nền hay cảnh, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
+      "description": "Đọc kỹ yêu cầu dự án: ai là nhân vật người chơi điều khiển, ai là nhân vật (NPC) mà người chơi gặp và tương tác; giữ đúng vai trò và giới tính mà yêu cầu ngụ ý. Viết cho mỗi nhân vật một đoạn NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) CHỈ MÔ TẢ NGOẠI HÌNH: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục chính và màu sắc. Không viết về nền, cảnh, ánh sáng hay phong cách đồ hoạ (SHAMS tự thêm). Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Mỗi file chỉ tả MỘT người, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -323,10 +323,21 @@
     {
       "task_id": "task.player_concept",
       "title": "Ảnh concept nhân vật chính (để dựng mesh)",
-      "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
+      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
       "capability": "image.concept",
       "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform"
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
+        "brief_skip": [
+          "background",
+          "rendered",
+          "render ",
+          "style",
+          "lighting",
+          "daylight",
+          "isometric",
+          "low-poly",
+          "scenery"
+        ]
       },
       "depends_on": [
         "task.character_brief"
@@ -359,7 +370,7 @@
         },
         {
           "id": "ac.player_concept_look",
-          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief. The person must clearly look like an adult; anyone who looks like a child or teenager fails.",
+          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body from head to feet is visible; front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
           "kind": "visual",
           "check": {
             "type": "vlm",
@@ -449,10 +460,21 @@
     {
       "task_id": "task.npc_concept",
       "title": "Ảnh concept NPC (để dựng mesh)",
-      "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
+      "description": "single full-body image of one adult person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, isolated on a plain white background, clean 3D character render, neutral studio lighting, realistic proportions, no shadow, no text",
       "capability": "image.concept",
       "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform"
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform, trees, plants, flowers, foliage, building, landscape",
+        "brief_skip": [
+          "background",
+          "rendered",
+          "render ",
+          "style",
+          "lighting",
+          "daylight",
+          "isometric",
+          "low-poly",
+          "scenery"
+        ]
       },
       "depends_on": [
         "task.character_brief"
@@ -485,7 +507,7 @@
         },
         {
           "id": "ac.npc_concept_look",
-          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief. The person must clearly look like an adult; anyone who looks like a child or teenager fails.",
+          "description": "Judge only these must-haves: exactly ONE person drawn ONCE (a character sheet, turnaround, several views or sketches fail); the whole body from head to feet is visible; front view; a plain or nearly plain background with no scenery; the person clearly looks like an adult (anyone who looks like a child or teenager fails); gender and main outfit match the character description. Small details such as accessories, a hat, a bag or exact colours do NOT lower the score below passing.",
           "kind": "visual",
           "check": {
             "type": "vlm",
