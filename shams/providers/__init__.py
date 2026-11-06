@@ -238,6 +238,7 @@ class Ollama(OpenAICompatible):
         req = urllib.request.Request(url, data=json.dumps({**body, "stream": True}).encode("utf-8"),
                                      method="POST", headers={"Content-Type": "application/json", **self.extra_headers})
         parts = []
+        calls = []
         try:
             with _open(req, self.timeout) as response:
                 for line in response:
@@ -246,13 +247,15 @@ class Ollama(OpenAICompatible):
                     chunk = json.loads(line)
                     if "error" in chunk:
                         raise ProviderError(f"ollama: {chunk['error']}")
-                    text = (chunk.get("message") or {}).get("content")
+                    message = chunk.get("message") or {}
+                    calls.extend(message.get("tool_calls") or [])
+                    text = message.get("content")
                     if text:
                         parts.append(text)
                         on_delta(text)
                     if chunk.get("done"):
                         return {"text": "".join(parts), "tokens_in": int(chunk.get("prompt_eval_count", 0)),
-                                "tokens_out": int(chunk.get("eval_count", 0))}
+                                "tokens_out": int(chunk.get("eval_count", 0)), "raw_calls": calls}
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")[:500]
             raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
@@ -260,7 +263,8 @@ class Ollama(OpenAICompatible):
             raise ProviderError(f"ollama stream: {e}") from None
         raise ProviderError("ollama stream ended before the final response")
 
-    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict],
+                   on_delta: Callable[[str], None] | None = None, **opts: Any) -> dict:
         """Tool calls over native /api/chat, so num_ctx and keep_alive apply (the OpenAI-compatible endpoint
         ignores num_ctx and runs with Ollama's small default context, which cuts long task prompts)."""
         if not self.native:
@@ -276,10 +280,15 @@ class Ollama(OpenAICompatible):
         if tools:
             body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
                                                                "parameters": t["input_schema"]}} for t in tools]
-        r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
-        if "error" in r:
-            raise ProviderError(f"ollama: {r['error']}")
-        msg = r.get("message") or {}
+        if on_delta is not None:
+            progress = self._chat_progress(body, on_delta)
+            msg = {"content": progress["text"], "tool_calls": progress["raw_calls"]}
+            r = {"prompt_eval_count": progress["tokens_in"], "eval_count": progress["tokens_out"]}
+        else:
+            r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
+            if "error" in r:
+                raise ProviderError(f"ollama: {r['error']}")
+            msg = r.get("message") or {}
         calls = []
         for i, c in enumerate(msg.get("tool_calls") or []):
             fn = c.get("function", {})

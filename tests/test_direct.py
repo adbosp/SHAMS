@@ -301,7 +301,8 @@ def test_direct_api_runs_a_task_and_serves_the_artifact(tmp_path, isolated_home,
     assert not any(p["folder"] == "_direct" for p in c.get("/api/projects").json()["projects"])
 
 
-def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolated_home, ollama, monkeypatch):
+@pytest.mark.parametrize("mode", ["disabled", "model_call", "requested_url"])
+def test_web_chat_streams_reply_with_runtime_prompt(tmp_path, isolated_home, ollama, monkeypatch, mode):
     pytest.importorskip("fastapi")
     import threading
     import time
@@ -309,10 +310,11 @@ def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolate
     from fastapi.testclient import TestClient
     from apps.api.server import create_app
     from shams import providers
+    from shams.research import Research
 
     isolated_home.mkdir(parents=True, exist_ok=True)
     settings = _settings(ollama.url, "http://127.0.0.1:9", allow_adult_content=True)
-    settings["research"] = {"enabled": True}
+    settings["research"] = {"enabled": mode != "disabled", "browser": {"enabled": True}}
     (isolated_home / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
     release = threading.Event()
     captured = []
@@ -327,6 +329,10 @@ def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolate
         captured.append(json.loads(req.data))
 
         def chunks():
+            if mode == "model_call" and len(captured) == 1:
+                yield b'{"message":{"tool_calls":[{"function":{"name":"research__web_scrape","arguments":{"url":"https://example.org/article"}}}]},"done":false}\n'
+                yield b'{"done":true}\n'
+                return
             yield b'{"message":{"thinking":"hidden"},"done":false}\n'
             yield b'{"message":{"content":"The word is "},"done":false}\n'
             if not release.wait(10):
@@ -337,6 +343,7 @@ def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolate
         yield chunks()
 
     monkeypatch.setattr(providers, "_open", open_stream)
+    monkeypatch.setattr(Research, "_get", lambda self, url, **kwargs: (b"<main>Violet</main>", "text/html", url, 200))
     with TestClient(create_app(tmp_path / "ws")) as client:
         assert "chat.js" in client.get("/").text
         assert client.get("/static/chat.js").status_code == 200
@@ -346,7 +353,8 @@ def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolate
         assert client.post("/api/web-chat/send", json={"preset": "coder", "prompt": "  "}).status_code == 400
         history = [{"role": "user", "content": "My word is violet."},
                    {"role": "assistant", "content": "Understood."}]
-        r = client.post("/api/web-chat/send", json={"preset": "coder", "prompt": "What word?", "history": history})
+        prompt = "Read https://example.org/article and tell me the word." if mode == "requested_url" else "What word?"
+        r = client.post("/api/web-chat/send", json={"preset": "coder", "prompt": prompt, "history": history})
         assert r.status_code == 200, r.text
         tid = r.json()["task_id"]
         try:
@@ -368,7 +376,17 @@ def test_web_chat_streams_reply_with_history_and_without_tools(tmp_path, isolate
         assert task["state"] == "ACCEPTED", task
         assert client.get(task["outputs"][0]["url"]).text == "The word is violet."
         assert client.get(f"/api/direct/tasks/{tid}").status_code == 404
-        request, = captured
+        request = captured[0]
         assert request["stream"] is True
-        assert request["messages"] == [*history, {"role": "user", "content": "What word?"}]
-        assert "tools" not in request
+        system, *messages = request["messages"]
+        assert system["role"] == "system" and "Runtime server date and time:" in system["content"]
+        assert "Always finish with a meaningful follow-up question" in system["content"]
+        assert messages[:3] == [*history, {"role": "user", "content": prompt}]
+        if mode != "disabled":
+            assert len(captured) == (2 if mode == "model_call" else 1)
+            assert {tool["function"]["name"] for tool in request["tools"]} == {
+                "research__web_search", "research__web_scrape", "research__web_research"}
+            assert "Violet" in captured[-1]["messages"][-1]["content"]
+            assert task["sources"] == ["https://example.org/article"]
+        else:
+            assert "tools" not in request and task["sources"] == []

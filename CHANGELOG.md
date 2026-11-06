@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web Chat dùng system prompt riêng với giờ máy chủ, hướng dẫn định dạng và câu hỏi tiếp nối. Model Ollama hỗ trợ tool calling có thể tra cứu chỉ đọc khi Research bật, tiếp tục stream câu trả lời và hiển thị danh sách trang đã đọc.
+
 - Web Chat hiển thị câu trả lời từng đoạn khi Ollama đang sinh chữ. Model trả một lần có hiệu ứng hiện dần ngắn, và lịch sử vẫn lưu câu trả lời hoàn chỉnh.
 
 - Research cho worker và Direct Mode: tìm kiếm SearXNG với fallback DuckDuckGo/Bing RSS, đọc và đối chiếu nguồn công khai, ghi URL thực sự đọc, cùng browser chỉ đọc tùy chọn. Transport kiểm từng redirect trước khi kết nối và ghim IP đã xác minh. Xem `docs/RESEARCH.md`.

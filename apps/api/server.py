@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -28,6 +29,7 @@ from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 STATIC_DIR = UI_FILE.parent / "static"
+WEB_CHAT_PROMPT = UI_FILE.with_name("system_prompt.md").read_text(encoding="utf-8-sig")
 
 FAMILY_LABEL = {
     "code": "Coding Worker", "integration": "Integration Worker", "plan": "Planner",
@@ -788,6 +790,8 @@ class DirectService:
              "summary": h.get("summary"), "error": h.get("blocked_reason"), "usage": h.get("usage"),
              "outputs": [{"logical_id": a["logical_id"], "media_type": a["media_type"], "sha256": a["sha256"],
                             "url": f"{self.api_path}/artifact/{a['sha256']}"} for a in arts]}
+        if self.api_path == "/api/web-chat":
+            v["sources"] = [d["reason"] for d in h.get("decisions", []) if d["decision"] == "read web source"]
         if events:
             v["events"] = [{"seq": r["seq"], "type": r["type"], "at": r["ts"],
                             "subject": r["subject_id"]}
@@ -926,8 +930,18 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
             raise HTTPException(400, "Tin nhắn trống")
         if sum(len(message.content) for message in body.history) > 100000:
             raise HTTPException(400, "Ngữ cảnh cuộc trò chuyện quá dài")
-        return web_chat.run(DirectIn(preset=body.preset, params={"prompt": body.prompt.strip()}),
-                            chat_history=[message.model_dump() for message in body.history])
+        now = datetime.now().astimezone()
+        weekday_vi = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ nhật")[now.weekday()]
+        system = (WEB_CHAT_PROMPT + f"\n\nRuntime server date and time: {now.isoformat(timespec='minutes')}. "
+                  f"Runtime weekday: {now:%A} ({weekday_vi}). "
+                  "For questions about today's date or time, use these supplied values directly. "
+                  "Use 24-hour time and only state the weekday or time when asked. "
+                  "This is the server clock, not the publication or verification time of a source. "
+                  "The examples above are formatting examples, not sources. "
+                  "Image retrieval is unavailable in this chat. Only cite URLs verified in this turn. "
+                  "When no retrieval tool is provided, explicitly say it is unavailable if verification is needed.")
+        history = [{"role": "system", "content": system}, *[message.model_dump() for message in body.history]]
+        return web_chat.run(DirectIn(preset=body.preset, params={"prompt": body.prompt.strip()}), chat_history=history)
 
     @app.get("/api/web-chat/tasks/{task_id}")
     def web_chat_task(task_id: str):

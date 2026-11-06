@@ -35,13 +35,18 @@ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => entities[c]);
 
 function inline(text) {
   // Escape each literal segment and each token before adding markup.
-  const tokens = /`([^`]+)`|\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const tokens = /`([^`]+)`|\*\*([^*\n]+)\*\*|!?\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|<(https?:\/\/[^\s<>]+)>|(https?:\/\/[^\s<>()]+)|\*([^*\n]+)\*/g;
   let html = "", offset = 0;
   for (const match of text.matchAll(tokens)) {
     html += esc(text.slice(offset, match.index));
     if (match[1] !== undefined) html += "<code>" + esc(match[1]) + "</code>";
     else if (match[2] !== undefined) html += "<strong>" + esc(match[2]) + "</strong>";
-    else html += '<a target="_blank" rel="noopener noreferrer" href="' + esc(match[4]) + '">' + esc(match[3]) + "</a>";
+    else if (match[7] !== undefined) html += "<em>" + esc(match[7]) + "</em>";
+    else {
+      const url = match[4] || match[5] || match[6].replace(/[.,;!?]+$/, "");
+      const suffix = match[6] ? match[6].slice(url.length) : "";
+      html += '<a target="_blank" rel="noopener noreferrer" href="' + esc(url) + '">' + esc(match[3] || url) + "</a>" + esc(suffix);
+    }
     offset = match.index + match[0].length;
   }
   return (html + esc(text.slice(offset))).replace(/\n/g, "<br>");
@@ -158,7 +163,12 @@ function renderConversation(scrollToEnd = false) {
 }
 
 function replyBody(turn) {
-  if (turn.reply !== undefined) return '<div class="md">' + markdown(turn.reply) + '</div>';
+  if (turn.reply !== undefined) {
+    const sources = (turn.sources || []).filter(url => /^https?:\/\/[^\s]+$/.test(url));
+    const links = sources.length ? '<details class="sources"><summary>Trang SHAMS đã đọc (' + sources.length + ')</summary><ul>' +
+      sources.map(url => '<li><a target="_blank" rel="noopener noreferrer" href="' + esc(url) + '">' + esc(url) + '</a></li>').join("") + '</ul></details>' : '';
+    return '<div class="md">' + markdown(turn.reply) + '</div>' + links;
+  }
   if (turn.error) return '<div class="error">' + esc(turn.error) + '</div>';
   const draft = drafts.get(turn);
   if (draft) return '<div class="md reply-live" aria-live="off">' + markdown(draft) + '</div>';
@@ -222,6 +232,7 @@ async function watch(thread, turn, animateFinal = false) {
             }
           }
           turn.reply = reply;
+          turn.sources = task.sources;
         } else {
           turn.error = task.error || (terminal.has(task.state) ? "Model chưa trả về văn bản (" + task.state + ")." :
             "Lượt chat bị gián đoạn. Hãy gửi lại tin nhắn.");

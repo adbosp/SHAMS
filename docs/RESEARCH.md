@@ -1,6 +1,6 @@
 # Internet Access trong SHAMS
 
-Worker Ollama có tool calling tự quyết định lúc cần tra cứu. `ToolBox` cấp công cụ Research cho `LLMWorker` và `DirectChatWorker`. Trình điều phối gọi công cụ, trả dữ liệu lại cho model rồi tiếp tục vòng suy luận. Chat web thông thường vẫn dùng chế độ chat văn bản. Coding Agent riêng của Desktop ở PR #7 dùng catalog khác và chưa được nối vào module này.
+Worker Ollama có tool calling tự quyết định lúc cần tra cứu. `ToolBox` cấp công cụ Research cho `LLMWorker` và `DirectChatWorker`. Trình điều phối gọi công cụ, trả dữ liệu lại cho model rồi tiếp tục vòng suy luận. Web Chat cấp riêng ba công cụ tìm và đọc công khai khi Research bật và model Ollama khai báo khả năng tool calling. Nguồn thực sự đọc được hiển thị dưới câu trả lời. Coding Agent riêng của Desktop ở PR #7 dùng catalog khác và chưa được nối vào module này.
 
 Thiết kế tham khảo hai plugin [web-browsing](https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/agents/aibitat/plugins/web-browsing.js) và [web-scraping](https://github.com/Mintplex-Labs/anything-llm/blob/master/server/utils/agents/aibitat/plugins/web-scraping.js) của AnythingLLM. SHAMS giữ catalog, transport Ollama, vòng gọi công cụ và handoff hiện có.
 

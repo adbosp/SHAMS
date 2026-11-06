@@ -386,7 +386,7 @@ def create(entry: dict, attempts_root: Path, read_blob: Callable[[str], Path] | 
     raise ValueError(f"{w['worker_id']}: no implementation for kind {w['kind']!r}")
 
 
-_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds", "research",
+_WORKER_ONLY = {"system_prompt", "chat_options", "argv", "env", "cwd", "mcp", "max_tool_rounds", "research", "model_tools",
                 "preset", "content_policy",
                 # tool workers (ADR-120); extensions add theirs with worker_only_keys()
                 "max_fix_rounds", "render_resolution", "render_engine", "workflow", "params", "force"}
