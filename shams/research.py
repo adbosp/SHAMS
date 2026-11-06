@@ -10,7 +10,9 @@ Settings::
     "research": {"enabled": true, "search_url": "https://html.duckduckgo.com/html/?q={query}",
                  "max_bytes": 300000, "timeout": 20, "allow_domains": [], "deny_domains": []}
 
-``search_url`` may point at a SearXNG instance with ``format=json``.
+``search_url`` may point at a SearXNG instance with ``format=json``, also one running on this PC, e.g.
+``http://127.0.0.1:8888/search?q={query}&format=json&engines=google``: the configured search host is the one
+local address the tools may reach, and only for searches (``web_fetch`` still refuses local addresses).
 """
 from __future__ import annotations
 
@@ -80,7 +82,7 @@ class Research:
         return [dict(t, server="research", qualified=t["name"]) for t in TOOLS] if self.enabled else []
 
     # ------------------------------------------------------------------ http
-    def _check_url(self, url: str) -> str:
+    def _check_url(self, url: str, search: bool = False) -> str:
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ("http", "https") or not u.hostname:
             raise ValueError("only public http(s) URLs")
@@ -89,16 +91,18 @@ class Research:
             raise ValueError(f"domain {host} is denied")
         if self.allow and not any(host == d or host.endswith("." + d) for d in self.allow):
             raise ValueError(f"domain {host} is not in research.allow_domains")
+        if search and host == (urllib.parse.urlsplit(self.search_url).hostname or "").lower():
+            return url                                  # the user's own search endpoint (e.g. local SearXNG)
         if not _public(host):
             raise ValueError(f"{host} is a local/private address; research tools only reach the public web")
         return url
 
-    def _get(self, url: str) -> tuple[str, str]:
-        self._check_url(url)
+    def _get(self, url: str, search: bool = False) -> tuple[str, str]:
+        self._check_url(url, search)
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,application/json,text/plain"})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             final = r.geturl()
-            self._check_url(final)                      # redirects must stay public too
+            self._check_url(final, search)              # redirects must stay public too
             data = r.read(self.max_bytes + 1)[: self.max_bytes]
             ctype = r.headers.get("Content-Type", "")
             self.last_status = getattr(r, "status", 200)
@@ -107,7 +111,7 @@ class Research:
     # ------------------------------------------------------------------ tools
     def search(self, query: str, max_results: int = 6) -> list[dict]:
         url = self.search_url.replace("{query}", urllib.parse.quote_plus(query))
-        body, ctype = self._get(url)
+        body, ctype = self._get(url, search=True)
         if "json" in ctype or body.lstrip().startswith("{"):
             data = json.loads(body)
             return [{"title": r.get("title", ""), "url": r.get("url", ""), "snippet": r.get("content", "")}
