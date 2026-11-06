@@ -67,6 +67,8 @@ class AssetCheckers:
                 except Exception as e:  # noqa: BLE001 - a broken checker must not crash QC
                     return "NOT_VERIFIED", f"checker {ctype} crashed: {type(e).__name__}: {e}"
             fb = self.fallback.get(k)
+            if fb is None and k == "exists" and outputs is not None:
+                return self._exists(criterion, outputs)
             if fb is None:
                 return "NOT_VERIFIED", f"no checker for kind '{k}'" + (f" / type '{ctype}'" if ctype else "")
             if getattr(fb, "wants_outputs", False):
@@ -112,6 +114,14 @@ class AssetCheckers:
         summary = (f"{rep.get('mesh_objects')} meshes, {tris} tris, cameras {rep.get('cameras')}, lights "
                    f"{rep.get('lights')}, materials {len(rep.get('materials', []))}, non-manifold edges {nm}")
         return ("FAIL", "scene check: " + "; ".join(errs) + f" ({summary})") if errs else ("PASS", summary)
+
+    # ------------------------------------------------------------------ exists
+    def _exists(self, c: dict, outputs: list[dict]):
+        sel = [o for o in outputs if o.get("role", "output") == "output"]
+        empty = [o["logical_id"] for o in sel if not Path(o["file"]).exists() or Path(o["file"]).stat().st_size == 0]
+        if not sel or empty:
+            return "FAIL", "missing output: " + (", ".join(empty) if empty else "nothing produced")
+        return "PASS", f"{len(sel)} output(s) present and non-empty"
 
     # ------------------------------------------------------------------ text
     def _text(self, c: dict, outputs: list[dict]):

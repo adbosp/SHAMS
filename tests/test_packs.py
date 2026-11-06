@@ -225,3 +225,29 @@ def test_game_compile_checker_parses_web_code(tmp_path):
     assert v == "FAIL" and "compile error" in d
     assert chk("compile", {}, [], outputs=out(cs, "text/x-csharp"))[0] == "NOT_VERIFIED"
     assert chk("compile", {}, [], outputs=[])[0] == "FAIL"
+
+
+def test_web_game_template_criteria_all_have_checkers(tmp_path):
+    """A criterion with no checker stops at HUMAN_REVIEW and blocks everything after it."""
+    from shams.verification.checkers import CHECK_TYPES, AssetCheckers
+    from shams_packs.game import PACK
+    pack = PACK.checkers()
+    not_yet = {"unit_test", "screenshot", "integration_test", "runtime_log", "metric"}   # web runners pending
+    dag = instantiate("vertical_slice_3d", "p", "g", engine="web")
+    missing = []
+    for t in dag["tasks"]:
+        for c in t["acceptance_criteria"]:
+            ctype = (c.get("check") or {}).get("type")
+            ok = (ctype and (hasattr(AssetCheckers, f"_{ctype}") or ctype in CHECK_TYPES)) or \
+                c["kind"] in pack or c["kind"] == "exists" or c["kind"] in not_yet
+            if not ok and t["task_id"] != "task.sfx_core":       # audio has no worker yet: BLOCKED anyway
+                missing.append(f"{t['task_id']}:{c['id']}")
+    assert not missing
+    f = tmp_path / "brief.txt"
+    f.write_text("adult woman in her late 20s", encoding="utf-8")
+    chk = AssetCheckers().table()["exists"]
+    assert chk("exists", {"id": "e", "kind": "exists"}, [], outputs=[
+        {"logical_id": "b", "media_type": "text/plain", "file": str(f), "role": "output"}])[0] == "PASS"
+    (tmp_path / "empty.txt").write_text("", encoding="utf-8")
+    assert chk("exists", {"id": "e", "kind": "exists"}, [], outputs=[
+        {"logical_id": "b", "media_type": "text/plain", "file": str(tmp_path / "empty.txt"), "role": "output"}])[0] == "FAIL"

@@ -281,7 +281,7 @@
     {
       "task_id": "task.character_brief",
       "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
-      "description": "Đọc yêu cầu dự án và viết cho mỗi nhân vật một đoạn mô tả ngoại hình NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) để đưa vào model vẽ ảnh: giới tính, người trưởng thành, vóc dáng, kiểu tóc, trang phục, màu sắc, phong cách đồ hoạ hợp với game. Nhân vật chính và NPC phải khớp vai trò trong yêu cầu. Mỗi file chỉ tả MỘT người, không tả nền hay cảnh, không nội dung gợi dục, không nhắc tên thương hiệu hay nhân vật có thật.",
+      "description": "Đọc yêu cầu dự án và viết cho mỗi nhân vật một đoạn mô tả ngoại hình NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) để đưa vào model vẽ ảnh: giới tính, tuổi, vóc dáng, kiểu tóc, trang phục, màu sắc, phong cách đồ hoạ hợp với game. Mọi nhân vật là NGƯỜI TRƯỞNG THÀNH: ghi rõ tuổi (ví dụ 'a woman in her late 20s', 'a man in his 30s') và cho mặc trang phục người lớn; không dùng đồng phục học sinh, kiểu tóc hay trang phục gợi trẻ vị thành niên, không mô tả thân hình theo kiểu gợi dục. Nhân vật chính và NPC phải khớp vai trò trong yêu cầu. Mỗi file chỉ tả MỘT người, không tả nền hay cảnh, không nhắc tên thương hiệu hay nhân vật có thật. Mỗi file ghi đúng một lần.",
       "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
@@ -303,7 +303,11 @@
         {
           "id": "ac.brief_exists",
           "description": "Có hai file mô tả, mỗi file tả một nhân vật bằng tiếng Anh",
-          "kind": "exists"
+          "kind": "exists",
+          "check": {
+            "type": "text",
+            "min_chars": 40
+          }
         }
       ],
       "priority": 50,
@@ -322,7 +326,7 @@
       "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
       "capability": "image.concept",
       "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery"
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform"
       },
       "depends_on": [
         "task.character_brief"
@@ -355,7 +359,7 @@
         },
         {
           "id": "ac.player_concept_look",
-          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief.",
+          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief. The person must clearly look like an adult; anyone who looks like a child or teenager fails.",
           "kind": "visual",
           "check": {
             "type": "vlm",
@@ -448,7 +452,7 @@
       "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
       "capability": "image.concept",
       "params": {
-        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery"
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery, child, teen, young-looking, school uniform"
       },
       "depends_on": [
         "task.character_brief"
@@ -481,7 +485,7 @@
         },
         {
           "id": "ac.npc_concept_look",
-          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief.",
+          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief. The person must clearly look like an adult; anyone who looks like a child or teenager fails.",
           "kind": "visual",
           "check": {
             "type": "vlm",
