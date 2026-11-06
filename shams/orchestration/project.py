@@ -225,7 +225,8 @@ class Shams:
         return self.plan_from_template(goal=goal, approved_by=approved_by)
 
     # ------------------------------------------------------------------ Direct Mode (ADR-121)
-    def direct(self, preset_id: str, params: dict, *, by: str = "human", confirm_adult: bool = False) -> str:
+    def direct(self, preset_id: str, params: dict, *, by: str = "human", confirm_adult: bool = False,
+               chat_history: list[dict] | None = None) -> str:
         """Queue one task for one chosen preset: no planner, same scheduler, GPU lease, workers,
         artifact registry, QC and event log as Autonomous Mode. Returns the task id; run() executes it."""
         import jsonschema
@@ -237,6 +238,8 @@ class Shams:
             raise KeyError(f"unknown preset {preset_id!r}; see `shams presets`")
         if "direct" not in p["execution_modes"]:
             raise PermissionError(f"preset {preset_id} does not allow Direct Mode")
+        if chat_history is not None and (p["kind"] != "chat" or p["content_policy"].get("adult")):
+            raise PermissionError("preset is not available for web chat")
         params = dict(params or {})
         try:
             jsonschema.validate(params, p["input_schema"])
@@ -261,6 +264,8 @@ class Shams:
             self.lifecycle.workers = self.nodes.workers
         if p["content_policy"].get("adult"):
             params["_adult_confirmed"] = True
+        if chat_history is not None:
+            params["_chat_history"] = chat_history
         n = self.db.q1("SELECT COUNT(*) FROM tasks WHERE task_id LIKE 'task.direct.%'")[0] + 1
         tid = f"task.direct.{n:04d}"
         kinds = {"text/markdown": ("metric", {"type": "text", "min_chars": 1}),

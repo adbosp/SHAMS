@@ -13,11 +13,13 @@ import threading
 import time
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from apps.api.chat_prompt import assistant_system_prompt
 from shams import __version__, contracts, hardware, packs, providers
 from shams import settings as settings_mod
 from shams.mcp import MCPManager
@@ -113,6 +115,17 @@ class DirectIn(BaseModel):
     preset: str
     params: dict = {}
     confirm_adult: bool = False
+
+
+class ChatMessageIn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=100000)
+
+
+class WebChatIn(BaseModel):
+    preset: str
+    prompt: str = Field(min_length=1, max_length=100000)
+    history: list[ChatMessageIn] = Field(default_factory=list, max_length=20)
 
 
 class OpenIn(BaseModel):
@@ -665,11 +678,14 @@ class DirectService:
     """Direct Mode (ADR-121): one prompt on one chosen preset. Tasks live in ``<workspace>/_direct`` and run on
     the same scheduler, GPU lease, workers, artifact registry, QC and event log as planned projects."""
 
-    def __init__(self, workspace: Path):
-        self.dir = Path(workspace) / "_direct"
+    def __init__(self, workspace: Path, *, folder: str = "_direct", api_path: str = "/api/direct"):
+        self.dir = Path(workspace) / folder
+        self.api_path = api_path
         self.lock = threading.RLock()
         self.studio: Studio | None = None
         self.threads: dict[str, threading.Thread] = {}
+        self._progress_lock = threading.Lock()
+        self._progress: dict[str, tuple[dict, list[str]]] = {}
 
     def _open(self) -> Studio:
         with self.lock:
@@ -698,14 +714,15 @@ class DirectService:
         return {"presets": out, "confirm_text": policy.CONFIRM_TEXT,
                 "allow_adult_content": bool(s["general"].get("allow_adult_content", False))}
 
-    def queue(self, body: DirectIn) -> str:
+    def queue(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> str:
         """Validate and queue one Direct Mode task; returns its id (``execute`` runs it)."""
         from shams import policy
         st = self._open()
         with self.lock:
             try:
                 st.settings = settings_mod.load(self.dir)          # pick up presets added since the app started
-                return st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult)
+                return st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult,
+                                 chat_history=chat_history)
             except policy.PolicyError as e:
                 raise HTTPException(403, str(e))
             except KeyError as e:
@@ -721,11 +738,50 @@ class DirectService:
             with self.lock:
                 return st.run_task(tid)
 
-    def run(self, body: DirectIn) -> dict:
-        tid = self.queue(body)
-        t = threading.Thread(target=self.execute, args=(tid,), daemon=True)
+    def run(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> dict:
+        tid = self.queue(body, chat_history=chat_history)
+        st = self._open()
+        queued = self._view(st, st.db.task(tid), events=True)
+
+        def go():
+            if chat_history is None:
+                self.execute(tid)
+                return
+            from shams.workers.direct import reply_progress
+            token = reply_progress.set(self._publish_progress)
+            try:
+                self.execute(tid)
+            finally:
+                reply_progress.reset(token)
+                with self._progress_lock:
+                    self._progress.pop(tid, None)
+                    self.threads.pop(tid, None)
+
+        t = threading.Thread(target=go, daemon=True)
         self.threads[tid] = t
+        if chat_history is not None:
+            with self._progress_lock:
+                self._progress[tid] = (queued, [])
         t.start()
+        return {**queued, "running": True}
+
+    def _publish_progress(self, tid: str, text: str | None) -> None:
+        with self._progress_lock:
+            snapshot = self._progress.get(tid)
+            if snapshot is not None:
+                _, parts = snapshot
+                if text is None:
+                    parts.clear()
+                else:
+                    parts.append(text)
+
+    def chat_progress(self, tid: str) -> dict:
+        # The generation thread holds the Studio lock, so live reads use their own lock.
+        with self._progress_lock:
+            snapshot = self._progress.get(tid)
+            if snapshot is not None:
+                queued, parts = snapshot
+                return {**queued, "running": True, "partial": "".join(parts)}
         return self.task(tid)
 
     def tasks(self, limit: int = 30) -> list[dict]:
@@ -747,10 +803,12 @@ class DirectService:
         h = st.db.handoff(tid) or {}
         v = {"task_id": tid, "state": t["state"], "preset": t.get("preset"), "title": t["title"],
              "params": {k: val for k, val in (t.get("params") or {}).items() if not k.startswith("_")},
-             "running": tid in self.threads and self.threads[tid].is_alive(),
+             "running": bool((thread := self.threads.get(tid)) and thread.is_alive()),
              "summary": h.get("summary"), "error": h.get("blocked_reason"), "usage": h.get("usage"),
              "outputs": [{"logical_id": a["logical_id"], "media_type": a["media_type"], "sha256": a["sha256"],
-                          "url": f"/api/direct/artifact/{a['sha256']}"} for a in arts]}
+                            "url": f"{self.api_path}/artifact/{a['sha256']}"} for a in arts]}
+        if self.api_path == "/api/web-chat":
+            v["sources"] = [d["reason"] for d in h.get("decisions", []) if d["decision"] == "read web source"]
         if events:
             v["events"] = [{"seq": r["seq"], "type": r["type"], "at": r["ts"],
                             "subject": r["subject_id"]}
@@ -776,6 +834,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     app.state.svc = svc
     direct = DirectService(svc.workspace)
     app.state.direct = direct
+    web_chat = DirectService(svc.workspace, folder="_web_chat", api_path="/api/web-chat")
 
     @app.get("/")
     def index():
@@ -786,7 +845,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
         f = STATIC_DIR / name
         if f.parent != STATIC_DIR or not f.is_file():
             raise HTTPException(404, "not found")
-        return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+        return FileResponse(f, headers={"Cache-Control": "no-cache" if name == "chat.js" else "max-age=86400"})
 
     @app.get("/play/{task_id}/{path:path}")
     def play(task_id: str, path: str = ""):
@@ -874,6 +933,31 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     @app.get("/api/direct/presets")
     def direct_presets():
         return direct.presets()
+
+    @app.get("/api/web-chat/models")
+    def web_chat_models():
+        return {"models": [{k: p[k] for k in ("id", "label", "model", "status")}
+                           for p in web_chat.presets()["presets"]
+                           if p["kind"] == "chat" and "direct" in p["execution_modes"]
+                           and not p["content_policy"].get("adult")]}
+
+    @app.post("/api/web-chat/send")
+    def web_chat_send(body: WebChatIn):
+        if not body.prompt.strip():
+            raise HTTPException(400, "Tin nhắn trống")
+        if sum(len(message.content) for message in body.history) > 100000:
+            raise HTTPException(400, "Ngữ cảnh cuộc trò chuyện quá dài")
+        history = [{"role": "system", "content": assistant_system_prompt()},
+                   *[message.model_dump() for message in body.history]]
+        return web_chat.run(DirectIn(preset=body.preset, params={"prompt": body.prompt.strip()}), chat_history=history)
+
+    @app.get("/api/web-chat/tasks/{task_id}")
+    def web_chat_task(task_id: str):
+        return web_chat.chat_progress(task_id)
+
+    @app.get("/api/web-chat/artifact/{sha}")
+    def web_chat_artifact(sha: str):
+        return web_chat.artifact(sha)
 
     @app.post("/api/direct/run")
     def direct_run(body: DirectIn):

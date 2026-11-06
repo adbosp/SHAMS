@@ -22,8 +22,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from apps.api.chat_prompt import assistant_system_prompt
 from shams import providers
 from shams import settings as settings_mod
+from shams.research import RESEARCH_PROMPT, Research, ToolBox, requested_urls
 from shams.scheduling.gate import GPU_GATE, should_serialize
 
 from .bus import EventBus, JobChannel
@@ -250,7 +252,13 @@ class DesktopService:
         if status == "canceled":
             state["blocks"].append({"type": "notice", "text": "Đã hủy."})
         text_all = "\n".join(b.get("text", "") for b in state["blocks"] if b.get("type") == "text")
-        links = extract_links(text_all)
+        sources = state.get("sources", {})
+        if sources:
+            state["blocks"].extend([
+                {"type": "notice", "text": "Trang SHAMS đã đọc"},
+                {"type": "links", "items": [{"url": url, "kind": "link"} for url in sources]},
+            ])
+        links = [link for link in extract_links(text_all) if link["url"] not in sources]
         if links:
             state["blocks"].append({"type": "links", "items": links})
         self.store.update_message(mid, blocks=state["blocks"], status=status, usage=state["usage"])
@@ -315,14 +323,56 @@ class DesktopService:
         vision = "vision" in caps or (preset.get("worker") or {}).get("config", {}).get("vision") or \
             self._is_vision(preset)
         history, images = self._history(cid, mid, bool(vision))
-        sys_prompt = params.get("system") or (preset.get("params") or {}).get("system")
-        msgs = ([{"role": "system", "content": sys_prompt}] if sys_prompt else []) + history
+        sys_prompt = assistant_system_prompt()
+        preset_params = preset.get("params") or {}
+        extra = params.get("system") or preset_params.get("system")
+        if extra:
+            sys_prompt += "\n\nAdditional preset instructions, subordinate to the chat rules above:\n" + str(extra)
+        msgs = [{"role": "system", "content": sys_prompt}] + history
+        research = Research(self.settings().get("research"))
+        catalog = research.chat_tools() if (getattr(prov, "name", "") == "ollama" and
+                                           params.get("research", preset_params.get("research")) is not False and
+                                           self._model_tools_support(preset) is True) else []
         opts = self._gen_opts(prov, params)
         if images:
             opts["images"] = images
         with GPU_GATE.hold(f"chat:{jid}", model=model, kind="llm", cancel=ch.cancel):
             self._prepare_ollama(ch, prov, model)
-            self._stream_into(ch, state, prov, msgs, model, None, opts)
+            if not catalog:
+                self._stream_into(ch, state, prov, msgs, model, None, opts)
+                return
+            msgs[0]["content"] += "\n\n" + RESEARCH_PROMPT
+            self._stream_research_chat(ch, state, prov, msgs, model, opts, text, research, catalog)
+
+    def _stream_research_chat(self, ch, state, prov, msgs, model, opts, text, research, catalog) -> None:
+        toolbox = ToolBox(None, research)
+
+        def fetch_results(calls, tools):
+            results = []
+            for call in calls:
+                if ch.cancel.is_set():
+                    raise InterruptedError
+                res = toolbox.call(call["name"], call["arguments"], tools)
+                results.append((call, ("ERROR: " if res["is_error"] else "") + res["text"]))
+            return prov.stream_tool_results(results)
+
+        with research.session() as run:
+            for i, url in enumerate(requested_urls(text)):
+                name = "research__web_scrape"
+                args = {"url": url}
+                ch.publish("status", text="Đang đọc trang nguồn…")
+                msgs.append({"role": "assistant", "content": "",
+                             "tool_calls": [{"function": {"name": name, "arguments": args}}]})
+                msgs += fetch_results([{"name": name, "id": f"requested_source_{i}", "arguments": args}], catalog)
+            for round_ in range(research.max_calls + 1):
+                tools = toolbox.available(catalog) if round_ < research.max_calls else []
+                ev = self._stream_into(ch, state, prov, msgs, model, tools, opts)
+                if not ev.get("calls") or not tools:
+                    break
+                ch.publish("status", text="Đang tra cứu nguồn…")
+                msgs.append(ev["assistant"])
+                msgs += fetch_results(ev["calls"], tools)
+            state["sources"] = run.sources
 
     def _is_vision(self, preset: dict) -> bool:
         if (preset.get("worker") or {}).get("provider") != "ollama":

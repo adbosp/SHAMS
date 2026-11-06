@@ -475,6 +475,8 @@ def _make_preset(self, pid: str, pc: dict, b: RoleBinding, allow_adult: bool) ->
         cfg = {k: v for k, v in {"base_url": o.get("base_url"), "keep_alive": pc.get("keep_alive", o.get("keep_alive")),
                                  "num_ctx": num_ctx}.items() if v}
         cfg["impl"] = "scene3d" if kind == "scene3d" else "direct_chat"
+        if kind == "chat":
+            cfg["model_tools"] = "tools" in (b.info.get("capabilities") or [])
     elif b.backend in BACKENDS:
         extra = BACKENDS[b.backend].worker(self, b)
         cfg = dict(extra.pop("config", {}))

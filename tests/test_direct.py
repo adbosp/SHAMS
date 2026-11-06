@@ -104,25 +104,96 @@ def test_research_refuses_local_and_private_addresses(ollama):
     assert "denied" in deny.call("research__web_fetch", {"url": "https://www.example.com/"})["text"]
     allow = Research({"enabled": True, "allow_domains": ["wikipedia.org"]})
     assert "allow_domains" in allow.call("research__web_fetch", {"url": "https://example.com/"})["text"]
-    assert Research({}).tools() == [] and len(r.tools()) == 2
+    assert Research({}).tools() == [] and len(r.tools()) == 3
 
 
 def test_research_parses_results_and_marks_web_text_untrusted(monkeypatch):
     r = Research({"enabled": True, "search_url": "https://searx.example/search?q={query}&format=json"})
     seen = []
-    def fake_get(url, search=False):
+    def fake_get(url, **kwargs):
         seen.append(url)
         if "searx" in url:
-            return json.dumps({"results": [{"title": "T", "url": "https://a.example/x", "content": "S"}]}), "application/json"
-        return "<html><head><title>x</title></head><body><script>bad()</script><p>Hello</p><p>World</p></body></html>", "text/html"
+            return b'{"results":[{"title":"T","url":"https://a.example/x","content":"S"}]}', "application/json", url, 200
+        return b"<html><head><title>x</title></head><body><script>bad()</script><p>Hello</p><p>World</p></body></html>", "text/html", url, 200
     monkeypatch.setattr(r, "_get", fake_get)
     out = r.call("research__web_search", {"query": "blender bpy"})
     assert "q=blender+bpy" in seen[0] and "https://a.example/x" in out["text"] and out["text"].startswith("[UNTRUSTED")
     page = r.call("research__web_fetch", {"url": "https://a.example/x"})["text"]
     assert "Hello" in page and "bad()" not in page
     box = ToolBox(None, r)
-    assert [t["name"] for t in box.tools(None)] == ["research__web_search", "research__web_fetch"]
+    assert [t["name"] for t in box.tools(None)] == ["research__web_search", "research__web_scrape", "research__web_research"]
     assert r.log[0]["urls"] == ["https://a.example/x"]
+
+
+def test_research_fallback_and_turn_budget(monkeypatch):
+    r = Research({"enabled": True, "max_calls": 2})
+    attempts = []
+
+    def fake_get(url, **kwargs):
+        attempts.append(url)
+        if "8888" in url:
+            raise ConnectionError("service down")
+        if "duckduckgo" in url:
+            return b"bot check", "text/html", url, 202
+        if "bing.com" in url:
+            rss = b"<rss><channel><item><title>T</title><link>https://public.example/page</link></item></channel></rss>"
+            return rss, "application/rss+xml", url, 200
+        return b"<main>Verified content</main>", "text/html", url, 200
+
+    monkeypatch.setattr(r, "_get", fake_get)
+    box = ToolBox(None, r)
+    catalog = box.tools(None) + [{"name": "change_files", "server": "mcp"}]
+    with r.session() as run:
+        out = box.call("research__web_search", {"query": "query"}, catalog)
+        assert "[Bing RSS]" in out["text"]
+        assert box.call("change_files", {}, catalog)["denied"]
+        assert "Verified content" in box.call("research__web_scrape", {"url": "https://public.example/page"}, catalog)["text"]
+        assert list(run.sources) == ["https://public.example/page"]
+        assert box.available(catalog) == []
+        assert box.call("research__web_search", {"query": "another"}, catalog)["is_error"]
+    assert len(attempts) == 4
+    with r.session() as run:
+        assert run.sources == {} and box.available(catalog) == catalog
+
+
+def test_research_checks_redirect_before_second_network_request():
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            paths.append(self.path)
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{self.server.server_port}/private")
+            self.end_headers()
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        endpoint = f"http://127.0.0.1:{server.server_port}/search?q={{query}}"
+        r = Research({"enabled": True, "search_url": endpoint, "fallback_search_urls": []})
+        try:
+            result = r.call("research__web_search", {"query": "test"})
+            assert result["is_error"] and paths == ["/search?q=test"]
+        finally:
+            server.shutdown()
+
+
+def test_research_rejects_mixed_dns_results_before_opening_socket(monkeypatch):
+    from shams import research_http
+
+    monkeypatch.setattr(research_http.socket, "getaddrinfo", lambda *a, **k: [
+        (None, None, None, None, ("8.8.8.8", 443)), (None, None, None, None, ("100.64.0.1", 443)),
+    ])
+
+    def never_connect(*args, **kwargs):
+        pytest.fail("no connection may be attempted with a non-public DNS answer")
+
+    monkeypatch.setattr(research_http.socket, "create_connection", never_connect)
+    r = Research({"enabled": True})
+    assert r.call("research__web_scrape", {"url": "https://some.example/"})["is_error"]
 
 
 # --------------------------------------------------------------------------- Direct Mode end to end (fakes)
@@ -228,3 +299,94 @@ def test_direct_api_runs_a_task_and_serves_the_artifact(tmp_path, isolated_home,
     assert r.status_code == 200 and r.text == f"reply from {HERETIC}" and r.headers["content-type"].startswith("text/markdown")
     assert c.get("/api/direct/tasks").json()["tasks"][0]["task_id"] == t["task_id"]
     assert not any(p["folder"] == "_direct" for p in c.get("/api/projects").json()["projects"])
+
+
+@pytest.mark.parametrize("mode", ["disabled", "model_call", "requested_url"])
+def test_web_chat_streams_reply_with_runtime_prompt(tmp_path, isolated_home, ollama, monkeypatch, mode):
+    pytest.importorskip("fastapi")
+    import threading
+    import time
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+    from apps.api.server import create_app
+    from shams import providers
+    from shams.research import Research
+
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    settings = _settings(ollama.url, "http://127.0.0.1:9", allow_adult_content=True)
+    settings["research"] = {"enabled": mode != "disabled", "browser": {"enabled": True}}
+    (isolated_home / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    release = threading.Event()
+    captured = []
+    open_request = providers._open
+
+    @contextmanager
+    def open_stream(req, timeout):
+        if not req.full_url.endswith("/api/chat"):
+            with open_request(req, timeout) as response:
+                yield response
+            return
+        captured.append(json.loads(req.data))
+
+        def chunks():
+            if mode == "model_call" and len(captured) == 1:
+                yield b'{"message":{"tool_calls":[{"function":{"name":"research__web_scrape","arguments":{"url":"https://example.org/article"}}}]},"done":false}\n'
+                yield b'{"done":true}\n'
+                return
+            yield b'{"message":{"thinking":"hidden"},"done":false}\n'
+            yield b'{"message":{"content":"The word is "},"done":false}\n'
+            if not release.wait(10):
+                raise TimeoutError("test did not observe the partial reply")
+            yield b'{"message":{"content":"violet."},"done":false}\n'
+            yield b'{"done":true,"prompt_eval_count":5,"eval_count":3}\n'
+
+        yield chunks()
+
+    monkeypatch.setattr(providers, "_open", open_stream)
+    monkeypatch.setattr(Research, "_get", lambda self, url, **kwargs: (b"<main>Violet</main>", "text/html", url, 200))
+    with TestClient(create_app(tmp_path / "ws")) as client:
+        assert "chat.js" in client.get("/").text
+        assert client.get("/static/chat.js").status_code == 200
+        presets = client.get("/api/web-chat/models").json()["models"]
+        assert {p["id"] for p in presets} == {"coder", "qwen35-heretic-q4"}
+        assert client.post("/api/web-chat/send", json={"preset": "sdxl", "prompt": "hello"}).status_code == 400
+        assert client.post("/api/web-chat/send", json={"preset": "coder", "prompt": "  "}).status_code == 400
+        history = [{"role": "user", "content": "My word is violet."},
+                   {"role": "assistant", "content": "Understood."}]
+        prompt = "Read https://example.org/article and tell me the word." if mode == "requested_url" else "What word?"
+        r = client.post("/api/web-chat/send", json={"preset": "coder", "prompt": prompt, "history": history})
+        assert r.status_code == 200, r.text
+        tid = r.json()["task_id"]
+        try:
+            end = time.monotonic() + 8
+            while time.monotonic() < end:
+                task = client.get(f"/api/web-chat/tasks/{tid}").json()
+                if task.get("partial"):
+                    break
+                time.sleep(0.05)
+            assert task["running"] and task["partial"] == "The word is "
+        finally:
+            release.set()
+        end = time.monotonic() + 20
+        while time.monotonic() < end:
+            task = client.get(f"/api/web-chat/tasks/{tid}").json()
+            if not task["running"]:
+                break
+            time.sleep(0.05)
+        assert task["state"] == "ACCEPTED", task
+        assert client.get(task["outputs"][0]["url"]).text == "The word is violet."
+        assert client.get(f"/api/direct/tasks/{tid}").status_code == 404
+        request = captured[0]
+        assert request["stream"] is True
+        system, *messages = request["messages"]
+        assert system["role"] == "system" and "Runtime server date and time:" in system["content"]
+        assert "Always finish with a meaningful follow-up question" in system["content"]
+        assert messages[:3] == [*history, {"role": "user", "content": prompt}]
+        if mode != "disabled":
+            assert len(captured) == (2 if mode == "model_call" else 1)
+            assert {tool["function"]["name"] for tool in request["tools"]} == {
+                "research__web_search", "research__web_scrape", "research__web_research"}
+            assert "Violet" in captured[-1]["messages"][-1]["content"]
+            assert task["sources"] == ["https://example.org/article"]
+        else:
+            assert "tools" not in request and task["sources"] == []

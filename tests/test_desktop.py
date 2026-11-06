@@ -126,7 +126,39 @@ def test_streamed_chat_saves_history_and_groups_links(client, fake):
     assert [m["role"] for m in full["messages"]] == ["user", "assistant"]
     # the model really got the conversation, through the native streaming endpoint
     assert fake.requests[-1]["messages"][-1] == {"role": "user", "content": "Chào bạn"}
+    assert "Runtime server date and time:" in fake.requests[-1]["messages"][0]["content"]
+    assert "Always finish with a meaningful follow-up question" in fake.requests[-1]["messages"][0]["content"]
+    assert "tools" not in fake.requests[-1]
     assert c.get("/api/desktop/jobs").json()["jobs"][0]["status"] == "done"
+
+
+def test_desktop_chat_reads_sources_and_streams_without_workspace_tools(client, fake, isolated_home, monkeypatch):
+    from shams.research import Research
+
+    settings = _settings(fake.url, research={"enabled": True, "browser": {"enabled": True}})
+    (isolated_home / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    first = "https://example.org/a"
+    second = "https://example.org/b"
+    monkeypatch.setattr(Research, "_get", lambda self, url, **kwargs: (b"<main>Evidence</main>", "text/html", url, 200))
+    fake.script = [
+        {"tool_calls": [{"name": "research__web_scrape", "arguments": {"url": second}}]},
+        {"text": f"Đây là nguồn {first}. Bạn muốn tìm hiểu gì tiếp?"},
+    ]
+    cid = client.post("/api/desktop/conversations", json={"preset": "coder"}).json()["id"]
+    job = client.post(f"/api/desktop/conversations/{cid}/send", json={"text": f"Đọc {first}"}).json()
+    events = read_stream(client, job["job_id"])
+    assert any(event == "delta" for event, _ in events)
+    assert len(fake.requests) == 2
+    for request in fake.requests:
+        assert {t["function"]["name"] for t in request["tools"]} == {
+            "research__web_search", "research__web_scrape", "research__web_research"}
+        assert "Evidence" in request["messages"][-1]["content"]
+    done = next(data for event, data in events if event == "done")
+    assert done["status"] == "done"
+    assert done["message"]["blocks"][-2:] == [
+        {"type": "notice", "text": "Trang SHAMS đã đọc"},
+        {"type": "links", "items": [{"url": first, "kind": "link"}, {"url": second, "kind": "link"}]},
+    ]
 
 
 def test_text_attachment_is_inlined_and_unknown_preset_refused(client, fake):

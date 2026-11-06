@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Desktop Chat và Direct AI văn bản dùng cùng system prompt với Web Chat, nhận giờ máy chủ mỗi lượt và có thể tra cứu nguồn công khai chỉ đọc. Câu trả lời vẫn stream và ghi danh sách trang đã đọc trong lịch sử.
+
 **SHAMS Desktop Client** (ADR-122)
 - Desktop app in `apps/desktop/` (Tauri 2 + React + TypeScript + Tailwind): New Chat, Chat History, Direct AI, Autonomous Workflow, Projects, Media Gallery, Model Manager, Settings; light/dark themes. The Rust shell starts, health-checks and stops the Python Core Service (`shams desktop-backend`).
 - Streamed chat with Markdown, code blocks, attachments, thinking, and grouped blocks: tool calls, images/videos/3D, links. History in SQLite; search, pin, archive; survives restarts.
@@ -9,6 +11,14 @@
 - Model Manager: Ollama/ComfyUI discovery, SHAMS inventory matched against installed files, register/enable/disable/remove presets, Ollama load/unload with keep_alive, ComfyUI start and free.
 - Process-wide GPU gate shared by chats, Direct Mode and Autonomous runs; resource monitor; job cancel.
 - Video preset kind (animated WebP), Wan 2.1 1.3B and generic SDXL checkpoint workflows.
+- Web Chat dùng system prompt riêng với giờ máy chủ, hướng dẫn định dạng và câu hỏi tiếp nối. Model Ollama hỗ trợ tool calling có thể tra cứu chỉ đọc khi Research bật, tiếp tục stream câu trả lời và hiển thị danh sách trang đã đọc.
+
+- Web Chat hiển thị câu trả lời từng đoạn khi Ollama đang sinh chữ. Model trả một lần có hiệu ứng hiện dần ngắn, và lịch sử vẫn lưu câu trả lời hoàn chỉnh.
+
+- Research cho worker và Direct Mode: tìm kiếm SearXNG với fallback DuckDuckGo/Bing RSS, đọc và đối chiếu nguồn công khai, ghi URL thực sự đọc, cùng browser chỉ đọc tùy chọn. Transport kiểm từng redirect trước khi kết nối và ghim IP đã xác minh. Xem `docs/RESEARCH.md`.
+
+- Web UI: chat văn bản theo từng cuộc trò chuyện, chọn model, lưu lịch sử trên trình duyệt và giữ ngữ cảnh khi hỏi tiếp. Luồng chat web không gọi công cụ và không mở màn hình điều phối dự án.
+
 - 3D briefs: the planner turns the request into detailed English build descriptions before the 3D model runs: each character (height, hair, skin, every clothing item with colour) and the play area (`brief.environment`: ground, props with counts, sizes, colours, layout). Vietnamese slang such as 'cưa gái' is explained as flirting, not a saw.
 
 - Settings > Chung: switches for 18+ presets (`general.allow_adult_content`) and opening a finished game (`general.open_game`). Direct Mode links to the switch instead of asking to edit JSON.

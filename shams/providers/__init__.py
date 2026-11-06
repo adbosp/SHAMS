@@ -262,6 +262,7 @@ class Ollama(OpenAICompatible):
     reporting (/api/ps)."""
     name = "ollama"
     default_base_url = "http://127.0.0.1:11434"
+    supports_progress = True
 
     def __init__(self, base_url: str | None = None, keep_alive: str = "30m", native: bool = True,
                  think: bool | None = False, num_ctx: int | None = None, unload_wait_s: float = 30.0, **kw: Any):
@@ -274,7 +275,8 @@ class Ollama(OpenAICompatible):
 
     # chat ------------------------------------------------------------------------------------
     def chat(self, messages: list[dict], *, model: str, images: list[str] | None = None,
-             format: Any = None, think: Any = "default", **opts: Any) -> dict:
+             format: Any = None, think: Any = "default", on_delta: Callable[[str], None] | None = None,
+             **opts: Any) -> dict:
         """Native /api/chat. ``images`` are base64 strings attached to the last user message."""
         if not self.native and not images and format is None:
             return super().chat(messages, model=model, **opts)
@@ -294,6 +296,8 @@ class Ollama(OpenAICompatible):
             body["think"] = think
         if format is not None:
             body["format"] = format
+        if on_delta is not None:
+            return self._chat_progress(body, on_delta)
         r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
         if "error" in r:
             raise ProviderError(f"ollama: {r['error']}")
@@ -364,25 +368,62 @@ class Ollama(OpenAICompatible):
         """Load (or keep) a model with an explicit keep_alive (Model Manager)."""
         _post_json(f"{self.root}/api/generate", {"model": model, "keep_alive": keep_alive}, self.extra_headers, self.timeout)
 
-    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict], **opts: Any) -> dict:
+    def _chat_progress(self, body: dict, on_delta: Callable[[str], None]) -> dict:
+        url = f"{self.root}/api/chat"
+        req = urllib.request.Request(url, data=json.dumps({**body, "stream": True}).encode("utf-8"),
+                                     method="POST", headers={"Content-Type": "application/json", **self.extra_headers})
+        parts = []
+        calls = []
+        try:
+            with _open(req, self.timeout) as response:
+                for line in response:
+                    if not line.strip():
+                        continue
+                    chunk = json.loads(line)
+                    if "error" in chunk:
+                        raise ProviderError(f"ollama: {chunk['error']}")
+                    message = chunk.get("message") or {}
+                    calls.extend(message.get("tool_calls") or [])
+                    text = message.get("content")
+                    if text:
+                        parts.append(text)
+                        on_delta(text)
+                    if chunk.get("done"):
+                        return {"text": "".join(parts), "tokens_in": int(chunk.get("prompt_eval_count", 0)),
+                                "tokens_out": int(chunk.get("eval_count", 0)), "raw_calls": calls}
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:500]
+            raise ProviderError(f"HTTP {e.code} from {url}: {detail}") from None
+        except (OSError, ValueError) as e:
+            raise ProviderError(f"ollama stream: {e}") from None
+        raise ProviderError("ollama stream ended before the final response")
+
+    def chat_tools(self, messages: list[dict], *, model: str, tools: list[dict],
+                   on_delta: Callable[[str], None] | None = None, **opts: Any) -> dict:
         """Tool calls over native /api/chat, so num_ctx and keep_alive apply (the OpenAI-compatible endpoint
         ignores num_ctx and runs with Ollama's small default context, which cuts long task prompts)."""
         if not self.native:
             return super().chat_tools(messages, model=model, tools=tools, **opts)
+        think = opts.pop("think", self.think)
         options = {**{k: v for k, v in self.options.items() if k not in ("think",)}, **opts.pop("options", {}), **opts}
         if self.num_ctx and "num_ctx" not in options:
             options["num_ctx"] = self.num_ctx
         body: dict[str, Any] = {"model": model, "messages": [dict(m) for m in messages], "stream": False,
                                 "keep_alive": self.keep_alive, "options": options}
-        if self.think is not None:
-            body["think"] = self.think
+        if think is not None:
+            body["think"] = think
         if tools:
             body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
                                                                "parameters": t["input_schema"]}} for t in tools]
-        r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
-        if "error" in r:
-            raise ProviderError(f"ollama: {r['error']}")
-        msg = r.get("message") or {}
+        if on_delta is not None:
+            progress = self._chat_progress(body, on_delta)
+            msg = {"content": progress["text"], "tool_calls": progress["raw_calls"]}
+            r = {"prompt_eval_count": progress["tokens_in"], "eval_count": progress["tokens_out"]}
+        else:
+            r = _post_json(f"{self.root}/api/chat", body, self.extra_headers, self.timeout)
+            if "error" in r:
+                raise ProviderError(f"ollama: {r['error']}")
+            msg = r.get("message") or {}
         calls = []
         for i, c in enumerate(msg.get("tool_calls") or []):
             fn = c.get("function", {})

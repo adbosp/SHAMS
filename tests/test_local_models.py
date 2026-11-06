@@ -984,12 +984,11 @@ def test_detached_head_found_with_real_gaps_where_boxes_touch():
 def test_research_reports_a_blocked_search_page_as_unavailable(monkeypatch):
     from shams import research
     r = research.Research({"enabled": True})
-    def fake_get(url, search=False):
-        r.last_status = 202
-        return "<html>please verify you are human</html>", "text/html"
+    def fake_get(url, **kwargs):
+        return b"<html>please verify you are human</html>", "text/html", url, 202
     monkeypatch.setattr(r, "_get", fake_get)
     out = r.call("research__web_search", {"query": "three.js setup"})
-    assert out["is_error"] and "unavailable" in out["text"] and "own knowledge" in out["text"]
+    assert out["is_error"] and "unavailable" in out["text"] and "could not be verified" in out["text"]
 
 
 def test_research_uses_a_local_searxng_for_search_only():
@@ -1001,7 +1000,7 @@ def test_research_uses_a_local_searxng_for_search_only():
         out = r.call("research__web_search", {"query": "three.js"})
         assert not out["is_error"] and "threejs.org/docs" in out["text"]
         bad = r.call("research__web_fetch", {"url": srv.url + "/anything"})      # fetch still refuses local hosts
-        assert bad["is_error"] and "local" in bad["text"]
+        assert bad["is_error"] and "public web ports" in bad["text"]
     finally:
         srv.close()
 
