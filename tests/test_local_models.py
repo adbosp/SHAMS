@@ -1031,3 +1031,18 @@ def test_png_edge_check_catches_a_cropped_subject(tmp_path):
         return (40 + (x * 7) % 90, 60, 120) if 24 <= x < 40 and 6 <= y < 58 else (g, g, g)
     grad = _png(tmp_path / "grad.png", 64, 64, studio)
     assert assets.check_png(grad, {"max_edge_subject": 0.04})[0] == "PASS"
+
+
+def test_module_exports_tell_the_next_worker_how_to_import():
+    from shams.workers import module_exports
+    ex = module_exports('import x from "y";\nexport default class PlayerController {\n}\nexport const SPEED = 2;\n'
+                        'export { a, b };\nfunction hidden() {}\n')
+    assert ex == ["export default class PlayerController", "export const SPEED", "export { a, b }"]
+
+
+def test_png_edge_check_can_ignore_the_sides(tmp_path):
+    grey = (200, 200, 200)
+    img = _png(tmp_path / "side.png", 64, 64,
+               lambda x, y: (30, 30, 30) if (x < 3 and 20 < y < 40) or (24 <= x < 40 and 6 <= y < 58) else grey)
+    assert assets.check_png(img, {"max_edge_subject": 0.04})[0] == "FAIL"                  # a shadow on the left
+    assert assets.check_png(img, {"max_edge_subject": 0.04, "edge_sides": ["top", "bottom"], "min_colours": 1})[0] == "PASS"

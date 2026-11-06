@@ -328,7 +328,8 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
                 i["roughness"] * i["std"] > float(c.get("min_noise_difference", 10.0)):
             errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
     if "max_edge_subject" in c and "edge_subject" in i:
-        cut = [side for side, f in i["edge_subject"].items() if f > float(c["max_edge_subject"])]
+        sides = c.get("edge_sides") or ["top", "bottom", "left", "right"]
+        cut = [side for side, f in i["edge_subject"].items() if side in sides and f > float(c["max_edge_subject"])]
         if cut:
             errs.append("subject touches the image border (" + ", ".join(cut) + "): cropped, e.g. feet cut off")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "

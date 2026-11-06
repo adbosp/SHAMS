@@ -358,7 +358,9 @@
           "isometric",
           "low-poly",
           "scenery"
-        ]
+        ],
+        "width": 768,
+        "height": 1344
       },
       "depends_on": [
         "task.character_brief"
@@ -387,7 +389,11 @@
             "type": "image",
             "min_width": 256,
             "min_height": 256,
-            "max_edge_subject": 0.04
+            "max_edge_subject": 0.04,
+            "edge_sides": [
+              "top",
+              "bottom"
+            ]
           }
         },
         {
@@ -496,7 +502,9 @@
           "isometric",
           "low-poly",
           "scenery"
-        ]
+        ],
+        "width": 768,
+        "height": 1344
       },
       "depends_on": [
         "task.character_brief"
@@ -525,7 +533,11 @@
             "type": "image",
             "min_width": 256,
             "min_height": 256,
-            "max_edge_subject": 0.04
+            "max_edge_subject": 0.04,
+            "edge_sides": [
+              "top",
+              "bottom"
+            ]
           }
         },
         {

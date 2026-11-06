@@ -4,8 +4,8 @@ use_default_settings: true
 general:
   instance_name: "SHAMS local search"
 server:
-  bind_address: "127.0.0.1"
-  port: 8888
+  # inside the container SearXNG listens on 0.0.0.0:8080 (image default); "docker run -p 127.0.0.1:8888:8080"
+  # publishes it on this PC only
   secret_key: "CHANGE_ME_AT_INSTALL"
   limiter: false
   image_proxy: false

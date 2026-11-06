@@ -18,6 +18,7 @@ The Mock Worker (shams.mock) uses the same interface.
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import time
@@ -77,6 +78,23 @@ Reply with ONE JSON object and nothing else:
  "known_issues": ["<anything incomplete>"],
  "status": "READY_FOR_QC" | "BLOCKED",
  "blocked_reason": "<only when BLOCKED>"}"""
+
+
+_EXPORT = re.compile(r"^\s*export\s+(default\s+)?(?:abstract\s+)?(class|function\*?|const|let|var|interface|type|enum)?"
+                     r"\s*([A-Za-z_$][\w$]*)?", re.M)
+
+
+def module_exports(code: str) -> list[str]:
+    """The export lines of a JS/TS module, e.g. ["export default class PlayerController", "export const SPEED"],
+    so the next worker imports them the right way."""
+    out = []
+    for m in _EXPORT.finditer(code):
+        line = code[m.start():code.find("\n", m.start()) if "\n" in code[m.start():] else len(code)].strip()
+        if re.match(r"export\s*(type\s*)?\{", line):         # export { a, b } [from "..."]
+            out.append(line.rstrip(";")[:160])
+        else:
+            out.append(line.split("{")[0].split("=")[0].strip()[:120])
+    return out[:40]
 
 
 def extract_json(text: str) -> dict:
@@ -143,6 +161,9 @@ class LLMWorker:
                 p = self.read_blob(i["sha256"])
                 if p.exists():
                     item["content"] = p.read_text(encoding="utf-8", errors="replace")[:MAX_INPUT_CHARS]
+                    ex = module_exports(item["content"])
+                    if ex:                                # how to import it: default vs named exports
+                        item["exports"] = ex
             out.append(item)
         return out
 

@@ -64,6 +64,7 @@ VITEST_CONFIG = """export default {
     include: ["**/*.{test,spec}.{ts,js,mjs}", "**/*Test.{ts,js}", "**/*Tests.{ts,js}"],
     exclude: ["**/node_modules/**"],
     environment: "node",
+    globals: true,
     watch: false,
     testTimeout: 20000,
   },
