@@ -197,10 +197,17 @@ def test_agent_edits_files_with_diff_and_reverts(client, fake, tmp_path):
     evs = read_stream(c, job["job_id"])
     done = next(d for e, d in evs if e == "done")
     assert done["status"] == "done", done
+    assert done["message"]["job_kind"] == "agent"
+    assert any(e == "status" and "vòng 1" in d["text"] for e, d in evs)
+    command_events = [d["block"] for e, d in evs if e == "tool" and d["block"]["name"] == "run_command"]
+    assert [b["status"] for b in command_events] == ["running", "done"]
+    assert command_events[0]["started_at"] <= command_events[1]["finished_at"]
+    assert "exit_code" not in command_events[0]
     tools = [b for b in done["message"]["blocks"] if b["type"] == "tool"]
     assert [t["name"] for t in tools] == ["read_file", "edit_file", "run_command"]
     assert all(t["status"] == "done" for t in tools), tools
     assert "-print('v1')" in tools[1]["diff"] and "+print('v2')" in tools[1]["diff"]
+    assert (tools[1]["file_change"], tools[1]["added"], tools[1]["removed"]) == ("edited", 1, 1)
     assert tools[2]["exit_code"] == 0
     assert (folder / "app.py").read_text() == "print('v2')\n"
     # tool results went back to the model in native format
@@ -230,11 +237,24 @@ def test_agent_asks_before_acting_and_respects_denial(client, fake, tmp_path):
     assert b["tool"] == "run_command" and "destructive" in b["reason"]
     c.post(f"/api/desktop/approvals/{b['id']}", json={"approve": False, "note": "không push"})
     evs = read_stream(c, job["job_id"])
+    pending = [d["block"] for e, d in evs if e == "approval"]
+    assert len(pending) == 2 and all(b["status"] == "approval" for b in pending)
     done = next(d for e, d in evs if e == "done")
     tools = [x for x in done["message"]["blocks"] if x["type"] == "tool"]
     assert [t["status"] for t in tools] == ["done", "denied"]
     assert (folder / "new.txt").read_text() == "hi"
     assert "DENIED by the user: không push" in fake.requests[-1]["messages"][-1]["content"]
+
+
+def test_agent_patch_details_counts_lines_without_a_trailing_newline():
+    from apps.api.desktop.tools import patch_details
+
+    edit = patch_details("old", "+new", "notes.txt")
+    assert edit["file_change"] == "edited"
+    assert (edit["added"], edit["removed"]) == (1, 1)
+    assert "-old\n++new\n" in edit["diff"]
+    assert patch_details("", "", "empty.txt", created=True)["file_change"] == "created"
+    assert patch_details("same", "same", "notes.txt")["file_change"] is None
 
 
 def test_agent_needs_a_workspace_and_a_tool_model(client, fake, monkeypatch):

@@ -153,10 +153,11 @@ class DesktopStore:
         return self.message(mid)
 
     def message(self, mid: str) -> dict | None:
-        return self.q1("SELECT * FROM messages WHERE id=?", (mid,))
+        return self.q1("SELECT m.*, j.kind AS job_kind FROM messages m LEFT JOIN jobs j ON j.id=m.job_id WHERE m.id=?", (mid,))
 
     def messages(self, cid: str) -> list[dict]:
-        return self.q("SELECT * FROM messages WHERE conversation_id=? ORDER BY created", (cid,))
+        return self.q("SELECT m.*, j.kind AS job_kind FROM messages m LEFT JOIN jobs j ON j.id=m.job_id "
+                      "WHERE m.conversation_id=? ORDER BY m.created", (cid,))
 
     def update_message(self, mid: str, *, blocks: list[dict] | None = None, status: str | None = None,
                        usage: dict | None = None, model: str | None = None) -> None:

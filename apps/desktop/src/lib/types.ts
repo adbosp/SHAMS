@@ -14,6 +14,7 @@ export type Message = {
   model?: string | null;
   preset?: string | null;
   job_id?: string | null;
+  job_kind?: "chat" | "agent" | "media" | null;
   usage?: Record<string, number>;
   created: number;
   live_status?: string;

@@ -297,13 +297,13 @@ class Workspace:
 
     def t_write_file(self, path: str, content: str, job_id: str = "manual", **_: Any) -> dict:
         p = self.resolve(path)
-        old = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""
+        existed = p.exists()
+        old = p.read_text(encoding="utf-8", errors="replace") if existed else ""
         ck = self.checkpoint(job_id, p)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-        d = unified(old, content, self.rel(p))
-        return {"ok": True, "text": f"wrote {self.rel(p)} ({len(content)} chars)", "path": self.rel(p), "diff": d,
-                "checkpoint": ck}
+        return {"ok": True, "text": f"wrote {self.rel(p)} ({len(content)} chars)", "path": self.rel(p),
+                "checkpoint": ck, **patch_details(old, content, self.rel(p), created=not existed)}
 
     def t_edit_file(self, path: str, old_text: str, new_text: str, job_id: str = "manual", **_: Any) -> dict:
         p = self.resolve(path)
@@ -316,8 +316,8 @@ class Workspace:
         new = old.replace(old_text, new_text, 1)
         ck = self.checkpoint(job_id, p)
         p.write_text(new, encoding="utf-8")
-        return {"ok": True, "text": f"edited {self.rel(p)}", "path": self.rel(p), "diff": unified(old, new, self.rel(p)),
-                "checkpoint": ck}
+        return {"ok": True, "text": f"edited {self.rel(p)}", "path": self.rel(p), "checkpoint": ck,
+                **patch_details(old, new, self.rel(p))}
 
     def t_delete_file(self, path: str, job_id: str = "manual", **_: Any) -> dict:
         p = self.resolve(path)
@@ -326,8 +326,8 @@ class Workspace:
         old = p.read_text(encoding="utf-8", errors="replace")
         ck = self.checkpoint(job_id, p)
         p.unlink()
-        return {"ok": True, "text": f"deleted {self.rel(p)}", "path": self.rel(p), "diff": unified(old, "", self.rel(p)),
-                "checkpoint": ck}
+        return {"ok": True, "text": f"deleted {self.rel(p)}", "path": self.rel(p), "checkpoint": ck,
+                **patch_details(old, "", self.rel(p), deleted=True)}
 
     def command_env(self) -> dict:
         env = dict(os.environ)
@@ -391,6 +391,22 @@ def _stop_tree(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
+def _unified_lines(old: str, new: str, path: str):
+    return difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True),
+                               fromfile=f"a/{path}", tofile=f"b/{path}")
+
+
+def _diff_text(lines) -> str:
+    return "".join(line if line.endswith("\n") else line + "\n" for line in lines)[:60_000]
+
+
 def unified(old: str, new: str, path: str) -> str:
-    return "".join(difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True),
-                                        fromfile=f"a/{path}", tofile=f"b/{path}"))[:60_000]
+    return _diff_text(_unified_lines(old, new, path))
+
+
+def patch_details(old: str, new: str, path: str, *, created: bool = False, deleted: bool = False) -> dict:
+    lines = list(_unified_lines(old, new, path))
+    action = "created" if created else "deleted" if deleted else "edited" if old != new else None
+    return {"diff": _diff_text(lines), "file_change": action,
+            "added": sum(line.startswith("+") for line in lines[2:]),
+            "removed": sum(line.startswith("-") for line in lines[2:])}

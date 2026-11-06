@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -72,15 +72,17 @@ const TOOL_LABEL: Record<string, string> = {
 
 function toolTitle(b: Block) {
   const a = b.arguments || {};
-  const target = a.command || a.path || a.pattern || "";
-  return `${TOOL_LABEL[b.name] || b.name}${target ? ": " + String(target).slice(0, 90) : ""}`;
+  const target = a.command || b.path || a.path || a.pattern || "";
+  const changes: Record<string, string> = { created: "Đã tạo", edited: "Đã sửa", deleted: "Đã xóa" };
+  const label = changes[b.file_change] || (b.name === "run_command" && b.status === "done" ? "Đã chạy lệnh" : TOOL_LABEL[b.name] || b.name);
+  return `${label}${target ? ": " + String(target) : ""}`;
 }
 
 function StatusIcon({ s }: { s: string }) {
   if (s === "running" || s === "pending") return <Loader2 size={14} className="animate-spin text-accent" />;
   if (s === "approval") return <ShieldAlert size={14} className="text-warn" />;
   if (s === "done") return <Check size={14} className="text-ok" />;
-  if (s === "denied") return <X size={14} className="text-muted" />;
+  if (s === "denied" || s === "canceled" || s === "interrupted") return <X size={14} className="text-muted" />;
   return <AlertTriangle size={14} className="text-bad" />;
 }
 
@@ -115,24 +117,44 @@ function Approval({ b, onDecided }: { b: Block; onDecided?: () => void }) {
   );
 }
 
-function ToolItem({ b }: { b: Block }) {
+function lineCounts(b: Block) {
+  if (typeof b.added === "number" && typeof b.removed === "number") return { added: b.added, removed: b.removed };
+  const lines: string[] = (b.diff || "").split("\n").slice(2);
+  return { added: lines.filter((line) => line.startsWith("+")).length, removed: lines.filter((line) => line.startsWith("-")).length };
+}
+
+function LineCounts({ added, removed }: { added: number; removed: number }) {
+  return <span className="flex shrink-0 gap-1.5 font-mono text-xs" aria-label={`Thêm ${added} dòng, xóa ${removed} dòng`}>
+    {added > 0 && <span className="text-ok">+{added}</span>}
+    {removed > 0 && <span className="text-bad">−{removed}</span>}
+  </span>;
+}
+
+function ToolItem({ b, now }: { b: Block; now: number }) {
   const [open, setOpen] = useState(b.status === "approval");
   const Icon = b.name === "run_command" ? Terminal : b.name?.includes("file") ? FileText : Wrench;
+  const title = toolTitle(b);
+  const seconds = b.seconds ?? (b.started_at != null && (b.finished_at != null || b.status === "running")
+    ? Math.max(0, (b.finished_at ?? now) - b.started_at) : undefined);
+  const expanded = open || b.status === "approval";
   return (
     <div className="border-b border-line last:border-0">
-      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-sunk" onClick={() => setOpen(!open)}>
+      <button className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-sunk" aria-expanded={expanded}
+        onClick={() => setOpen(!open)}>
         <StatusIcon s={b.status} />
         <Icon size={13} className="text-muted" />
-        <span className="truncate">{toolTitle(b)}</span>
-        {b.exit_code != null && <span className={`chip ml-1 ${b.exit_code === 0 ? "text-ok" : "text-bad"}`}>exit {b.exit_code}</span>}
-        <span className="ml-auto text-muted">{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+        {b.status === "done" && (b.file_change || b.diff) && <LineCounts {...lineCounts(b)} />}
+        {seconds != null && <span className="shrink-0 text-xs tabular-nums text-muted">{Math.floor(seconds)}s</span>}
+        {b.exit_code != null && <span className={`chip shrink-0 ${b.exit_code === 0 ? "text-ok" : "text-bad"}`}>exit {b.exit_code}</span>}
+        <span className="shrink-0 text-muted">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
-      {(open || b.status === "approval") && (
+      {expanded && (
         <div className="px-3 pb-2">
           {b.status === "approval" && <Approval b={b} />}
           {b.status !== "approval" && b.diff && <DiffView diff={b.diff} />}
           {b.status !== "approval" && b.result && !b.diff && (
-            <pre className="max-h-72 overflow-auto rounded-md bg-sunk p-2 font-mono text-[12px]">{b.result}</pre>
+            <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-sunk p-2 font-mono text-[12px]">{b.result}</pre>
           )}
           {b.status === "denied" && <div className="text-xs text-muted">Bị từ chối{b.note ? `: ${b.note}` : ""} ({b.reason})</div>}
         </div>
@@ -141,19 +163,49 @@ function ToolItem({ b }: { b: Block }) {
   );
 }
 
-function ToolGroup({ items }: { items: Block[] }) {
-  const busy = items.some((b) => ["running", "pending", "approval"].includes(b.status));
-  const [open, setOpen] = useState(false);
-  const show = open || busy;
+export function AgentProgress({ items, status, liveStatus }: { items: Block[]; status: string; liveStatus?: string }) {
+  const live = status === "streaming";
+  const [open, setOpen] = useState(live);
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const list = useRef<HTMLDivElement>(null);
+  const running = live && items.some((b) => b.status === "running");
+  useEffect(() => {
+    if (!running) return;
+    const interval = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(interval);
+  }, [running]);
+  useEffect(() => {
+    if (live && open && list.current) list.current.scrollTop = list.current.scrollHeight;
+  }, [live, open, items.length]);
+  const displayItems = live ? items : items.map((b) => ["running", "pending", "approval"].includes(b.status)
+    ? { ...b, status: status === "canceled" ? "canceled" : "interrupted" } : b);
+  const awaiting = live ? displayItems.filter((b) => b.status === "approval") : [];
+  const current = live ? displayItems.find((b) => ["running", "pending", "approval"].includes(b.status)) : undefined;
+  const changed = items.filter((b) => b.status === "done" && b.path && (b.file_change || b.diff));
+  const paths = new Set(changed.map((b) => b.path));
+  const totals = changed.reduce((sum, item) => {
+    const count = lineCounts(item);
+    return { added: sum.added + count.added, removed: sum.removed + count.removed };
+  }, { added: 0, removed: 0 });
   const failed = items.filter((b) => b.status === "error").length;
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-line bg-panel">
-      <button className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-muted hover:text-fg" onClick={() => setOpen(!open)}>
-        {show ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <Wrench size={14} /> {busy ? "Đang dùng công cụ" : "Đã dùng"} {items.length} công cụ
+      <button className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-muted hover:text-fg" aria-expanded={open}
+        onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {live ? <Loader2 size={14} className="animate-spin" /> : <Wrench size={14} />}
+        <span className="shrink-0 font-medium text-fg">Tiến trình Agent</span>
+        <span className="min-w-0 flex-1 truncate">{current ? toolTitle(current) : live ? (liveStatus || "Đang chờ model…") : `${items.length} thao tác`}</span>
         {failed > 0 && <span className="text-bad">· {failed} lỗi</span>}
       </button>
-      {show && <div className="border-t border-line">{items.map((b, i) => <ToolItem key={b.id || i} b={b} />)}</div>}
+      {open && displayItems.length > 0 && <div ref={list} className="max-h-80 overflow-y-auto border-t border-line" aria-label="Nhật ký thao tác Agent">
+        {displayItems.map((b, i) => <ToolItem key={i} b={b} now={now} />)}
+      </div>}
+      {!open && awaiting.map((b, i) => <div key={i} className="px-3 pb-2"><Approval b={b} /></div>)}
+      {paths.size > 0 && <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2 text-xs text-muted"
+        title="Số dòng cộng dồn qua các thao tác sửa tệp của Agent">
+        <span>{paths.size} tệp đã thay đổi</span><LineCounts {...totals} />
+      </div>}
     </div>
   );
 }
@@ -238,16 +290,6 @@ export function Blocks({ blocks, live }: { blocks: Block[]; live: boolean }) {
   let i = 0;
   while (i < blocks.length) {
     const b = blocks[i];
-    if (b.type === "tool") {
-      const g: Block[] = [];
-      const blank = (x: Block) => x.type === "text" && !(x.text || "").trim();
-      while (i < blocks.length && (blocks[i].type === "tool" || blank(blocks[i]))) {
-        if (blocks[i].type === "tool") g.push(blocks[i]);
-        i++;
-      }
-      out.push(<ToolGroup key={`t${i}`} items={g} />);
-      continue;
-    }
     if (MEDIA.has(b.type)) {
       const g: Block[] = [];
       while (i < blocks.length && MEDIA.has(blocks[i].type)) g.push(blocks[i++]);

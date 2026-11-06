@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Desktop Agent có bảng tiến trình thu gọn được trong từng lượt chat. Bảng hiển thị thao tác đang chạy, thời gian, kết quả lệnh, diff từng tệp và tổng dòng thêm/xóa qua các thao tác sửa tệp. Yêu cầu duyệt vẫn hiển thị khi thu gọn.
+
 - Desktop Chat và Direct AI văn bản dùng cùng system prompt với Web Chat, nhận giờ máy chủ mỗi lượt và có thể tra cứu nguồn công khai chỉ đọc. Câu trả lời vẫn stream và ghi danh sách trang đã đọc trong lịch sử.
 
 **SHAMS Desktop Client** (ADR-122)

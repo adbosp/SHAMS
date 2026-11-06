@@ -5,7 +5,7 @@ import {
 import { api, applyEvent, streamJob, type ConversationDetail } from "../lib/api";
 import { KIND_LABEL, usePersisted, type Shared } from "../lib/store";
 import type { Conversation, Message, Preset, Route } from "../lib/types";
-import { Attachments, Blocks } from "../components/Blocks";
+import { AgentProgress, Attachments, Blocks } from "../components/Blocks";
 import ParamsForm from "../components/ParamsForm";
 
 const PERMS = [
@@ -137,7 +137,7 @@ export default function ChatView({ id, shared, go, initialPreset }: {
         });
         setConv(c);
       }
-      const r = await api.post<{ job_id: string; message_id: string; user_message_id: string }>(
+      const r = await api.post<{ job_id: string; message_id: string; user_message_id: string; kind: Message["job_kind"] }>(
         `/api/desktop/conversations/${c.id}/send`,
         { text, attachments: atts, preset, mode, params, confirm_adult: confirmAdult });
       setLastPreset(preset);
@@ -145,7 +145,8 @@ export default function ChatView({ id, shared, go, initialPreset }: {
       const blocks = [...(text ? [{ type: "text" as const, text }] : []), ...atts.map((a) => ({ type: "attachment" as const, ...a }))];
       setMessages((ms) => [...ms,
         { id: r.user_message_id, conversation_id: c!.id, role: "user", blocks, status: "done", created: now },
-        { id: r.message_id, conversation_id: c!.id, role: "assistant", blocks: [], status: "streaming", created: now, preset }]);
+        { id: r.message_id, conversation_id: c!.id, role: "assistant", blocks: [], status: "streaming", created: now,
+          preset, job_id: r.job_id, job_kind: r.kind }]);
       setText("");
       setAtts([]);
       follow(r.job_id, r.message_id);
@@ -213,8 +214,11 @@ export default function ChatView({ id, shared, go, initialPreset }: {
                 {m.status === "canceled" && " · đã hủy"}
                 {m.status === "interrupted" && " · bị gián đoạn (khởi động lại)"}
               </div>
+              {(m.job_kind === "agent" || m.blocks.some((b) => b.type === "tool")) && (
+                <AgentProgress items={m.blocks.filter((b) => b.type === "tool")} status={m.status} liveStatus={m.live_status} />
+              )}
               <Blocks blocks={m.blocks} live={m.status === "streaming"} />
-              {m.status === "streaming" && (
+              {m.status === "streaming" && m.job_kind !== "agent" && (
                 <div className="mt-1 flex items-center gap-2 text-[12px] text-muted">
                   <Loader2 size={13} className="animate-spin" /> {m.live_status || (m.blocks.length ? "Đang trả lời..." : "Đang chờ model...")}
                 </div>

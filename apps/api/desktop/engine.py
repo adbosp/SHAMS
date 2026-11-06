@@ -464,6 +464,7 @@ class DesktopService:
         with GPU_GATE.hold(f"agent:{jid}", model=model, kind="llm", cancel=ch.cancel):
             self._prepare_ollama(ch, prov, model)
             for r in range(rounds + 1):
+                ch.publish("status", text=f"Agent đang phân tích · vòng {r + 1}")
                 tools = TOOL_SPECS if r < rounds else None
                 ev = self._stream_into(ch, state, prov, msgs, model, tools, opts)
                 if not ev or not ev.get("calls"):
@@ -489,30 +490,33 @@ class DesktopService:
         block["reason"] = reason
         if decision == "deny":
             block["status"] = "denied"
-            ch.publish("tool", index=idx, block=block)
+            ch.publish("tool", index=idx, block=dict(block))
             self.store.log_tool(jid, cid, name, args, "deny", reason)
             return f"DENIED by permission policy: {reason}"
         if decision == "ask":
             preview = ws.preview(name, args)
             appr = self.store.create_approval(jid, cid, name, args, reason, preview)
             block.update(status="approval", approval_id=appr["id"], preview=preview)
-            ch.publish("approval", index=idx, block=block, approval=appr)
+            ch.publish("approval", index=idx, block=dict(block), approval=appr)
             ok, note = self._wait_approval(appr["id"], ch)
             if not ok:
                 block["status"] = "denied"
                 block["note"] = note
-                ch.publish("tool", index=idx, block=block)
+                ch.publish("tool", index=idx, block=dict(block))
                 self.store.log_tool(jid, cid, name, args, "denied_by_user", note)
                 return "DENIED by the user" + (f": {note}" if note else "") + ". Do not retry this action."
-        block["status"] = "running"
-        ch.publish("tool", index=idx, block=block)
+        block.update(status="running", started_at=time.time())
+        ch.publish("tool", index=idx, block=dict(block))
         res = ws.call(name, args, job_id=jid, cancel=ch.cancel)
-        block["status"] = "done" if res.get("ok") else "error"
+        block["status"] = "done" if res.get("ok") else "canceled" if res.get("status") == "canceled" else "error"
+        block["finished_at"] = time.time()
         block["result"] = res.get("text", "")[:6000]
         for k in ("diff", "path", "exit_code", "checkpoint", "seconds"):
             if res.get(k) is not None:
                 block[k] = res[k]
-        ch.publish("tool", index=idx, block=block)
+        if "file_change" in res:
+            block.update(file_change=res["file_change"], added=res["added"], removed=res["removed"])
+        ch.publish("tool", index=idx, block=dict(block))
         self.store.log_tool(jid, cid, name, args, "allow" if decision == "allow" else "approved", res.get("text"),
                             res.get("checkpoint"))
         return ("" if res.get("ok") else "ERROR: ") + res.get("text", "")[:20000]
