@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- App: when a build task with a playable copy is accepted, SHAMS posts a local link in the project chat (`/play/<task>/` on the app's own server) with a "Chơi thử game" button and opens it in the browser (`general.open_game`, default on). A build accepted by hand while a check failed is announced with a warning naming the failed checks.
+- Web scene hint: WebGLRenderer (the model used `THREE.WebGPU`, which does not exist, and the game showed a black screen), load both characters, camera above and looking down, stronger lights, HUD attached to the container.
+
 - Web unit tests: Jest-style calls (`jest.fn`, `jest.spyOn`) run on Vitest through a setup file that maps `jest` to `vi`. Engine profiles get a `test_hint` (`${test_hint}` in templates); for Web it tells the coder to use Vitest's `vi` and keep tests next to the module they test. Template tokens are JSON-escaped, so engine text may contain quotes.
 
 **Direct Mode and presets** (ADR-121)

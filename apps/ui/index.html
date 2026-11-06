@@ -307,7 +307,7 @@ function chatView(){
     if (m.role === "user"){
       h += `<div class="msg user"><div class="who">You</div><div class="body">${esc(m.text)}</div></div>`;
     } else {
-      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body">${esc(m.text)}</div>`;
+      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body">${esc(m.text)}${m.url ? `<div class="actions" style="margin-top:8px"><a class="btn primary" style="text-decoration:none;display:inline-block" href="${esc(m.url)}" target="_blank" rel="noopener">Chơi thử game</a></div>` : ""}</div>`;
       if (m.live && S.tasks.length){
         const active = S.tasks.filter(t => !["PENDING","READY"].includes(t.state))
           .sort((a,b) => (order[a.state]??5)-(order[b.state]??5)).slice(0,8);

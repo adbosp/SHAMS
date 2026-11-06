@@ -149,6 +149,9 @@ class StudioService:
         self.dir: Path | None = None
         self.chat: list[dict] = []
         self.draft = {"domain": None, "options": {}}
+        self.base_url = "http://127.0.0.1:8765"      # serve() sets the real address
+        self.open_game = False                       # serve() turns this on: open a finished game in the browser
+        self.announce = False                        # off while the service is still being set up
         if first:
             self.open(first)
 
@@ -186,6 +189,7 @@ class StudioService:
             self.chat_file = self.dir / "chat.json"
             self.chat = json.loads(self.chat_file.read_text(encoding="utf-8")) if self.chat_file.exists() else []
             go = resume and bool(self.studio.db.tasks()) and not self.studio.status()["done"]
+        self.announce_playable()
         if go:                                  # decided under the lock: another open() may follow at once
             self.start()
 
@@ -259,6 +263,7 @@ class StudioService:
                     if self.studio is None:
                         break
                     progressed = self.studio.step()
+                self.announce_playable()
                 if not progressed:
                     break
                 time.sleep(0.05)
@@ -275,6 +280,57 @@ class StudioService:
                 self._save_chat()
         finally:
             self.running = False
+
+    # ------------------------------------------------------------------ playable builds
+    def playable(self) -> dict[str, dict]:
+        """Accepted tasks whose worker left a playable copy (handoff decision "playable build" naming a folder
+        with index.html): {task_id: {"dir", "attempt", "failed"}}."""
+        out: dict[str, dict] = {}
+        st = self.studio
+        if st is None:
+            return out
+        try:
+            for t in st.db.tasks({S.ACCEPTED}):
+                h = st.db.handoff(t["task_id"]) or {}
+                for d in h.get("decisions") or []:
+                    if d.get("decision") == "playable build":
+                        root = Path(str(d.get("reason") or ""))
+                        if (root / "index.html").is_file():
+                            reps = [r for r in st.db.qc_reports(t["task_id"]) if r.get("attempt") == h.get("attempt")]
+                            crit = reps[-1].get("criteria") or [] if reps else []
+                            failed = [c["criterion_id"] for c in crit if c.get("verdict") == "FAIL"]
+                            out[t["task_id"]] = {"dir": root, "attempt": h.get("attempt"), "failed": failed}
+        except StoreClosed:
+            return {}
+        return out
+
+    def play_url(self, task_id: str) -> str:
+        return f"{self.base_url}/play/{task_id}/"
+
+    def announce_playable(self) -> None:
+        """Once per accepted build: post the local link in the project chat and open it in the browser."""
+        if not self.announce:
+            return
+        try:
+            builds = self.playable()
+        except Exception:  # noqa: BLE001 - announcing must never stop the run loop
+            return
+        done = {m.get("play") for m in self.chat if m.get("play")}
+        new = [(tid, b) for tid, b in builds.items() if f"{tid}@{b['attempt']}" not in done]
+        for tid, b in new:
+            url = self.play_url(tid)
+            if b.get("failed"):
+                text = (f"Game đã build và được duyệt tay, nhưng kiểm tra chưa đạt: {', '.join(b['failed'])}. "
+                        f"Game có thể lỗi khi chạy (ví dụ màn hình đen). Mở tại {url} (file nằm ở {b['dir']}).")
+            else:
+                text = f"Game đã build xong và qua kiểm tra. Chơi thử tại {url} (file nằm ở {b['dir']})."
+            self.chat.append({"role": "director", "ts": contracts.now_iso(), "play": f"{tid}@{b['attempt']}",
+                              "url": url, "text": text})
+            if self.open_game:
+                import webbrowser
+                threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+        if new:
+            self._save_chat()
 
     # ------------------------------------------------------------------ chat
     def _save_chat(self) -> None:
@@ -460,6 +516,7 @@ class StudioService:
                 self.studio.human_decide(d.task_id, d.decision, d.note)
             except (ValueError, KeyError) as e:
                 raise HTTPException(400, str(e))
+        self.announce_playable()
         self.start()
         return self.state()
 
@@ -645,6 +702,7 @@ class DirectService:
 
 def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
+    svc.announce = True
     app = FastAPI(title="SHAMS", version=__version__)
     app.state.svc = svc
     direct = DirectService(svc.workspace)
@@ -660,6 +718,21 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
         if f.parent != STATIC_DIR or not f.is_file():
             raise HTTPException(404, "not found")
         return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+
+    @app.get("/play/{task_id}/{path:path}")
+    def play(task_id: str, path: str = ""):
+        b = svc.playable().get(task_id)
+        if not b:
+            raise HTTPException(404, "no playable build for this task")
+        root = Path(b["dir"]).resolve()
+        f = (root / (path or "index.html")).resolve()
+        if f.is_dir():
+            f = f / "index.html"
+        if root not in f.parents or not f.is_file():
+            raise HTTPException(404, "not found")
+        mt = {".js": "text/javascript", ".mjs": "text/javascript", ".glb": "model/gltf-binary",
+              ".wasm": "application/wasm"}.get(f.suffix.lower())
+        return FileResponse(f, media_type=mt, headers={"Cache-Control": "no-store"})
 
     @app.get("/favicon.ico")
     def favicon():
@@ -760,6 +833,10 @@ def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: floa
     app = create_app(path, mock_delay)
     if open_browser is None:
         open_browser = bool(settings_mod.load(None)["general"].get("open_browser", True))
+    svc = app.state.svc
+    svc.base_url = f"http://{host}:{port}"
+    svc.open_game = bool(settings_mod.load(None)["general"].get("open_game", True))
+    svc.announce_playable()             # a game built in an earlier session is announced (and opened) now
     if open_browser:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}/")).start()

@@ -119,17 +119,21 @@ ENGINES: dict[str, EngineProfile] = {
         build_media_type="application/zip", build_contract="build.web", build_target="Static web (Vite)",
         roots={"scripts": "src/game", "tests": "tests", "scenes": "src/scenes", "models": "public/models",
                "textures": "public/textures", "audio": "public/audio", "builds": "dist"},
-        scene_hint=("Module scene phải `export function start(container: HTMLElement): void`: tạo renderer "
-                    "(WebGPU, lùi về WebGL2), camera, ánh sáng, mặt đất phủ texture /textures/environment.png, nạp "
+        scene_hint=("Module scene phải `export function start(container: HTMLElement): void`: tạo "
+                    "`new THREE.WebGLRenderer({ antialias: true })` (không dùng `THREE.WebGPU`, thuộc tính đó không "
+                    "tồn tại trong `three`), gắn renderer.domElement vào container; camera phối cảnh đặt cao và chếch "
+                    "nhìn xuống nhân vật (ví dụ position (0, 6, 10), lookAt nhân vật); HemisphereLight cộng "
+                    "DirectionalLight đủ sáng; mặt đất phủ texture /textures/environment.png. Nạp CẢ HAI "
                     "/models/Player/player.glb và /models/Npc/npc.glb bằng GLTFLoader (three/examples/jsm/loaders/"
-                    "GLTFLoader.js), gắn điều khiển nhân vật, spawner, cơ chế chính và HUD từ các module đầu vào, rồi "
-                    "chạy vòng lặp requestAnimationFrame. SHAMS tự tạo index.html và src/main.ts gọi start(); không "
-                    "viết hai file đó."),
+                    "GLTFLoader.js), thêm cả hai vào scene và đặt NPC cách người chơi vài mét. Gắn điều khiển nhân "
+                    "vật, spawner, cơ chế chính và HUD từ các module đầu vào (phần tử HUD phải được gắn vào "
+                    "container), rồi chạy vòng lặp requestAnimationFrame. SHAMS tự tạo index.html và src/main.ts "
+                    "gọi start(); không viết hai file đó."),
         test_hint=("Test viết cho Vitest: `import { describe, it, expect, vi } from \"vitest\"`, mock bằng `vi.fn()` / "
                    "`vi.spyOn()`, không dùng `jest`. File test đặt cùng thư mục với module nó test và import bằng "
                    "đường dẫn tương đối `./TenModule`."),
         run_check="web_smoke", build_check="web_zip",
-        notes="WebGPURenderer, tự lùi về WebGL2 khi trình duyệt không có WebGPU. Build Vite, test Vitest, "
+        notes="WebGLRenderer (WebGPU là tuỳ chọn về sau). Build Vite, test Vitest, "
               "smoke test + screenshot bằng Playwright headless."),
 }
 

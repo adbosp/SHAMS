@@ -72,3 +72,41 @@ def test_chat_for_software_request_uses_software_pack(tmp_path):
     assert {t["capability"] for t in s["tasks"]} >= {"code.python", "build.python", "integration"}
     s = _wait_idle(c)
     assert s["progress"] == {"done": 5, "total": 5}
+
+
+def test_accepted_playable_build_is_announced_and_served(tmp_path, monkeypatch):
+    app = create_app(tmp_path / "p")
+    c = TestClient(app)
+    c.post("/api/chat", json={"text": "Tạo game cá mập 3D có hệ thống săn mồi và tiến hóa."})
+    _wait_idle(c)
+    svc = app.state.svc
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    svc.open_game = True
+    play = tmp_path / "play"
+    (play / "assets").mkdir(parents=True)
+    (play / "index.html").write_text("<html>game</html>", encoding="utf-8")
+    (play / "assets" / "main.js").write_text("console.log(1)", encoding="utf-8")
+    db = svc.studio.db
+    tid = db.tasks()[-1]["task_id"]
+    h = db.handoff(tid)
+    h["decisions"] = list(h.get("decisions") or []) + [{"decision": "playable build", "reason": str(play)}]
+    db.save_handoff(h)
+    rep = db.qc_reports(tid)[-1]
+    rep["criteria"] = list(rep["criteria"]) + [{"criterion_id": "ac.smoke", "verdict": "FAIL", "stage": 4}]
+    db.save_qc(rep)                                          # accepted by hand although a check failed
+    svc.announce_playable()
+    svc.announce_playable()                                  # once only
+    msgs = [m for m in svc.chat if m.get("play")]
+    assert len(msgs) == 1 and f"http://127.0.0.1:8765/play/{tid}/" in msgs[0]["text"]
+    assert "ac.smoke" in msgs[0]["text"] and msgs[0]["url"].endswith(f"/play/{tid}/")
+    for _ in range(50):
+        if opened:
+            break
+        time.sleep(0.02)
+    assert opened == [f"http://127.0.0.1:8765/play/{tid}/"]
+    assert c.get(f"/play/{tid}/").text == "<html>game</html>"
+    r = c.get(f"/play/{tid}/assets/main.js")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/javascript")
+    assert c.get(f"/play/{tid}/../../etc/passwd").status_code == 404
+    assert c.get("/play/nope/").status_code == 404
