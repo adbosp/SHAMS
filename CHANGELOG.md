@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Direct Mode is a chat: each run is a turn (prompt, then the model's reply), with the model picker and parameters in the composer (Enter sends). Outputs show inline: images, video and audio play in the chat, other files are download cards. Markdown is rendered and code is framed with its language and a copy button, in Direct Mode and in the project chat.
+
 - Autonomous mode runs to the end without approvals and is the default for new projects (`general.default_mode`). A task out of repair attempts is accepted with its last outputs by `autopilot` (event payload lists the failed checks; the play link warns about them); criteria without a checker no longer stop it. A task that produced no output at all still waits in HUMAN_REVIEW. Guided and collaborative modes are unchanged.
 
 - Game code goes to the 3D/game model: built-in role `game_coder` (capabilities `code.game.*`, `integration.game`) runs on the `scene3d` model unless set on its own. The game template's gameplay, HUD and integration tasks use `${game_code}` / `integration.game`. The scheduler leases a task to the most specific worker (or the one named by `provider_hint`); after 3 failures the repair router switches to the next best fit (the general coder) and grants 2 more attempts instead of stopping at HUMAN_REVIEW.

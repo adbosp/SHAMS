@@ -108,6 +108,29 @@ td code{font-family:var(--mono);font-size:12px}
   aside{border-left:0;border-top:1px solid var(--border)}
   .center{max-height:none;padding:16px}
 }
+/* rich messages: markdown, framed code, media (chat + Direct Mode) */
+.md{white-space:normal;line-height:1.55}
+.md p{margin:0 0 8px}.md p:last-child{margin-bottom:0}
+.md h1,.md h2,.md h3,.md h4{margin:10px 0 6px;font-size:15px}.md h1{font-size:17px}
+.md ul,.md ol{margin:0 0 8px;padding-left:22px}
+.md blockquote{margin:0 0 8px;padding:2px 10px;border-left:3px solid var(--border);color:var(--muted)}
+.md :not(pre)>code{font-family:var(--mono);font-size:12.5px;background:var(--chip);border:1px solid var(--border);border-radius:5px;padding:0 4px}
+.md table{border-collapse:collapse;margin:0 0 8px;font-size:13px}.md th,.md td{border:1px solid var(--border);padding:3px 8px}
+.codebox{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:0 0 8px;background:var(--chip)}
+.codebox .cbh{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 4px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.codebox .cbh button{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:6px;font-size:11.5px;padding:2px 8px;cursor:pointer}
+.codebox pre{margin:0;padding:10px 12px;overflow:auto;max-height:520px;font-family:var(--mono);font-size:12.5px;line-height:1.5;white-space:pre}
+.media{max-width:100%;max-height:520px;border-radius:10px;border:1px solid var(--border);display:block;margin:0 0 8px}
+.filecard{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin:0 0 8px;background:var(--panel);text-decoration:none;color:var(--text);max-width:420px}
+.filecard .fn{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filecard .ft{font-size:11.5px;color:var(--muted)}
+.dchat{display:flex;flex-direction:column;gap:14px}
+.dcomposer{margin-top:auto;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:var(--panel);display:flex;flex-direction:column;gap:8px}
+.dcomposer textarea{border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:14px;resize:vertical;min-height:52px}
+.dcomposer .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dcomposer select{max-width:min(360px,100%)}
+.dcomposer .send{margin-left:auto;border:0;background:var(--text);color:var(--panel);width:30px;height:30px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
+.dcomposer .send:disabled{opacity:.4;cursor:default}
 .nav-proj{font-size:12.5px}
 .proj-row{position:relative}
 .proj-row .nav-proj{padding-right:28px}
@@ -314,7 +337,7 @@ function chatView(){
     if (m.role === "user"){
       h += `<div class="msg user"><div class="who">You</div><div class="body">${esc(m.text)}</div></div>`;
     } else {
-      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body">${esc(m.text)}${m.url ? `<div class="actions" style="margin-top:8px"><a class="btn primary" style="text-decoration:none;display:inline-block" href="${esc(m.url)}" target="_blank" rel="noopener">Chơi thử game</a></div>` : ""}</div>`;
+      h += `<div class="msg"><div class="who"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>SHAMS</div><div class="body" style="white-space:normal">${md(m.text)}${m.url ? `<div class="actions" style="margin-top:8px"><a class="btn primary" style="text-decoration:none;display:inline-block" href="${esc(m.url)}" target="_blank" rel="noopener">Chơi thử game</a></div>` : ""}</div>`;
       if (m.live && S.tasks.length){
         const active = S.tasks.filter(t => !["PENDING","READY"].includes(t.state))
           .sort((a,b) => (order[a.state]??5)-(order[b.state]??5)).slice(0,8);
@@ -390,6 +413,81 @@ function qaView(){
 }
 
 
+/* ------------------------------------------------------------------ rich text: markdown + framed code */
+function mdInline(t){
+  return t.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+}
+let CODE_SEQ = 0;
+const CODE_STORE = {};
+function codeBox(code, lang){
+  const id = "cb" + (++CODE_SEQ); CODE_STORE[id] = code;
+  return `<div class="codebox"><div class="cbh"><span>${esc(lang || "code")}</span><button type="button" data-copy="${id}">Sao chép</button></div><pre><code>${esc(code)}</code></pre></div>`;
+}
+function md(src){
+  const lines = String(src ?? "").replace(/\r\n/g, "\n").split("\n");
+  let out = "", para = [], list = null, i = 0;
+  const flushP = () => { if (para.length){ out += `<p>${mdInline(esc(para.join("\n"))).replace(/\n/g, "<br>")}</p>`; para = []; } };
+  const flushL = () => { if (list){ out += `<${list.t}>${list.items.map(x => `<li>${mdInline(esc(x))}</li>`).join("")}</${list.t}>`; list = null; } };
+  while (i < lines.length){
+    const l = lines[i];
+    const fence = l.match(/^\s*```\s*([\w#+.-]*)/);
+    if (fence){
+      flushP(); flushL();
+      const body = []; i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
+      out += codeBox(body.join("\n"), fence[1]); i++; continue;
+    }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if (h){ flushP(); flushL(); out += `<h${h[1].length}>${mdInline(esc(h[2]))}</h${h[1].length}>`; i++; continue; }
+    const li = l.match(/^\s*([-*•]|\d+[.)])\s+(.*)/);
+    if (li){ flushP(); const t = /\d/.test(li[1]) ? "ol" : "ul"; if (!list || list.t !== t){ flushL(); list = {t, items: []}; } list.items.push(li[2]); i++; continue; }
+    if (/^\s*>\s?/.test(l)){ flushP(); flushL(); out += `<blockquote>${mdInline(esc(l.replace(/^\s*>\s?/, "")))}</blockquote>`; i++; continue; }
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i+1])){
+      flushP(); flushL();
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => mdInline(esc(c.trim())));
+      let t = `<table><tr>${cells(l).map(c => `<th>${c}</th>`).join("")}</tr>`; i += 2;
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) t += `<tr>${cells(lines[i++]).map(c => `<td>${c}</td>`).join("")}</tr>`;
+      out += t + "</table>"; continue;
+    }
+    if (!l.trim()){ flushP(); flushL(); i++; continue; }
+    flushL(); para.push(l); i++;
+  }
+  flushP(); flushL();
+  return `<div class="md">${out}</div>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-copy]"); if (!b) return;
+  const t = CODE_STORE[b.dataset.copy] ?? "";
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
+    () => { b.textContent = "Đã chép"; setTimeout(() => b.textContent = "Sao chép", 1200); },
+    () => { b.textContent = "Không chép được"; });
+});
+const CODE_LANG = {"text/x-python":"python","text/typescript":"typescript","text/javascript":"javascript","application/json":"json",
+  "text/x-csharp":"csharp","text/x-c++src":"cpp","text/x-gdscript":"gdscript","text/html":"html","text/css":"css","text/x-shellscript":"bash"};
+function fileIcon(){ return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>'; }
+/* one output (artifact) as it should look in a conversation: media inline, code framed, markdown rendered */
+function richOutput(o){
+  const mt = o.media_type || "", name = o.name || o.logical_id || "file";
+  if (mt.startsWith("image/")) return `<a href="${esc(o.url)}" target="_blank"><img class="media" src="${esc(o.url)}" alt="${esc(name)}" loading="lazy"></a>`;
+  if (mt.startsWith("video/")) return `<video class="media" src="${esc(o.url)}" controls preload="metadata"></video>`;
+  if (mt.startsWith("audio/")) return `<audio src="${esc(o.url)}" controls style="width:100%;max-width:420px;margin:0 0 8px"></audio>`;
+  if (CODE_LANG[mt] || mt.startsWith("text/x-")) return `<div data-src="${esc(o.url)}" data-kind="code" data-lang="${esc(CODE_LANG[mt] || mt.replace("text/x-",""))}"><div class="small muted">Đang tải ${esc(name)}…</div></div>`;
+  if (mt === "text/markdown" || mt === "text/plain") return `<div data-src="${esc(o.url)}" data-kind="md"><div class="small muted">Đang tải…</div></div>`;
+  return `<a class="filecard" href="${esc(o.url)}" download="${esc(name)}">${fileIcon()}<span><div class="fn">${esc(name)}</div><div class="ft">${esc(mt)} · bấm để tải về</div></span></a>`;
+}
+async function fillRich(root){
+  for (const el of (root || document).querySelectorAll("[data-src]")){
+    const src = el.dataset.src; delete el.dataset.src;
+    try {
+      const t = await (await fetch(src)).text();
+      el.innerHTML = el.dataset.kind === "code" ? codeBox(t, el.dataset.lang) : md(t);
+    } catch (e) { el.innerHTML = '<div class="small muted">(không đọc được)</div>'; }
+  }
+}
+
 /* ------------------------------------------------------------------ Direct Mode (ADR-121) */
 let DIR = null, dsel = null, dtask = null, dtimer = null;
 try { dsel = localStorage.getItem("shams.dpreset"); } catch (e) {}
@@ -408,66 +506,72 @@ function dField(k, sch, v){
   if (k === "system" || k === "negative") return `<label style="grid-column:1/-1">${lbl}<textarea class="f" style="min-height:52px" data-k="${esc(k)}" data-t="string">${esc(v ?? "")}</textarea></label>`;
   return `<label>${lbl}<input class="f" data-k="${esc(k)}" data-t="${num ? sch.type : "string"}" ${num ? `type="number" step="${sch.type==="integer"?1:"any"}"` : ""} ${sch.minimum!=null?`min="${sch.minimum}"`:""} ${sch.maximum!=null?`max="${sch.maximum}"`:""} value="${esc(v ?? "")}"></label>`;
 }
-function dOutputs(t){
+function dReply(t){
   if (!t) return "";
-  const head = `<div class="small" style="margin-bottom:6px"><code>${esc(t.task_id)}</code> · ${esc(t.preset)} · ${badgeFor(t.state)} ${t.running ? '<span class="badge b-chip">đang chạy…</span>' : ""}</div>`;
-  let h = head;
+  let h = "";
   if (t.error) h += `<div class="small" style="color:var(--bad);margin-bottom:6px">${esc(t.error)}</div>`;
-  for (const o of t.outputs || []){
-    if (o.media_type.startsWith("image/")) h += `<a href="${o.url}" target="_blank"><img src="${o.url}" style="max-width:100%;max-height:520px;border-radius:8px;border:1px solid var(--border)" alt="${esc(o.logical_id)}"></a>`;
-    else if (o.media_type.startsWith("text/") || o.media_type === "application/json") h += `<pre class="console" style="max-height:480px;white-space:pre-wrap" data-src="${o.url}">…</pre>`;
-    else h += `<div><a href="${o.url}" download="${esc(o.logical_id)}">Tải ${esc(o.logical_id)} (${esc(o.media_type)})</a></div>`;
-  }
-  if (t.usage) h += `<div class="small muted" style="margin-top:6px">${t.usage.tokens_in ?? 0} token vào · ${t.usage.tokens_out ?? 0} token ra · ${t.usage.wall_seconds ?? "?"} s</div>`;
-  if (t.events) h += `<details style="margin-top:6px"><summary class="small muted">Tiến trình (${t.events.length} sự kiện)</summary><div class="console" style="max-height:220px">${t.events.map(e => `[${esc((e.at||"").slice(11,19))}] ${esc(e.type)} ${esc(e.subject)}`).join("<br>")}</div></details>`;
+  for (const o of t.outputs || []) h += richOutput(o);
+  const final = ["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(t.state) && !t.running;
+  if (!final) h += `<div class="small muted"><svg class="dot spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" style="vertical-align:-2px"><path d="M12 3a9 9 0 1 1-9 9"/></svg> Đang chạy…</div>`;
+  else if (!(t.outputs || []).length && !t.error) h += `<div class="small muted">Không có kết quả (${esc(t.state)}).</div>`;
+  const meta = [t.state !== "ACCEPTED" ? t.state : "", t.usage ? `${t.usage.tokens_in ?? 0}→${t.usage.tokens_out ?? 0} token · ${t.usage.wall_seconds ?? "?"} s` : ""].filter(Boolean).join(" · ");
+  if (meta) h += `<div class="small muted" style="margin-top:4px">${esc(meta)}</div>`;
   return h;
 }
-async function dFill(){
-  for (const el of document.querySelectorAll("[data-src]")){
-    try { const r = await fetch(el.dataset.src); el.textContent = await r.text(); } catch (e) { el.textContent = "(không đọc được)"; }
-  }
+function dTurn(t){
+  const prompt = (t.params || {}).prompt || t.title || "";
+  const bot = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><rect x="4" y="7" width="16" height="11" rx="3"/><path d="M9 12h.01M15 12h.01"/></svg>';
+  return `<div class="msg user"><div class="who">You <span class="badge b-chip">${esc(t.preset || "")}</span></div><div class="body">${esc(prompt)}</div></div>` +
+         `<div class="msg" data-turn="${esc(t.task_id)}"><div class="who">${bot}SHAMS</div><div class="body" style="white-space:normal">${dReply(t)}</div></div>`;
 }
 async function dWatch(tid){
   clearTimeout(dtimer);
-  try { dtask = await api(`/api/direct/tasks/${encodeURIComponent(tid)}`); } catch (e) { return; }
-  const box = $("d_result");
-  if (!box) return;
-  box.innerHTML = dOutputs(dtask); dFill();
-  const final = ["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(dtask.state) && !dtask.running;
+  let t;
+  try { t = await api(`/api/direct/tasks/${encodeURIComponent(tid)}`); } catch (e) { return; }
+  const i = DIR.tasks.findIndex(x => x.task_id === tid);
+  if (i >= 0) DIR.tasks[i] = t; else DIR.tasks.unshift(t);
+  const box = document.querySelector(`[data-turn="${CSS.escape(tid)}"] .body`);
+  if (box) { box.innerHTML = dReply(t); fillRich(box); } else if (view === "direct") renderDirect();
+  const final = ["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(t.state) && !t.running;
   if (!final) dtimer = setTimeout(() => dWatch(tid), 1000);
-  else { DIR.tasks = (await api("/api/direct/tasks")).tasks; const l = $("d_hist"); if (l) l.innerHTML = dHist(); dBindHist(); $("d_run").disabled = false; }
+  else { const b = $("d_run"); if (b) b.disabled = false; }
 }
-function dHist(){
-  return (DIR.tasks || []).map(t => `<button class="btn sm" data-tid="${esc(t.task_id)}" style="margin:0 6px 6px 0">${esc(t.task_id.slice(12))} · ${esc(t.preset)} · ${esc(t.state)}</button>`).join("") || '<span class="small muted">Chưa có.</span>';
-}
-function dBindHist(){ document.querySelectorAll("[data-tid]").forEach(b => b.onclick = () => dWatch(b.dataset.tid)); }
 function renderDirect(){
   const c = $("center");
   if (!DIR) { c.innerHTML = '<div class="empty">Đang tải…</div>'; return; }
   const p = DIR.presets.find(x => x.id === dsel);
-  let h = `<div class="ctitle"><h2>Direct Mode</h2><span class="small muted">Chọn model/preset, nhập prompt, chạy ngay — không Planner, không DAG</span></div>`;
+  let h = `<div class="ctitle"><h2>Direct Mode</h2><span class="small muted">Chat trực tiếp với một model, không Planner, không DAG</span></div>`;
+  const turns = (DIR.tasks || []).slice().reverse();
+  h += `<div class="dchat" id="d_chat">${turns.length ? turns.map(dTurn).join("") : '<div class="empty">Chọn model bên dưới và nhập yêu cầu. Ảnh, video, file và code trả về hiện ngay trong cuộc trò chuyện.</div>'}</div>`;
   const groups = {};
   for (const x of DIR.presets) (groups[x.kind] = groups[x.kind] || []).push(x);
-  h += `<div class="formgrid" style="grid-template-columns:1fr"><label>Model / preset<select class="f" id="d_preset">${Object.entries(groups).map(([k, xs]) => `<optgroup label="${esc(KIND_LBL[k] || k)}">${xs.map(x => `<option value="${esc(x.id)}" ${x.id===dsel?"selected":""}>${esc(x.label)}${x.content_policy.adult?" (18+)":""} — ${esc(x.model || x.wanted || "")}${x.status!=="ok"?` · ${esc(x.status)}`:""}</option>`).join("")}</optgroup>`).join("")}</select></label></div>`;
-  if (!p) { c.innerHTML = h + '<div class="empty">Chưa có preset nào. Thêm models.roles hoặc models.presets trong settings.</div>'; return; }
-  h += `<div class="small muted" style="margin:6px 0 10px">${esc(p.provider)} · <code>${esc(p.model || p.wanted || "")}</code> · ${p.resources.vram_mb ? `~${gb(p.resources.vram_mb)} VRAM · ` : ""}lane ${esc(p.resources.lane)} · chế độ: ${esc(p.execution_modes.join(", "))}${p.autonomous_default?" · dùng trong Autonomous":""}${p.status!=="ok"?` · <b style="color:var(--bad)">${esc(p.status)}</b> ${esc(p.how)}`:""}</div>`;
-  const props = (p.input_schema || {}).properties || {};
-  h += `<label class="small muted">Prompt<textarea class="f" id="d_prompt" style="min-height:110px;font-family:inherit;font-size:13px" placeholder="Nhập yêu cầu…"></textarea></label>`;
-  const keys = Object.keys(props).filter(k => k !== "prompt");
-  if (keys.length) h += `<details style="margin-top:8px" open><summary class="small muted">Tham số</summary><div class="formgrid" style="margin-top:6px">${keys.map(k => dField(k, props[k], p.params[k])).join("")}</div></details>`;
-  if (p.content_policy.adult){
-    h += DIR.allow_adult_content
-      ? `<div class="blk" style="margin-top:10px;border:1px solid var(--warn);border-radius:8px;padding:8px"><b>Preset chỉ dành cho người lớn.</b> Không bao giờ được dùng tự động. Prompt về trẻ vị thành niên, không đồng thuận, lạm dụng hoặc người thật có thể nhận diện sẽ bị từ chối.<label style="display:flex;gap:8px;margin-top:6px"><input type="checkbox" id="d_adult"><span class="small">${esc(DIR.confirm_text)}</span></label></div>`
-      : `<div class="small" style="margin-top:10px;color:var(--bad)">Preset 18+ đang tắt. Bật bằng <code>general.allow_adult_content: true</code> trong settings nếu bạn muốn dùng.</div>`;
+  const sel = `<select class="f" id="d_preset" aria-label="Model / preset">${Object.entries(groups).map(([k, xs]) => `<optgroup label="${esc(KIND_LBL[k] || k)}">${xs.map(x => `<option value="${esc(x.id)}" ${x.id===dsel?"selected":""}>${esc(x.label)}${x.content_policy.adult?" (18+)":""} — ${esc(x.model || x.wanted || "")}${x.status!=="ok"?` · ${esc(x.status)}`:""}</option>`).join("")}</optgroup>`).join("")}</select>`;
+  let comp = `<form class="dcomposer" id="d_form"><textarea id="d_prompt" placeholder="Nhập yêu cầu… (Enter để gửi, Shift+Enter xuống dòng)"></textarea><div class="row">${sel}`;
+  if (p){
+    const props = (p.input_schema || {}).properties || {};
+    const keys = Object.keys(props).filter(k => k !== "prompt");
+    if (keys.length) comp += `<details style="flex-basis:100%;order:3"><summary class="small muted">Tham số</summary><div class="formgrid" style="margin-top:6px">${keys.map(k => dField(k, props[k], p.params[k])).join("")}</div></details>`;
+    comp += `<span class="small muted">${esc(p.provider)}${p.resources.vram_mb ? ` · ~${gb(p.resources.vram_mb)} VRAM` : ""}${p.status!=="ok"?` · <b style="color:var(--bad)">${esc(p.status)}</b> ${esc(p.how)}`:""}</span>`;
+    if (p.content_policy.adult){
+      comp += DIR.allow_adult_content
+        ? `<div style="flex-basis:100%;order:4;border:1px solid var(--warn);border-radius:8px;padding:8px"><b>Preset chỉ dành cho người lớn.</b> Không bao giờ được dùng tự động. Prompt về trẻ vị thành niên, không đồng thuận, lạm dụng hoặc người thật có thể nhận diện sẽ bị từ chối.<label style="display:flex;gap:8px;margin-top:6px"><input type="checkbox" id="d_adult"><span class="small">${esc(DIR.confirm_text)}</span></label></div>`
+        : `<div class="small" style="flex-basis:100%;order:4;color:var(--bad)">Preset 18+ đang tắt. Bật bằng <code>general.allow_adult_content: true</code> trong settings nếu bạn muốn dùng.</div>`;
+    }
   }
-  h += `<div class="actions" style="margin-top:10px"><button class="btn primary" id="d_run" ${p.status!=="ok"?"disabled":""}>Chạy</button><span class="small muted" id="d_msg"></span></div>`;
-  h += `<div id="d_result" style="margin-top:12px">${dOutputs(dtask)}</div>`;
-  h += `<div class="lbl" style="margin-top:14px">Lần chạy gần đây</div><div id="d_hist">${dHist()}</div>`;
-  c.innerHTML = h; dFill(); dBindHist();
+  comp += `<span class="small muted" id="d_msg" style="order:5"></span><button class="send" id="d_run" aria-label="Gửi" ${!p || p.status!=="ok"?"disabled":""}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div></form>`;
+  if (!DIR.presets.length) comp = '<div class="empty">Chưa có preset nào. Thêm models.roles hoặc models.presets trong settings.</div>';
+  c.innerHTML = h + comp;
+  c.scrollTop = c.scrollHeight;
+  fillRich(c).then(() => { c.scrollTop = c.scrollHeight; });
+  const running = (DIR.tasks || []).find(t => t.running || !["ACCEPTED","FAILED","BLOCKED","HUMAN_REVIEW","CANCELED"].includes(t.state));
+  if (running) { $("d_run").disabled = true; dWatch(running.task_id); }
+  if (!p) return;
   $("d_preset").onchange = e => { dsel = e.target.value; try{localStorage.setItem("shams.dpreset", dsel)}catch(_){}; renderDirect(); };
-  $("d_run").onclick = async () => {
+  $("d_prompt").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("d_form").requestSubmit(); } };
+  $("d_form").onsubmit = async e => {
+    e.preventDefault();
     const params = {prompt: $("d_prompt").value.trim()};
-    if (!params.prompt) { $("d_msg").textContent = "Nhập prompt trước."; return; }
+    if (!params.prompt) { $("d_msg").textContent = "Nhập yêu cầu trước."; return; }
     for (const el of c.querySelectorAll("[data-k]")){
       const v = el.value.trim(); if (v === "") continue;
       params[el.dataset.k] = el.dataset.t === "boolean" ? v === "true" : el.dataset.t === "integer" ? parseInt(v, 10) : el.dataset.t === "number" ? parseFloat(v) : v;
@@ -475,8 +579,10 @@ function renderDirect(){
     const adult = $("d_adult");
     if (p.content_policy.adult && !(adult && adult.checked)) { $("d_msg").textContent = "Cần xác nhận điều khoản 18+ ở trên."; return; }
     $("d_run").disabled = true; $("d_msg").textContent = "";
-    try { const t = await api("/api/direct/run", {preset: p.id, params, confirm_adult: !!(adult && adult.checked)}); dWatch(t.task_id); }
-    catch (e) { $("d_msg").textContent = e.message; $("d_run").disabled = false; }
+    try {
+      const t = await api("/api/direct/run", {preset: p.id, params, confirm_adult: !!(adult && adult.checked)});
+      DIR.tasks.unshift(t); renderDirect();
+    } catch (err) { $("d_msg").textContent = err.message; $("d_run").disabled = false; }
   };
 }
 
