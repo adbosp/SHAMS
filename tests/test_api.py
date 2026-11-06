@@ -31,10 +31,10 @@ def test_chat_creates_plan_and_runs_to_done(tmp_path):
     s = c.get("/api/state").json()
     assert s["app"] == "SHAMS" and s["progress"] == {"done": 0, "total": 0}
     s = c.post("/api/chat", json={"text": "Tạo game cá mập 3D có hệ thống săn mồi và tiến hóa."}).json()
-    assert s["progress"]["total"] == 13
+    assert s["progress"]["total"] == 14
     assert s["chat"][1]["role"] == "director"
     s = _wait_idle(c)
-    assert s["progress"] == {"done": 13, "total": 13}
+    assert s["progress"] == {"done": 14, "total": 14}
     assert any("Loading mock-coder" in l["text"] for l in s["console"])
     assert {a["state"] for a in s["artifacts"]} == {"ACCEPTED"}
     assert "gpus" in s["hardware"]                      # real hardware, not a simulation
@@ -61,7 +61,7 @@ def test_chat_detects_domain_and_engine_and_configure_endpoint(tmp_path):
     assert s["project"]["selected"] == {"engine": "web"} and "Three.js" in s["chat"][1]["text"]
     assert any(t["capability"] == "code.web_typescript" for t in s["tasks"])
     s = _wait_idle(c)
-    assert s["progress"] == {"done": 13, "total": 13}
+    assert s["progress"] == {"done": 14, "total": 14}
     assert c.post("/api/configure", json={"options": {"engine": "unity"}}).status_code == 400
 
 

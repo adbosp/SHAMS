@@ -132,7 +132,7 @@ def make_real(tmp_path, base_url, provider="ollama", engine="web", checkers=None
 def test_full_run_with_local_model_server_and_command_tool(tmp_path, server):
     st = make_real(tmp_path, server.url)
     s = st.run()
-    assert s["done"] and s["counts"] == {"ACCEPTED": 13}
+    assert s["done"] and s["counts"] == {"ACCEPTED": 14}
     assert {r["body"]["model"] for r in server.requests} == {"coder-model:7b"}
     assert all(r["path"] == "/api/chat" for r in server.requests)          # Ollama native chat (think off)
     # Ollama got an explicit load (keep_alive) and a final unload (keep_alive 0) from the Model Lifecycle

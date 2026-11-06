@@ -96,10 +96,11 @@ class StableFast3D:
         except subprocess.TimeoutExpired:
             raise ProviderError(f"Stable Fast 3D timed out after {self.timeout:.0f}s") from None
         log = (p.stdout + "\n" + p.stderr).strip()[-3000:]
+        (out / "sf3d_run.log").write_text(" ".join(argv) + f"\nexit {p.returncode}\n\n" + log, encoding="utf-8")
         glb = out / "0" / "mesh.glb"
         if p.returncode != 0 or not glb.exists():
             raise ProviderError(f"Stable Fast 3D failed (exit {p.returncode}): {log[-800:]}")
-        return {"glb": str(glb), "seconds": round(time.monotonic() - t0, 2), "log": log}
+        return {"glb": str(glb), "seconds": round(time.monotonic() - t0, 2), "log": log, "argv": argv}
 
     def load(self, model: str) -> None:          # one process per call: nothing stays in VRAM
         return None
@@ -157,6 +158,8 @@ class StableFast3DWorker:
         glb_out = next((o for o in plan if o["media_type"] == "model/gltf-binary"), None)
         png_out = next((o for o in plan if o["media_type"] == "image/png"), None)
         files, issues, decisions = [], [], [{"decision": "3D route: image_to_3d", "reason": why}]
+        if r.get("argv"):
+            decisions.append({"decision": "Stable Fast 3D command", "reason": " ".join(map(str, r["argv"][1:]))[:600]})
         height = (ctx["task"].get("params") or {}).get("height_m")
         if self.blender and (png_out or height):
             # SF3D meshes come out unit-sized: scale to real size, frame a preview render, export again

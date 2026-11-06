@@ -17,6 +17,7 @@
         "task.spawner",
         "task.core_mechanic",
         "task.hud",
+        "task.character_brief",
         "task.player_concept",
         "task.player_model",
         "task.npc_concept",
@@ -278,15 +279,61 @@
       ]
     },
     {
-      "task_id": "task.player_concept",
-      "title": "Ảnh concept nhân vật chính (để dựng mesh)",
-      "description": "full-body concept art of ONE main character as described in the request, game character, standing in a neutral pose, front view, whole body visible from head to feet, centered, plain white background, no shadow, no text",
-      "capability": "image.concept",
-      "params": {
-        "negative": "nsfw, nude, multiple people, cropped, out of frame, text, watermark, background scenery"
-      },
+      "task_id": "task.character_brief",
+      "title": "Mô tả ngoại hình nhân vật (cho model vẽ ảnh)",
+      "description": "Đọc yêu cầu dự án và viết cho mỗi nhân vật một đoạn mô tả ngoại hình NGẮN BẰNG TIẾNG ANH (tối đa 40 từ) để đưa vào model vẽ ảnh: giới tính, người trưởng thành, vóc dáng, kiểu tóc, trang phục, màu sắc, phong cách đồ hoạ hợp với game. Nhân vật chính và NPC phải khớp vai trò trong yêu cầu. Mỗi file chỉ tả MỘT người, không tả nền hay cảnh, không nội dung gợi dục, không nhắc tên thương hiệu hay nhân vật có thật.",
+      "capability": "plan.art_brief",
       "depends_on": [],
       "inputs": [],
+      "outputs": [
+        {
+          "name": "player_brief",
+          "logical_id": "brief.player",
+          "media_type": "text/plain",
+          "contract": "doc.text"
+        },
+        {
+          "name": "npc_brief",
+          "logical_id": "brief.npc",
+          "media_type": "text/plain",
+          "contract": "doc.text"
+        }
+      ],
+      "acceptance_criteria": [
+        {
+          "id": "ac.brief_exists",
+          "description": "Có hai file mô tả, mỗi file tả một nhân vật bằng tiếng Anh",
+          "kind": "exists"
+        }
+      ],
+      "priority": 50,
+      "budget": {
+        "max_wall_seconds": 600,
+        "max_tokens": 20000
+      },
+      "max_attempts": 3,
+      "workspace_scope": [
+        "${models}/**"
+      ]
+    },
+    {
+      "task_id": "task.player_concept",
+      "title": "Ảnh concept nhân vật chính (để dựng mesh)",
+      "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
+      "capability": "image.concept",
+      "params": {
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery"
+      },
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.player"
+        }
+      ],
       "outputs": [
         {
           "name": "player_concept",
@@ -308,12 +355,13 @@
         },
         {
           "id": "ac.player_concept_look",
-          "description": "Exactly one full-body character, head to feet visible, on a plain background",
+          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief.",
           "kind": "visual",
           "check": {
             "type": "vlm",
             "min_score": 6
-          }
+          },
+          "required": true
         }
       ],
       "priority": 45,
@@ -358,7 +406,7 @@
       "acceptance_criteria": [
         {
           "id": "ac.player_mesh_valid",
-          "description": "Poly ≤ 20k, có UV, scale đúng",
+          "description": "Poly ≤ 20k, có UV, scale đúng, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
@@ -366,12 +414,13 @@
             "max_triangles": 20000,
             "require_uv": true,
             "min_size_m": 0.5,
-            "max_size_m": 3
+            "max_size_m": 3,
+            "max_width_to_height": 0.9
           }
         },
         {
           "id": "ac.player_look",
-          "description": "Ảnh preview cho thấy một nhân vật hình người liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
+          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
           "kind": "visual",
           "required": true,
           "check": {
@@ -396,13 +445,21 @@
     {
       "task_id": "task.npc_concept",
       "title": "Ảnh concept NPC (để dựng mesh)",
-      "description": "full-body concept art of ONE secondary character (NPC) as described in the request, game character, standing in a neutral pose, front view, whole body visible from head to feet, centered, plain white background, no shadow, no text",
+      "description": "single full-body image of one person, front view only, standing straight, arms relaxed at the sides, whole body visible from head to feet, centered, plain white background, soft even light, no shadow, no text, game character concept",
       "capability": "image.concept",
       "params": {
-        "negative": "nsfw, nude, multiple people, cropped, out of frame, text, watermark, background scenery"
+        "negative": "nsfw, nude, multiple people, crowd, character sheet, turnaround, multiple views, reference sheet, sketch, panels, collage, cropped, out of frame, text, watermark, background scenery"
       },
-      "depends_on": [],
-      "inputs": [],
+      "depends_on": [
+        "task.character_brief"
+      ],
+      "inputs": [
+        {
+          "name": "brief",
+          "from_task": "task.character_brief",
+          "logical_id": "brief.npc"
+        }
+      ],
       "outputs": [
         {
           "name": "npc_concept",
@@ -424,12 +481,13 @@
         },
         {
           "id": "ac.npc_concept_look",
-          "description": "Exactly one full-body character, head to feet visible, on a plain background",
+          "description": "Exactly ONE person drawn ONCE, full body from head to feet, front view, on a plain background. A character sheet, turnaround, several views or sketches of the same person, or more than one figure, fails. The person matches the character description in the input brief.",
           "kind": "visual",
           "check": {
             "type": "vlm",
             "min_score": 6
-          }
+          },
+          "required": true
         }
       ],
       "priority": 45,
@@ -474,7 +532,7 @@
       "acceptance_criteria": [
         {
           "id": "ac.npc_mesh_valid",
-          "description": "Poly ≤ 3k, có UV",
+          "description": "Poly ≤ 3k, có UV, đúng một người (rộng ≤ 0.9 × cao)",
           "kind": "schema",
           "check": {
             "type": "${mesh_check}",
@@ -482,12 +540,13 @@
             "max_triangles": 3000,
             "require_uv": true,
             "min_size_m": 0.3,
-            "max_size_m": 3
+            "max_size_m": 3,
+            "max_width_to_height": 0.9
           }
         },
         {
           "id": "ac.npc_look",
-          "description": "Ảnh preview cho thấy một nhân vật hình người liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời)",
+          "description": "Ảnh preview cho thấy ĐÚNG MỘT nhân vật hình người (hai người trở lên, hay nhiều hình đứng cạnh nhau, là không đạt), liền một khối (đầu nối cổ và thân, tay và chân nối vào thân, không bộ phận nào lơ lửng hay tách rời), có đặc điểm khớp mô tả nhân vật trong yêu cầu; chỉ ghép các khối hình học rời nhau thì không đạt",
           "kind": "visual",
           "check": {
             "type": "vlm",

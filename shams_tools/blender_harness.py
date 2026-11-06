@@ -176,7 +176,10 @@ def main():
             scene.render.engine = spec.get("engine") or "BLENDER_WORKBENCH"
             if scene.render.engine == "BLENDER_WORKBENCH":
                 scene.display.shading.light = "STUDIO"
-                scene.display.shading.color_type = "MATERIAL"
+                textured = any(n.type == "TEX_IMAGE" and n.image is not None for mat in bpy.data.materials
+                               if mat.use_nodes and mat.node_tree for n in mat.node_tree.nodes)
+                scene.display.shading.color_type = "TEXTURE" if textured else "MATERIAL"   # show SF3D colours
+                report["preview_colour"] = scene.display.shading.color_type
                 # Workbench shows material.diffuse_color, not the node colour: copy Base Color across
                 for mat in bpy.data.materials:
                     bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes and mat.node_tree else None

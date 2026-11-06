@@ -285,6 +285,54 @@ def test_png_check_rejects_random_noise(tmp_path):
     assert assets.png_info(make_png(tmp_path / "grad.png"))["roughness"] < 0.2
 
 
+
+def test_png_check_keeps_low_contrast_fine_textures(tmp_path):
+    import random
+    rnd, w, h = random.Random(2), 128, 128
+    grid = [[rnd.randrange(108, 149) for _ in range(w // 2)] for _ in range(h // 2)]   # fine soil-like grain
+    rows = b"".join(b"\x00" + bytes(v for x in range(w) for v in (grid[y // 2][x // 2],) * 3) for y in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    tex = tmp_path / "soil.png"
+    tex.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                    + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    i = assets.png_info(tex)
+    assert i["roughness"] > 0.25 and i["std"] < 15                     # the ratio alone called this noise
+    assert assets.check_png(tex, {"power_of_two": True})[0] == "PASS"
+
+
+def test_glb_width_to_height_catches_several_figures(tmp_path):
+    # make_glb is a triangle in the XY plane: width 1, height 1 (glTF Y-up)
+    assert assets.check_glb(make_glb(tmp_path / "a.glb"), {"max_width_to_height": 1.2})[0] == "PASS"
+    v, d = assets.check_glb(make_glb(tmp_path / "b.glb"), {"max_width_to_height": 0.9})
+    assert v == "FAIL" and "side by side" in d
+
+
+def test_comfy_worker_puts_text_brief_first_and_vlm_sees_it(tmp_path):
+    seen = {}
+    class Prov:
+        def generate(self, workflow, params):
+            seen.update(params)
+            return {"images": [make_png(tmp_path / "o.png").read_bytes()], "seconds": 1, "params": {}}
+    brief = tmp_path / "brief.txt"
+    brief.write_text("adult woman, long black hair, green summer dress\n", encoding="utf-8")
+    w = ComfyUIImageWorker(entry={"worker": {"worker_id": "w"}, "provider_config": {}}, attempts_root=tmp_path,
+                           provider=Prov(), read_blob=lambda sha: brief)
+    ctx = {"project_id": "p", "attempt": 1, "goal": "một yêu cầu tiếng Việt",
+           "inputs": [{"logical_id": "brief.npc", "media_type": "text/plain", "sha256": "x"}],
+           "task": {"task_id": "task.c", "title": "c", "description": "single full-body image", "acceptance_criteria": [],
+                    "capability": "image.concept",
+                    "outputs": [{"name": "c", "logical_id": "img.c", "media_type": "image/png"}]}}
+    files, h = w.run(ctx, {"worker_id": "w", "kind": "tool"})
+    assert h["status"] == "READY_FOR_QC"
+    assert seen["prompt"].startswith("adult woman, long black hair") and "tiếng Việt" not in seen["prompt"]
+    got = {}
+    chk = AssetCheckers(visual=lambda files, desc, c: got.setdefault("d", desc) and ("PASS", "ok")).table()["visual"]
+    outs = [{"logical_id": "img.c", "media_type": "image/png", "file": files[0]["abs"], "role": "output"},
+            {"logical_id": "brief.npc", "media_type": "text/plain", "file": str(brief), "role": "input"}]
+    chk("visual", {"id": "v", "kind": "visual", "description": "one person", "check": {"type": "vlm"}}, [], outputs=outs)
+    assert "green summer dress" in got["d"]
+
 def test_asset_checkers_dispatch_on_check_type(tmp_path):
     table = AssetCheckers({"compile": lambda k, c, contents: ("PASS", "pack checker")}).table()
     g = make_glb(tmp_path / "a.glb")
@@ -404,6 +452,12 @@ def test_game_template_characters_go_concept_then_image_to_3d():
         assert m["capability"] == "mesh.image_to_3d" and m["depends_on"] == [f"task.{who}_concept"]
         assert m["inputs"][0]["logical_id"] == c["outputs"][0]["logical_id"]
         assert m["params"]["height_m"] == 1.7
+        assert c["depends_on"] == ["task.character_brief"] and c["inputs"][0]["logical_id"] == f"brief.{who}"
+        assert "turnaround" in c["params"]["negative"] and "character sheet" in c["params"]["negative"]
+        assert m["acceptance_criteria"][0]["check"]["max_width_to_height"] == 0.9
+        assert "ĐÚNG MỘT" in [x for x in m["acceptance_criteria"] if x["id"] == f"ac.{who}_look"][0]["description"]
+    b = t["task.character_brief"]
+    assert b["capability"].startswith("plan.") and {o["media_type"] for o in b["outputs"]} == {"text/plain"}
 
 
 # --------------------------------------------------------------------------- ComfyUI

@@ -141,7 +141,16 @@ class AssetCheckers:
         sel = pick(outputs, c.get("check") or {}, ("image/png", "image/jpeg"))
         if not sel:
             return "FAIL", "missing output: no image for visual QC"
-        return self.visual([o["file"] for o in sel], c["description"], c.get("check") or {})
+        desc = c["description"]
+        briefs = [o for o in outputs if o.get("role") == "input" and str(o.get("media_type", "")).startswith("text/")
+                  and o.get("file")]
+        for o in briefs[:2]:                          # e.g. the art brief the image was drawn from
+            try:
+                desc += " | Character description: " + Path(o["file"]).read_text(
+                    encoding="utf-8", errors="replace").strip()[:600]
+            except OSError:
+                pass
+        return self.visual([o["file"] for o in sel], desc, c.get("check") or {})
 
     # ------------------------------------------------------------------ code
     @staticmethod

@@ -150,7 +150,7 @@ def parse_glb(path: str | Path) -> dict:
 
 def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
     """check: min_vertices, max_triangles, require_uv, require_texture, require_material,
-    min_size_m / max_size_m (largest bbox side, glTF units are metres)."""
+    min_size_m / max_size_m (largest bbox side, glTF units are metres), max_width_to_height (Y-up)."""
     c = check or {}
     try:
         g = parse_glb(path)
@@ -175,6 +175,10 @@ def check_glb(path: str | Path, check: dict | None = None) -> tuple[str, str]:
             errs.append(f"largest side {big:.3f} m < {c['min_size_m']} m (scale?)")
         elif "max_size_m" in c and big > float(c["max_size_m"]):
             errs.append(f"largest side {big:.3f} m > {c['max_size_m']} m (scale?)")
+        sx, sy, sz = g["bbox"]["size"]
+        if "max_width_to_height" in c and sy > 0 and max(sx, sz) / sy > float(c["max_width_to_height"]):
+            errs.append(f"width {max(sx, sz):.2f} m is {max(sx, sz) / sy:.2f}x the height {sy:.2f} m "
+                        f"(> {c['max_width_to_height']}: several objects side by side?)")
     elif c.get("min_size_m") or c.get("max_size_m"):
         errs.append("POSITION accessor lacks min/max, cannot check scale")
     summary = (f"{g['meshes']} mesh, {g['vertices']} verts, {g['triangles']} tris, {g['materials']} materials, "
@@ -257,7 +261,7 @@ def png_info(path: str | Path) -> dict:
 
 def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
     """check: min/max_width, min/max_height, power_of_two, min_std (not blank), min_colours,
-    max_roughness (not random noise)."""
+    max_roughness + min_noise_difference (not random noise)."""
     c = check or {}
     try:
         i = png_info(path)
@@ -275,7 +279,10 @@ def check_png(path: str | Path, check: dict | None = None) -> tuple[str, str]:
             errs.append(f"image is blank/flat (std {i['std']})")
         if i["distinct_colours"] < int(c.get("min_colours", 8)):
             errs.append(f"only {i['distinct_colours']} colours")
-        if i["roughness"] > float(c.get("max_roughness", 0.25)):
+        # noise = neighbours differ a lot relative to the spread AND in absolute terms: a fine-grained but
+        # low-contrast texture (std 12-15, ratio ~0.3, neighbour difference ~4) is not noise
+        if i["roughness"] > float(c.get("max_roughness", 0.25)) and \
+                i["roughness"] * i["std"] > float(c.get("min_noise_difference", 10.0)):
             errs.append(f"image looks like random noise (neighbour/std ratio {i['roughness']})")
     summary = f"{i['width']}x{i['height']}" + (f", std {i['std']}, {i['distinct_colours']} colours, roughness "
                                                f"{i['roughness']}" if "std" in i else "")
