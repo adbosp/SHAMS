@@ -40,7 +40,7 @@ rồi đưa vào artifact registry.
   `hf.co/ccore/Qwen3.5-4B-3D-Coder:Q8_0` (scene3d, **chỉ dựng 3D** bằng JSON primitives), `qwen3-vl:4b` (visual QC).
 - Role `image` (SDXL Lightning) và `image_to_3d` (Stable Fast 3D) **đã tắt theo yêu cầu**; file model vẫn còn trên ổ đĩa.
 - Toolchain web (Vitest, Three.js, Vite) nằm ở `C:\Users\ROPY\.shams\toolchains\web` (`shams toolchain install web`).
-- Node 24, VS2022 C++, WebView2 đã có. Rust: Ropy đã gõ "đồng ý cài Rust" (2026-11-06); PC đang cài rustup stable-msvc. Kiểm tra `rustc --version` trước khi build client.
+- Node 24, VS2022 C++, WebView2 đã có. Rust 1.99.1 (stable-x86_64-pc-windows-msvc) đã cài 2026-11-06 theo đồng ý của Ropy; gỡ bằng `rustup self uninstall`.
 - Chạy app: `shams ui C:\AI\SHAMS_Projects`, mở http://127.0.0.1:8765.
 
 ## 4. Trạng thái hiện tại (đã có, đã test)
