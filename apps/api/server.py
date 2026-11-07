@@ -11,25 +11,26 @@ import os
 import re
 import threading
 import time
-from datetime import datetime
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
+from apps.api.chat_prompt import assistant_system_prompt
 from shams import __version__, contracts, hardware, packs, providers
 from shams import settings as settings_mod
 from shams.mcp import MCPManager
 from shams.events.store import StoreClosed
 from shams.mock.worker import MockWorker
 from shams.orchestration.project import Shams as Studio
+from shams.scheduling.gate import GPU_GATE
 from shams.statemachine import S
 
 UI_FILE = Path(__file__).resolve().parent.parent / "ui" / "index.html"
 STATIC_DIR = UI_FILE.parent / "static"
-WEB_CHAT_PROMPT = UI_FILE.with_name("system_prompt.md").read_text(encoding="utf-8-sig")
 
 FAMILY_LABEL = {
     "code": "Coding Worker", "integration": "Integration Worker", "plan": "Planner",
@@ -303,7 +304,12 @@ class StudioService:
     def _loop(self) -> None:
         try:
             while not self._stop:
-                with self.lock:
+                st = self.studio
+                if st is None:
+                    break
+                # mock projects use no GPU; real ones share the GPU with chats and Direct Mode (ADR-122)
+                gate = nullcontext() if st.mock_mode else GPU_GATE.hold(f"autonomous:{st.db.project_id}", kind="workflow")
+                with gate, self.lock:
                     if self.studio is None:
                         break
                     progressed = self.studio.step()
@@ -708,15 +714,15 @@ class DirectService:
         return {"presets": out, "confirm_text": policy.CONFIRM_TEXT,
                 "allow_adult_content": bool(s["general"].get("allow_adult_content", False))}
 
-    def run(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> dict:
+    def queue(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> str:
+        """Validate and queue one Direct Mode task; returns its id (``execute`` runs it)."""
         from shams import policy
         st = self._open()
         with self.lock:
             try:
                 st.settings = settings_mod.load(self.dir)          # pick up presets added since the app started
-                tid = st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult,
-                                chat_history=chat_history)
-                queued = self._view(st, st.db.task(tid), events=True)
+                return st.direct(body.preset, body.params, by="human", confirm_adult=body.confirm_adult,
+                                 chat_history=chat_history)
             except policy.PolicyError as e:
                 raise HTTPException(403, str(e))
             except KeyError as e:
@@ -724,16 +730,27 @@ class DirectService:
             except (ValueError, PermissionError, RuntimeError) as e:
                 raise HTTPException(400, str(e))
 
+    def execute(self, tid: str) -> dict:
+        """Run a queued task to its final state, holding the process-wide GPU gate (ADR-122)."""
+        st = self._open()
+        t = st.db.task(tid)
+        with GPU_GATE.hold(f"direct:{tid}", model=t.get("preset"), kind="direct"):
+            with self.lock:
+                return st.run_task(tid)
+
+    def run(self, body: DirectIn, *, chat_history: list[dict] | None = None) -> dict:
+        tid = self.queue(body, chat_history=chat_history)
+        st = self._open()
+        queued = self._view(st, st.db.task(tid), events=True)
+
         def go():
             if chat_history is None:
-                with self.lock:
-                    st.run_task(tid)
+                self.execute(tid)
                 return
             from shams.workers.direct import reply_progress
             token = reply_progress.set(self._publish_progress)
             try:
-                with self.lock:
-                    st.run_task(tid)
+                self.execute(tid)
             finally:
                 reply_progress.reset(token)
                 with self._progress_lock:
@@ -810,7 +827,7 @@ class DirectService:
         return FileResponse(st.artifacts.blob_path(sha), media_type=row[0])
 
 
-def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
+def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | None = None) -> FastAPI:
     svc = StudioService(Path(project_dir), mock_delay)
     svc.announce = True
     app = FastAPI(title="SHAMS", version=__version__)
@@ -820,8 +837,11 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     web_chat = DirectService(svc.workspace, folder="_web_chat", api_path="/api/web-chat")
 
     @app.get("/")
-    def index():
-        return FileResponse(UI_FILE, headers={"Cache-Control": "no-store"})
+    def index(request: Request):
+        resp = FileResponse(UI_FILE, headers={"Cache-Control": "no-store"})
+        if app.state.token and opened_directly(request):
+            resp.set_cookie(WEB_COOKIE, app.state.token, httponly=True, samesite="strict", path="/")
+        return resp
 
     @app.get("/static/{name}")
     def static(name: str):
@@ -930,17 +950,8 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
             raise HTTPException(400, "Tin nhắn trống")
         if sum(len(message.content) for message in body.history) > 100000:
             raise HTTPException(400, "Ngữ cảnh cuộc trò chuyện quá dài")
-        now = datetime.now().astimezone()
-        weekday_vi = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ nhật")[now.weekday()]
-        system = (WEB_CHAT_PROMPT + f"\n\nRuntime server date and time: {now.isoformat(timespec='minutes')}. "
-                  f"Runtime weekday: {now:%A} ({weekday_vi}). "
-                  "For questions about today's date or time, use these supplied values directly. "
-                  "Use 24-hour time and only state the weekday or time when asked. "
-                  "This is the server clock, not the publication or verification time of a source. "
-                  "The examples above are formatting examples, not sources. "
-                  "Image retrieval is unavailable in this chat. Only cite URLs verified in this turn. "
-                  "When no retrieval tool is provided, explicitly say it is unavailable if verification is needed.")
-        history = [{"role": "system", "content": system}, *[message.model_dump() for message in body.history]]
+        history = [{"role": "system", "content": assistant_system_prompt()},
+                   *[message.model_dump() for message in body.history]]
         return web_chat.run(DirectIn(preset=body.preset, params={"prompt": body.prompt.strip()}), chat_history=history)
 
     @app.get("/api/web-chat/tasks/{task_id}")
@@ -967,13 +978,15 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0) -> FastAPI:
     def direct_artifact(sha: str):
         return direct.artifact(sha)
 
+    from apps.api.desktop.routes import WEB_COOKIE, install, opened_directly       # desktop client API (ADR-122)
+    install(app, svc, direct, token)
     return app
 
 
 def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: float = 0.8,
-          open_browser: bool | None = None) -> None:
+          open_browser: bool | None = None, token: str | None = None, ready_line: bool = False) -> None:
     import uvicorn
-    app = create_app(path, mock_delay)
+    app = create_app(path, mock_delay, token=token)
     if open_browser is None:
         open_browser = bool(settings_mod.load(None)["general"].get("open_browser", True))
     svc = app.state.svc
@@ -983,9 +996,19 @@ def serve(path: str, host: str = "127.0.0.1", port: int = 8765, mock_delay: floa
     if open_browser:
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    app.state.server = server                       # /api/desktop/shutdown stops it gracefully
     crash = enable_crash_log(app.state.svc.workspace)
-    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace}, crash log: {crash})")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    print(f"SHAMS {__version__} — http://{host}:{port}/  (workspace: {app.state.svc.workspace}, crash log: {crash})",
+          flush=True)
+    if ready_line:
+        print(json.dumps({"shams_backend": "starting", "port": port, "pid": __import__("os").getpid()}), flush=True)
+    try:
+        server.run()
+    finally:
+        app.state.svc.stop()
+        app.state.desktop.store.close()
 
 
 def enable_crash_log(workspace: Path) -> Path:

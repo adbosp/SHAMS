@@ -214,6 +214,22 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Thêm model/preset chỉ cần settings; UI (Direct Mode), API (`/api/direct/*`), CLI (`shams presets`, `shams direct`) đọc từ registry.
 - `shams selftest` có thêm 3 (cảnh JSON), 3b (Blender), 9a–9e (Direct chat, ảnh, chuyển model, lỗi/chính sách, MOSS). Self-test không bao giờ chạy preset 18+, chỉ preflight.
 
+
+### ADR-122 — SHAMS Desktop Client: Tauri 2 + React trên Local API, chat stream, agent coding có quyền, GPU gate
+**Vấn đề:** Người dùng cần một ứng dụng desktop thật (kiểu Codex / Claude Desktop) để chat trực tiếp với một model, giao việc coding cho agent trong thư mục local, tạo ảnh/video/3D và theo dõi Autonomous Mode, trên cùng runtime SHAMS, không viết lại lõi.
+**Quyết định:**
+- **Client** `apps/desktop/`: Tauri 2 (Rust) + React + TypeScript + Tailwind. Shell Rust chỉ quản lý vòng đời Core Service: gắn vào backend đang chạy, hoặc chạy `python -m apps.cli.main desktop-backend` (cổng trống + token ngẫu nhiên), chờ `/api/health`, đóng bằng `/api/desktop/shutdown`, chỉ kill tiến trình chính nó tạo. Cấu hình `%APPDATA%\com.shams.desktop\config.json`. Installer NSIS/MSI không chứa model.
+- **Local API** thêm `/api/desktop/*` (`apps/api/desktop/`): SQLite riêng (`<workspace>/_desktop/desktop.db`) cho hội thoại, tin nhắn dạng khối (text, thinking, tool, image, video, model3d, links, error), job, phê duyệt, Project local, nhật ký tool. Stream bằng SSE có số thứ tự (nối lại không mất sự kiện). Token cục bộ bắt buộc khi shell chạy backend.
+- **Chat** stream thẳng từ provider (`providers.stream_chat`: Ollama NDJSON gốc, OpenAI-compatible SSE). Model lấy từ Model Registry; không có tên model trong code.
+- **Agent coding** = vòng lặp tool calling với công cụ workspace (list/read/search/write/edit/delete/run). Ba chế độ quyền: Ask Before Action, Allow Safe Workspace Actions, Autonomous With Guardrails. Ở mọi chế độ: ngoài thư mục Project bị từ chối, thao tác phá hủy/nhạy cảm (xóa, git push/reset, cài đặt, mạng, kill) luôn hỏi. Mỗi lần ghi lưu checkpoint, có diff và hoàn tác theo lượt. Model không báo capability `tools` thì không chạy được như agent (báo lỗi rõ, không giả lập).
+- **Media** (ảnh/video/3D) chạy như task Direct Mode (scheduler, Artifact Registry, QC sẵn có). Thêm kind `video` (WebP động) và workflow `wan_t2v_1_3b`, `sdxl_checkpoint`.
+- **GPU gate dùng chung cả tiến trình** (`shams.scheduling.gate`): chat, agent, Direct Mode và vòng Autonomous (trừ project chạy thử) lấy gate trước khi dùng GPU; một GPU thì tuần tự. Đổi model qua API của backend (Ollama `keep_alive: 0`, ComfyUI `/free`), không kill tiến trình.
+- **Model Manager**: dò Ollama + ComfyUI; danh mục `inventory.json` chỉ là dữ liệu và được so với file thật (installed / missing / incomplete / unknown); đăng ký/bật/tắt/xóa preset vào settings người dùng, preset mới mặc định chỉ Direct.
+**Hệ quả:**
+- Web UI cũ vẫn chạy; client desktop dùng cùng API.
+- Python chưa được đóng gói thành sidecar: app dùng Python/venv có sẵn trên máy (PyInstaller là bước sau).
+- Biến môi trường Project lưu dạng chữ thường trong SQLite trên máy (cảnh báo khi tên giống bí mật).
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Một exe dùng được cả desktop và web: khi app mở, backend phục vụ luôn bản web ở `http://127.0.0.1:8765/`. Settings có mục Bản web với nút mở trình duyệt. Trình duyệt tự nhận token qua cookie khi người dùng mở trang trực tiếp.
+
+- Desktop Agent có bảng tiến trình thu gọn được trong từng lượt chat. Bảng hiển thị thao tác đang chạy, thời gian, kết quả lệnh, diff từng tệp và tổng dòng thêm/xóa qua các thao tác sửa tệp. Yêu cầu duyệt vẫn hiển thị khi thu gọn.
+
+- Desktop Chat và Direct AI văn bản dùng cùng system prompt với Web Chat, nhận giờ máy chủ mỗi lượt và có thể tra cứu nguồn công khai chỉ đọc. Câu trả lời vẫn stream và ghi danh sách trang đã đọc trong lịch sử.
+
+**SHAMS Desktop Client** (ADR-122)
+- Desktop app in `apps/desktop/` (Tauri 2 + React + TypeScript + Tailwind): New Chat, Chat History, Direct AI, Autonomous Workflow, Projects, Media Gallery, Model Manager, Settings; light/dark themes. The Rust shell starts, health-checks and stops the Python Core Service (`shams desktop-backend`).
+- Streamed chat with Markdown, code blocks, attachments, thinking, and grouped blocks: tool calls, images/videos/3D, links. History in SQLite; search, pin, archive; survives restarts.
+- Coding agent in a local Project (folder + environment): workspace tools, three permission modes, approvals with diff/command preview, per-turn checkpoints and revert, tool log.
+- Model Manager: Ollama/ComfyUI discovery, SHAMS inventory matched against installed files, register/enable/disable/remove presets, Ollama load/unload with keep_alive, ComfyUI start and free.
+- Process-wide GPU gate shared by chats, Direct Mode and Autonomous runs; resource monitor; job cancel.
+- Video preset kind (animated WebP), Wan 2.1 1.3B and generic SDXL checkpoint workflows.
 - Web Chat có nút xóa từng cuộc trò chuyện khỏi lịch sử trình duyệt, với xác nhận trước khi xóa và đồng bộ thao tác xóa giữa các tab.
 
 - Web Chat dùng system prompt riêng với giờ máy chủ, hướng dẫn định dạng và câu hỏi tiếp nối. Model Ollama hỗ trợ tool calling có thể tra cứu chỉ đọc khi Research bật, tiếp tục stream câu trả lời và hiển thị danh sách trang đã đọc.

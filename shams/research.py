@@ -48,6 +48,14 @@ BROWSER_TOOLS = [
 ]
 
 
+def requested_urls(prompt: str) -> list[str]:
+    """Identify up to two links the user explicitly asked Chat to verify or read."""
+    if not re.search(r"đối chiếu|kiểm chứng|xác minh|đọc|tra cứu|\b(?:read|verify|cross-check|check)\b", prompt, re.I):
+        return []
+    urls = re.findall(r"https?://[^\s<>\])]+", prompt)
+    return list(dict.fromkeys(url.rstrip(".,;:!?") for url in urls))[:2]
+
+
 def html_to_text(raw: str) -> str:
     raw = re.sub(r"(?is)<(script|style|noscript|svg|head|nav|footer)[^>]*>.*?</\1>", " ", raw)
     raw = re.sub(r"(?i)<br\s*/?>|</(p|div|li|h[1-6]|tr)>", "\n", raw)
@@ -100,6 +108,9 @@ class Research:
     def tools(self) -> list[dict]:
         tools = TOOLS + (BROWSER_TOOLS if self.browser.get("enabled") else [])
         return [dict(t, server="research", qualified=t["name"]) for t in tools] if self.enabled else []
+
+    def chat_tools(self) -> list[dict]:
+        return [t for t in self.tools() if t["name"].startswith(PREFIX + "web_")]
 
     def _domain(self, host: str, search: bool = False):
         if any(host == d or host.endswith("." + d) for d in self.deny):

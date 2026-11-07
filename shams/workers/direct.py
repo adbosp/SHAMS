@@ -7,14 +7,13 @@ provider supports tool calling, the model may use the read-only web tools (and M
 from __future__ import annotations
 
 import time
-import re
 from contextlib import nullcontext
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable
 
 from shams import providers
-from shams.research import RESEARCH_PROMPT
+from shams.research import RESEARCH_PROMPT, requested_urls
 from shams.workers import MAX_INPUT_CHARS, base_handoff, output_plan
 
 PARAM_MAP = {"temperature": "temperature", "max_tokens": "num_predict", "num_ctx": "num_ctx"}
@@ -73,8 +72,7 @@ class DirectChatWorker:
             reset_progress = lambda: publish(tid, None)
         web_tools = []
         if web and research and self.model_tools and params.get("research", self.research_default) is not False:
-            web_tools = [t for t in research.tools() if t["name"] in {
-                "research__web_search", "research__web_scrape", "research__web_research"}]
+            web_tools = research.chat_tools()
         try:
             if web_tools or (not web and self._use_tools(params)):
                 session = getattr(research, "session", nullcontext)
@@ -140,12 +138,8 @@ class DirectChatWorker:
         return {"text": "", "tokens_in": tin, "tokens_out": tout}
 
     def _read_requested_links(self, messages: list[dict], catalog: list[dict]) -> None:
-        prompt = messages[-1]["content"]
-        if not re.search(r"đối chiếu|kiểm chứng|xác minh|đọc|tra cứu|\b(?:read|verify|cross-check|check)\b", prompt, re.I):
-            return
-        urls = dict.fromkeys(url.rstrip(".,;:!?") for url in re.findall(r"https?://[^\s<>\])]+", prompt))
         name = "research__web_scrape"
-        for i, url in enumerate(list(urls)[:2]):
+        for i, url in enumerate(requested_urls(messages[-1]["content"])):
             args = {"url": url}
             messages.append({"role": "assistant", "content": "",
                              "tool_calls": [{"function": {"name": name, "arguments": args}}]})

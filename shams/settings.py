@@ -56,6 +56,10 @@ DEFAULTS: dict[str, Any] = {
                "node": "node.local", "roles": {}, "aliases": {}},
     "tools": {},
     "research": {"enabled": False},
+    # desktop client (ADR-122): default agent permission mode, limits, where new local Projects are created
+    "desktop": {"permission_mode": "ask", "agent_max_rounds": 30, "command_timeout": 120, "allow": [], "deny": [],
+                "projects_root": None},
+    "resources": {"serialize_gpu": "auto"},       # true | false | "auto" (serialize when at most one GPU)
 }
 
 SECRET_KEY = re.compile(r"(?i)(^|_)(api_?key|token|secret|password|passwd|authorization)$")
@@ -195,6 +199,10 @@ def validate(s: dict) -> list[str]:
         errs.append(f"general.mock: one of {MOCK_MODES}")
     if s.get("permissions", {}).get("mode", "default") not in PERMISSION_MODES:
         errs.append(f"permissions.mode: one of {PERMISSION_MODES}")
+    if (s.get("desktop") or {}).get("permission_mode", "ask") not in ("ask", "safe", "auto"):
+        errs.append("desktop.permission_mode: ask | safe | auto")
+    if (s.get("resources") or {}).get("serialize_gpu", "auto") not in (True, False, "auto"):
+        errs.append('resources.serialize_gpu: true | false | "auto"')
     for name, m in (s.get("mcp_servers") or {}).items():
         t = m.get("type", "stdio")
         if t == "stdio" and not m.get("command"):

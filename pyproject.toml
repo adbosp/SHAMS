@@ -32,6 +32,7 @@ include = ["shams*", "shams_packs*", "apps*"]
 "shams.examples" = ["*.toml", "*.json"]
 "shams_tools" = ["workflows/*.json", "js/*.mjs", "js/*.cjs"]
 "apps.ui" = ["index.html", "system_prompt.md", "static/*"]
+"apps.api.desktop" = ["inventory.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
