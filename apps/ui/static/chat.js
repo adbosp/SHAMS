@@ -2,6 +2,7 @@
 
 const $ = id => document.getElementById(id);
 const storageKey = "shams.webChat.v1";
+const deletedPrefix = storageKey + ".deleted.";
 const mobile = matchMedia("(max-width: 700px)");
 const terminal = new Set(["ACCEPTED", "FAILED", "BLOCKED", "HUMAN_REVIEW", "CANCELED"]);
 const inflight = new Set();
@@ -12,18 +13,40 @@ let active = null;
 let models = [];
 let modelError = "";
 let saveError = "";
+let pendingDelete = null;
+
+function liveThreads(list) {
+  return list.filter(thread => !localStorage.getItem(deletedPrefix + thread.id));
+}
+
+function savedHistory() {
+  const raw = localStorage.getItem(storageKey);
+  try {
+    const saved = JSON.parse(raw);
+    return Array.isArray(saved?.threads) ? saved : {};
+  } catch (_) {
+    return {};
+  }
+}
 
 try {
-  const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  threads = saved.threads || [];
+  const saved = savedHistory();
+  threads = liveThreads(saved.threads || []);
   active = threads.find(thread => thread.id === saved.active) || null;
 } catch (_) {
   // A clean session is usable even when browser storage is unavailable.
 }
 
-function save() {
+function save(thread) {
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ threads, active: active?.id }));
+    const stored = savedHistory().threads || [];
+    if (thread && !localStorage.getItem(deletedPrefix + thread.id)) {
+      const index = stored.findIndex(item => item.id === thread.id);
+      if (index < 0) stored.unshift(thread);
+      else stored[index] = thread;
+    }
+    const history = liveThreads(stored);
+    localStorage.setItem(storageKey, JSON.stringify({ threads: history, active: active?.id }));
     saveError = "";
   } catch (_) {
     saveError = "Trình duyệt không thể lưu thêm lịch sử.";
@@ -133,6 +156,8 @@ function syncComposer() {
 function renderHistory() {
   $("history").replaceChildren();
   for (const thread of threads) {
+    const row = document.createElement("div");
+    row.className = "thread-row";
     const button = document.createElement("button");
     button.type = "button";
     button.className = "thread";
@@ -140,10 +165,78 @@ function renderHistory() {
     button.textContent = thread.title;
     button.title = thread.title;
     button.onclick = () => selectThread(thread);
-    $("history").append(button);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "icon delete-thread";
+    remove.title = "Xóa cuộc trò chuyện";
+    remove.setAttribute("aria-label", "Xóa cuộc trò chuyện: " + thread.title);
+    remove.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16m-11 0V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>';
+    remove.onclick = () => {
+      pendingDelete = thread;
+      $("delete-description").textContent = '“' + thread.title + '” sẽ bị xóa khỏi lịch sử trên trình duyệt này.' +
+        (inflight.has(thread.id) ? " Lượt đang chạy vẫn tiếp tục trên máy chủ." : "");
+      $("delete-dialog").returnValue = "cancel";
+      $("delete-dialog").showModal();
+    };
+    row.append(button, remove);
+    $("history").append(row);
   }
   if (!threads.length) $("history").innerHTML = '<div class="history-empty">Chưa có cuộc trò chuyện.</div>';
 }
+
+function discardThread(thread) {
+  threads = threads.filter(item => item !== thread);
+  inflight.delete(thread.id);
+  if (active === thread) {
+    active = null;
+    $("prompt").value = "";
+    renderConversation(true);
+  }
+  renderHistory();
+}
+
+$("delete-dialog").onclose = () => {
+  pendingDelete = null;
+};
+
+$("delete-dialog").querySelector("form").onsubmit = event => {
+  if (event.submitter?.value !== "delete") return;
+  event.preventDefault();
+  const thread = pendingDelete;
+  if (!threads.includes(thread)) {
+    $("delete-dialog").close();
+    return;
+  }
+  let saved;
+  try {
+    saved = savedHistory();
+    // Keep the deletion marker separate so stale tabs cannot restore the conversation.
+    localStorage.setItem(deletedPrefix + thread.id, "1");
+  } catch (_) {
+    saveError = "Trình duyệt không lưu được thao tác xóa.";
+    syncComposer();
+    $("delete-dialog").close();
+    return;
+  }
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({
+      threads: liveThreads(saved.threads || []), active: saved.active === thread.id ? null : saved.active
+    }));
+    saveError = "";
+  } catch (_) {
+    saveError = "Đã ẩn cuộc trò chuyện nhưng trình duyệt chưa dọn được bản lưu cũ.";
+  }
+  discardThread(thread);
+  syncComposer();
+  $("delete-dialog").close();
+  $("new-chat").focus();
+};
+
+addEventListener("storage", event => {
+  if (!event.key?.startsWith(deletedPrefix) || !event.newValue) return;
+  const thread = threads.find(item => item.id === event.key.slice(deletedPrefix.length));
+  if (thread) discardThread(thread);
+});
 
 function renderConversation(scrollToEnd = false) {
   const scroll = $("scroll");
@@ -214,8 +307,9 @@ function context(turns) {
 
 async function watch(thread, turn, animateFinal = false) {
   try {
-    for (;;) {
+    while (threads.includes(thread)) {
       const task = await api("/api/web-chat/tasks/" + encodeURIComponent(turn.taskId));
+      if (!threads.includes(thread)) return;
       if (!task.running) {
         const output = task.outputs.find(item => ["text/plain", "text/markdown"].includes(item.media_type));
         if (task.state === "ACCEPTED" && output) {
@@ -247,7 +341,7 @@ async function watch(thread, turn, animateFinal = false) {
   } finally {
     drafts.delete(turn);
     inflight.delete(thread.id);
-    save();
+    if (threads.includes(thread)) save(thread);
     if (active === thread) renderConversation();
   }
 }
@@ -270,13 +364,14 @@ $("composer").onsubmit = async event => {
   renderConversation(true);
   try {
     const task = await api("/api/web-chat/send", { preset, prompt, history });
+    if (!threads.includes(thread)) return;
     turn.taskId = task.task_id;
-    save();
+    save(thread);
     await watch(thread, turn, true);
   } catch (error) {
     turn.error = error.message;
     inflight.delete(thread.id);
-    save();
+    if (threads.includes(thread)) save(thread);
     if (active === thread) renderConversation();
   }
 };
@@ -293,7 +388,8 @@ $("close-sidebar").onclick = $("scrim").onclick = () => { sidebar(false); $("ope
 $("new-chat").onclick = () => selectThread(null);
 mobile.addEventListener("change", () => sidebar(!mobile.matches));
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && mobile.matches && !$("shell").classList.contains("closed")) $("scrim").click();
+  if (event.key === "Escape" && !$("delete-dialog").open && mobile.matches &&
+      !$("shell").classList.contains("closed")) $("scrim").click();
 });
 $("suggestions").onclick = event => {
   if (!event.target.matches(".suggestion")) return;
