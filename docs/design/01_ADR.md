@@ -230,6 +230,17 @@ Quy ước trạng thái: **Accepted** = đã chốt từ thảo luận gốc ·
 - Python chưa được đóng gói thành sidecar: app dùng Python/venv có sẵn trên máy (PyInstaller là bước sau).
 - Biến môi trường Project lưu dạng chữ thường trong SQLite trên máy (cảnh báo khi tên giống bí mật).
 
+### ADR-123 — Công cụ ngoài qua MCP: danh mục server có sẵn, MCP trong Desktop Chat, không thêm workflow engine thứ hai
+**Vấn đề:** Một sơ đồ "Local AI Stack" đề xuất xếp Open WebUI → Ollama + Dify → Goose/Codex → MCP Gateway. Phần lớn trùng với thứ SHAMS đã có: Desktop/Direct Mode (giao diện), Ollama (runtime), orchestrator + event log (workflow), coding agent (worker). Dify sẽ là workflow engine thứ hai, làm mất nguồn sự thật duy nhất, QC, handoff và GPU lease. Phần đáng lấy là tầng MCP. SHAMS đã có MCP client (ADR-118), nhưng người dùng phải tự viết cấu hình server, và Desktop Chat chưa dùng được MCP.
+**Quyết định:**
+- **Không** tích hợp Dify. Open WebUI chỉ là tùy chọn bên ngoài để chat với Ollama, không phải UI chính. Goose/Codex nếu dùng thì cắm vào như CommandWorker và phải qua GPU gate (chưa làm).
+- **Danh mục preset** `shams/mcp_catalog.py`: `searxng`, `browser` (Playwright MCP), `github` (server HTTP chính thức), `blender` (blender-mcp), `unity` (MCP for Unity qua HTTP), `filesystem`. Preset chỉ là một mục `mcp_servers` bình thường, copy vào settings và sửa được như mọi server. Preset chỉ thêm quyền cho tool đọc; tool ghi vẫn phải được cho phép rõ ràng.
+- **CLI** `shams mcp --presets`, `shams mcp --add <preset> [--as <tên>]`. **API** `GET /api/mcp/presets`, `POST /api/mcp/presets/{id}`.
+- **Desktop Chat** dùng được tool MCP khi `desktop.chat_mcp` (hoặc `params.mcp` của preset/lượt chat) là danh sách server hoặc `"all"`, và model Ollama hỗ trợ tools. Mọi lời gọi vẫn qua `permissions`. Sau khi đã đọc dữ liệu web không tin cậy trong lượt, tool MCP bị khóa (quy tắc sẵn có của ToolBox).
+**Hệ quả:**
+- Không thêm dependency Python. Server chạy bằng `npx`/`uvx` lúc dùng lần đầu; nên ghim phiên bản trong settings khi đã chạy ổn.
+- Preset `blender`/`unity` được đánh dấu `gpu`. Việc giữ GPU gate quanh tool của chúng là bước tiếp theo (`mcp_catalog.gpu_servers`). Chưa có preset UE5 vì chưa có server MCP đủ ổn định.
+
 ## Phần C — Còn mở (quyết định bằng spike)
 
 | ID | Câu hỏi | Quyết định bằng |

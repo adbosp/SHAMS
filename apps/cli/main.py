@@ -18,6 +18,7 @@
   shams settings [<dir>] [--json]         # merged settings (user + project + local), validation
   shams desktop-backend [<dir>] [--port N]   # local API for the desktop client (Tauri)
   shams mcp [<dir>] [--name <server>]     # connect to MCP servers, list tools and permissions
+  shams mcp --presets | --add <preset> [--as <name>]   # ready-made servers: searxng, browser, github, blender, unity
 """
 from __future__ import annotations
 
@@ -101,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
     a = sub.add_parser("mcp", help="connect to the configured MCP servers and list their tools")
     a.add_argument("dir", nargs="?"); a.add_argument("--name")
+    a.add_argument("--presets", action="store_true", help="list ready-made servers (ADR-123)")
+    a.add_argument("--add", metavar="PRESET", help="add a preset to user settings (or project with dir)")
+    a.add_argument("--as", dest="as_name", metavar="NAME", help="server name for --add (default: preset id)")
     a = sub.add_parser("models", help="discover installed models/tools and show which model serves each role")
     a.add_argument("dir", nargs="?"); a.add_argument("--json", action="store_true")
     a = sub.add_parser("selftest", help="run the integration tests on this machine (real models and tools)")
@@ -277,6 +281,23 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "mcp":
         from shams import settings as settings_mod
         from shams.mcp import MCPManager
+        from shams import mcp_catalog
+        if args.presets:
+            for p in mcp_catalog.list_presets():
+                print(f"{p['id']:<12} {p['type']:<6} {p['title']}{'  [GPU]' if p['gpu'] else ''}")
+                print(f"{'':<19} needs: {p['requires']}")
+            return 0
+        if args.add:
+            scope = "project" if args.dir else "user"
+            try:
+                patch = mcp_catalog.settings_patch(args.add, args.as_name, current=settings_mod.read_scope(scope, args.dir))
+            except KeyError as e:
+                print(f"error: {e.args[0]}", file=sys.stderr)
+                return 2
+            path = settings_mod.update(scope, patch, args.dir)
+            print(f"added MCP server {args.as_name or args.add!r} to {path}")
+            print("check it with: shams mcp" + (f" {args.dir}" if args.dir else "") + f" --name {args.as_name or args.add}")
+            return 0
         mgr = MCPManager.from_settings(settings_mod.load(args.dir))
         if args.name:
             mgr.servers = {k: v for k, v in mgr.servers.items() if k == args.name}
