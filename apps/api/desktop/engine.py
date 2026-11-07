@@ -25,7 +25,13 @@ from typing import Any
 from apps.api.chat_prompt import assistant_system_prompt
 from shams import providers
 from shams import settings as settings_mod
+from shams.mcp import MCPManager
 from shams.research import RESEARCH_PROMPT, Research, ToolBox, requested_urls
+
+MCP_CHAT_PROMPT = ("Tools named mcp__<server>__<tool> come from MCP servers the user connected. Use them only "
+                   "when they clearly help the request. A result starting with 'permission denied' means the "
+                   "user has not allowed that tool: say so and tell them to allow it in Settings → Permissions "
+                   "instead of retrying.")
 from shams.scheduling.gate import GPU_GATE, should_serialize
 
 from .bus import EventBus, JobChannel
@@ -329,10 +335,19 @@ class DesktopService:
         if extra:
             sys_prompt += "\n\nAdditional preset instructions, subordinate to the chat rules above:\n" + str(extra)
         msgs = [{"role": "system", "content": sys_prompt}] + history
-        research = Research(self.settings().get("research"))
-        catalog = research.chat_tools() if (getattr(prov, "name", "") == "ollama" and
-                                           params.get("research", preset_params.get("research")) is not False and
-                                           self._model_tools_support(preset) is True) else []
+        settings = self.settings()
+        research = Research(settings.get("research"))
+        tools_ok = getattr(prov, "name", "") == "ollama" and self._model_tools_support(preset) is True
+        catalog = research.chat_tools() if (tools_ok and
+                                           params.get("research", preset_params.get("research")) is not False) else []
+        has_research = bool(catalog)
+        # MCP servers for chat (ADR-123): params.mcp / preset params.mcp / desktop.chat_mcp — a list or "all"
+        mcp_sel = params.get("mcp", preset_params.get("mcp", (settings.get("desktop") or {}).get("chat_mcp")))
+        mcp = MCPManager.from_settings(settings) if (tools_ok and mcp_sel and settings.get("mcp_servers")) else None
+        if mcp is not None:
+            catalog = catalog + mcp.tools(mcp_sel)
+            for name, err in mcp.errors.items():
+                ch.publish("status", text=f"MCP {name} không kết nối được: {err[:160]}")
         opts = self._gen_opts(prov, params)
         if images:
             opts["images"] = images
@@ -341,11 +356,18 @@ class DesktopService:
             if not catalog:
                 self._stream_into(ch, state, prov, msgs, model, None, opts)
                 return
-            msgs[0]["content"] += "\n\n" + RESEARCH_PROMPT
-            self._stream_research_chat(ch, state, prov, msgs, model, opts, text, research, catalog)
+            if has_research:
+                msgs[0]["content"] += "\n\n" + RESEARCH_PROMPT
+            if mcp is not None:
+                msgs[0]["content"] += "\n\n" + MCP_CHAT_PROMPT
+            try:
+                self._stream_research_chat(ch, state, prov, msgs, model, opts, text, research, catalog, mcp)
+            finally:
+                if mcp is not None:
+                    mcp.close()
 
-    def _stream_research_chat(self, ch, state, prov, msgs, model, opts, text, research, catalog) -> None:
-        toolbox = ToolBox(None, research)
+    def _stream_research_chat(self, ch, state, prov, msgs, model, opts, text, research, catalog, mcp=None) -> None:
+        toolbox = ToolBox(mcp, research)
 
         def fetch_results(calls, tools):
             results = []
@@ -369,7 +391,8 @@ class DesktopService:
                 ev = self._stream_into(ch, state, prov, msgs, model, tools, opts)
                 if not ev.get("calls") or not tools:
                     break
-                ch.publish("status", text="Đang tra cứu nguồn…")
+                ch.publish("status", text="Đang gọi công cụ…" if any(
+                    c["name"].startswith("mcp__") for c in ev["calls"]) else "Đang tra cứu nguồn…")
                 msgs.append(ev["assistant"])
                 msgs += fetch_results(ev["calls"], tools)
             state["sources"] = run.sources

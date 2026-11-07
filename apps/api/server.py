@@ -933,6 +933,25 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     def mcp(name: str | None = None):
         return svc.mcp_status(name)
 
+    @app.get("/api/mcp/presets")
+    def mcp_presets():
+        from shams_tools import mcp_catalog
+        return mcp_catalog.list_presets()
+
+    @app.post("/api/mcp/presets/{preset_id}")
+    def mcp_add_preset(preset_id: str, name: str | None = None):
+        """Add a ready-made MCP server (ADR-123) to user settings; edit it later like any server."""
+        from shams_tools import mcp_catalog
+        try:
+            patch = mcp_catalog.settings_patch(preset_id, name, current=settings_mod.read_scope("user"))
+            settings_mod.update("user", patch)
+        except KeyError as e:
+            raise HTTPException(404, e.args[0])
+        except settings_mod.SettingsError as e:
+            raise HTTPException(400, str(e))
+        svc.reload()
+        return {"added": name or preset_id, "server": patch["mcp_servers"][name or preset_id]}
+
     @app.get("/api/direct/presets")
     def direct_presets():
         return direct.presets()
