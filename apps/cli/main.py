@@ -281,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "mcp":
         from shams import settings as settings_mod
         from shams.mcp import MCPManager
-        from shams import mcp_catalog
+        from shams_tools import mcp_catalog
         if args.presets:
             for p in mcp_catalog.list_presets():
                 print(f"{p['id']:<12} {p['type']:<6} {p['title']}{'  [GPU]' if p['gpu'] else ''}")

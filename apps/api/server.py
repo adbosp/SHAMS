@@ -935,13 +935,13 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
 
     @app.get("/api/mcp/presets")
     def mcp_presets():
-        from shams import mcp_catalog
+        from shams_tools import mcp_catalog
         return mcp_catalog.list_presets()
 
     @app.post("/api/mcp/presets/{preset_id}")
     def mcp_add_preset(preset_id: str, name: str | None = None):
         """Add a ready-made MCP server (ADR-123) to user settings; edit it later like any server."""
-        from shams import mcp_catalog
+        from shams_tools import mcp_catalog
         try:
             patch = mcp_catalog.settings_patch(preset_id, name, current=settings_mod.read_scope("user"))
             settings_mod.update("user", patch)
