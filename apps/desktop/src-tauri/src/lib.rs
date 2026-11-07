@@ -5,6 +5,7 @@
 //!   `python -m apps.cli.main desktop-backend` from the configured SHAMS folder on a free port with a
 //!   random token, and waits for `/api/health`.
 //! * The web view asks `backend_info` for the URL + token; everything else goes over the local HTTP API.
+//! * The same backend serves the web interface, so one exe gives both; `open_web_ui` opens it in the browser.
 //! * On exit it asks the backend to stop (`/api/desktop/shutdown`) and, only if that fails, kills the
 //!   child process it started itself. No other process is touched.
 //!
@@ -290,6 +291,35 @@ fn shell_config(app: tauri::AppHandle) -> serde_json::Value {
     v
 }
 
+/// Opens the web interface of the running backend in the default browser.
+#[tauri::command]
+fn open_web_ui(state: tauri::State<'_, Shared>) -> Result<(), String> {
+    let url = state.lock().map_err(|e| e.to_string())?.info.url.clone();
+    if url.is_empty() {
+        return Err("backend is not ready yet".into());
+    }
+    let url = format!("{url}/");
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = Command::new("rundll32");
+        c.args(["url.dll,FileProtocolHandler", &url]);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn restart_backend(app: tauri::AppHandle, state: tauri::State<'_, Shared>) {
     let shared = state.inner().clone();
@@ -307,7 +337,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(shared.clone())
-        .invoke_handler(tauri::generate_handler![backend_info, backend_log, shell_config, restart_backend])
+        .invoke_handler(tauri::generate_handler![backend_info, backend_log, shell_config, open_web_ui, restart_backend])
         .setup(|app| {
             let handle = app.handle().clone();
             let shared = app.state::<Shared>().inner().clone();

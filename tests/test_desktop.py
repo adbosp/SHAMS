@@ -401,6 +401,40 @@ def test_token_required_except_health(tmp_path, isolated_home, fake):
     app.state.desktop.store.close()
 
 
+def test_web_page_opened_directly_gets_cookie(tmp_path, isolated_home, fake):
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    (isolated_home / "settings.json").write_text(json.dumps(_settings(fake.url)), encoding="utf-8")
+    app = create_app(tmp_path / "ws", token="s3cret")
+    direct = {"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate"}
+    base = "http://127.0.0.1:8765"
+    c = TestClient(app, base_url=base)
+    # a link from another site, a script, or a rebound domain does not get it
+    assert "shams_web" not in c.get("/", headers={"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate"}).cookies
+    assert "shams_web" not in c.get("/").cookies
+    assert "shams_web" not in TestClient(app, base_url="http://evil.test:8765").get("/", headers=direct).cookies
+    assert c.get("/api/state").status_code == 401
+    # a person opening the page does, and the page's own requests then work
+    r = c.get("/", headers=direct)
+    assert r.cookies["shams_web"] == "s3cret" and "httponly" in r.headers["set-cookie"].lower()
+    assert "samesite=strict" in r.headers["set-cookie"].lower()
+    assert c.get("/api/state").status_code == 200
+    assert c.get("/api/state", headers={"Origin": base}).status_code == 200
+    # another local port (a generated game) sends the cookie too, and is refused
+    assert c.get("/api/state", headers={"Origin": "http://127.0.0.1:5173"}).status_code == 401
+    assert c.get("/api/state", headers={"Origin": "null"}).status_code == 401
+    app.state.desktop.store.close()
+
+
+def test_no_cookie_without_a_token(tmp_path, isolated_home, fake):
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    (isolated_home / "settings.json").write_text(json.dumps(_settings(fake.url)), encoding="utf-8")
+    app = create_app(tmp_path / "ws")
+    c = TestClient(app)
+    assert "shams_web" not in c.get("/", headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate"}).cookies
+    assert c.get("/api/state").status_code == 200
+    app.state.desktop.store.close()
+
+
 def test_history_survives_restart_and_running_jobs_are_marked(tmp_path, isolated_home, fake):
     isolated_home.mkdir(parents=True, exist_ok=True)
     (isolated_home / "settings.json").write_text(json.dumps(_settings(fake.url)), encoding="utf-8")

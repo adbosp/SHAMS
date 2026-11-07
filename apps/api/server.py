@@ -15,7 +15,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -837,8 +837,11 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     web_chat = DirectService(svc.workspace, folder="_web_chat", api_path="/api/web-chat")
 
     @app.get("/")
-    def index():
-        return FileResponse(UI_FILE, headers={"Cache-Control": "no-store"})
+    def index(request: Request):
+        resp = FileResponse(UI_FILE, headers={"Cache-Control": "no-store"})
+        if app.state.token and opened_directly(request):
+            resp.set_cookie(WEB_COOKIE, app.state.token, httponly=True, samesite="strict", path="/")
+        return resp
 
     @app.get("/static/{name}")
     def static(name: str):
@@ -975,7 +978,7 @@ def create_app(project_dir: Path | str, mock_delay: float = 0.0, token: str | No
     def direct_artifact(sha: str):
         return direct.artifact(sha)
 
-    from apps.api.desktop.routes import install       # desktop client API (ADR-122)
+    from apps.api.desktop.routes import WEB_COOKIE, install, opened_directly       # desktop client API (ADR-122)
     install(app, svc, direct, token)
     return app
 

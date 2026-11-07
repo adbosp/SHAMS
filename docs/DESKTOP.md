@@ -11,7 +11,18 @@
 | Build installer Windows | `scripts\desktop-build.ps1` → `apps\desktop\src-tauri\target\release\bundle\nsis\*.exe`, `msi\*.msi` | như trên |
 | Chỉ backend | `shams desktop-backend C:\AI\SHAMS_Projects --port 8765` | Python venv |
 
-Installer không chứa model hay Python. App dùng Python và model đã có trên máy.
+Installer không chứa model hay Python. App dùng Python và model đã có trên máy, và chạy code Python đang có trong
+`shams_dir`, nên đổi nhánh hoặc `git pull` ở đó sẽ đổi backend của app.
+
+## Desktop và web trong một exe
+
+Khi app mở, backend đồng thời phục vụ bản web ở `http://127.0.0.1:8765/` (nếu cổng bận thì là cổng trống khác; địa
+chỉ đúng nằm ở Settings > Bản web, kèm nút mở trình duyệt). Đóng app thì bản web cũng dừng.
+
+Backend do app khởi động yêu cầu token. Trình duyệt nhận token qua cookie `shams_web` (HttpOnly, SameSite=Strict) khi
+người dùng tự mở trang: gõ địa chỉ, bookmark hoặc bấm từ chương trình khác. Link từ trang web khác không nhận được
+cookie, và cookie không có tác dụng với request từ origin khác (ví dụ game chạy ở cổng local khác). Tab cũ sau khi
+khởi động lại app cần tải lại trang để nhận token mới.
 
 ## Cấu hình shell
 

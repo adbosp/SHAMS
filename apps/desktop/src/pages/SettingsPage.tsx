@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Globe, Save } from "lucide-react";
 import { api, backendInfo, inTauri, type BackendInfo } from "../lib/api";
 import { useData, type Theme } from "../lib/store";
 
@@ -19,6 +19,12 @@ export default function SettingsPage({ theme, setTheme, health }: {
     if (!inTauri()) return;
     import("@tauri-apps/api/core").then(({ invoke }) => invoke("shell_config").then(setShellCfg).catch(() => undefined));
   }, []);
+
+  const openWeb = async () => {
+    if (!inTauri()) { window.open(`${b?.url}/`, "_blank"); return; }
+    const { invoke } = await import("@tauri-apps/api/core");
+    invoke("open_web_ui").catch((e) => setMsg("Lỗi: " + e));
+  };
 
   const user = data?.scopes.user || {};
   const desktop = user.desktop || {};
@@ -99,6 +105,14 @@ export default function SettingsPage({ theme, setTheme, health }: {
             <option value="false">Không giới hạn (nhiều GPU)</option>
           </select>
           <p className="mt-1 text-xs text-muted">Có hiệu lực sau khi khởi động lại backend.</p>
+        </Section>
+
+        <Section title="Bản web">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-mono text-sm">{b?.url}/</span>
+            <button className="btn" disabled={!b?.url} onClick={openWeb}><Globe size={14} /> Mở trong trình duyệt</button>
+          </div>
+          <p className="mt-1 text-xs text-muted">Dùng được khi app đang mở và chỉ truy cập được từ máy này. Đóng app thì bản web cũng dừng.</p>
         </Section>
 
         <Section title="Backend (SHAMS Core Service)">

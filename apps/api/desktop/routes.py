@@ -99,6 +99,26 @@ def _err(e: Exception) -> HTTPException:
     return HTTPException(409, str(e))
 
 
+WEB_COOKIE = "shams_web"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
+
+
+def opened_directly(request: Request) -> bool:
+    """True when a person opened the page on this machine: a typed address, a bookmark, or a link from another
+    program. A browser sets these headers itself and a web page cannot forge them, so another site cannot make
+    the browser collect the session cookie. The Host check stops DNS rebinding."""
+    host = request.headers.get("host", "").rsplit(":", 1)[0]
+    return (host in LOOPBACK_HOSTS and request.headers.get("sec-fetch-site") == "none"
+            and request.headers.get("sec-fetch-mode") == "navigate")
+
+
+def _cookie_allowed(request: Request) -> bool:
+    """The cookie only counts for the page's own requests: cookies ignore ports, so a game on another local port
+    would otherwise send it too."""
+    origin = request.headers.get("origin")
+    return origin is None or origin == f"http://{request.headers.get('host', '')}"
+
+
 def install(app: FastAPI, svc: Any, direct: Any, token: str | None = None) -> DesktopService:
     desk = DesktopService(svc.workspace, direct, svc)
     app.state.desktop = desk
@@ -114,7 +134,9 @@ def install(app: FastAPI, svc: Any, direct: Any, token: str | None = None) -> De
         p = request.url.path
         if tok and p.startswith("/api/") and p != "/api/health" and request.method != "OPTIONS":
             given = request.headers.get("x-shams-token") or request.query_params.get("token") or ""
-            if not hmac.compare_digest(given, tok):
+            if not given and _cookie_allowed(request):
+                given = request.cookies.get(WEB_COOKIE, "")
+            if not hmac.compare_digest(given.encode(), tok.encode()):
                 return JSONResponse({"detail": "missing or wrong desktop token"}, status_code=401)
         return await call_next(request)
 
